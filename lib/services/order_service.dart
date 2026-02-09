@@ -58,9 +58,10 @@ class OrderService {
         final data = snap.data() as Map<String, dynamic>;
         final enabled = data['enabled'] == true;
         final available = (data['quantity'] ?? 0) as int;
+        final name = (data['name'] ?? 'Item') as String;
 
         if (!enabled || available < qty) {
-          throw StateError('Item out of stock');
+          throw StateError('Item out of stock: $name');
         }
 
         tx.update(docRef, {

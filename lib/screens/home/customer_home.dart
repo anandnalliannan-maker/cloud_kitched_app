@@ -88,10 +88,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Order placed')),
       );
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      final msg = e.toString().replaceFirst('Bad state: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Some items are out of stock')),
+        SnackBar(content: Text('Order failed: $msg')),
       );
     }
   }
