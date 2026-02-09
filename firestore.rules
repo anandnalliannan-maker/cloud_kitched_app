@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function userExists(uid) {
+      return signedIn() && exists(userPath(uid));
+    }
+
+    function userDoc(uid) {
+      return get(userPath(uid));
+    }
+
+    function roleIs(role) {
+      return userExists(request.auth.uid) &&
+          userDoc(request.auth.uid).data.role == role;
+    }
+
+    function isApproved() {
+      return userExists(request.auth.uid) &&
+          userDoc(request.auth.uid).data.approved == true;
+    }
+
+    function isOwner() {
+      return roleIs('owner') && isApproved();
+    }
+
+    function isDelivery() {
+      return roleIs('delivery') && isApproved();
+    }
+
+    function isCustomer() {
+      return roleIs('customer');
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isOwner();
+      allow create: if isSelf(uid)
+        && request.resource.data.role in ['customer', 'owner', 'delivery']
+        && request.resource.data.approved == false;
+      allow update: if isSelf(uid) || isOwner();
+      allow delete: if isOwner();
+    }
+
+    match /menu_items/{itemId} {
+      allow read: if true;
+      allow create, update, delete: if isOwner();
+    }
+
+    match /orders/{orderId} {
+      allow create: if isCustomer()
+        && request.resource.data.customerId == request.auth.uid;
+      allow read: if isOwner()
+        || (isCustomer() && resource.data.customerId == request.auth.uid)
+        || (isDelivery() && resource.data.deliveryId == request.auth.uid);
+      allow update: if isOwner()
+        || (isDelivery() && resource.data.deliveryId == request.auth.uid);
+      allow delete: if isOwner();
+    }
+  }
+}
