@@ -63,8 +63,9 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow create: if isCustomer()
-        && request.resource.data.customerId == request.auth.uid;
+      allow create: if (isCustomer()
+        && request.resource.data.customerId == request.auth.uid)
+        || (isOwner() && request.resource.data.testOrder == true);
       allow read: if isOwner()
         || (isCustomer() && resource.data.customerId == request.auth.uid)
         || (isDelivery() && resource.data.deliveryId == request.auth.uid);

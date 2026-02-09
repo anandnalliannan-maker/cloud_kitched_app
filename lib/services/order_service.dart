@@ -53,6 +53,7 @@ class OrderService {
       'items': [
         {'name': 'Test Item', 'qty': 1, 'price': 250}
       ],
+      'testOrder': true,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
