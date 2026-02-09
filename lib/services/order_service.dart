@@ -15,7 +15,6 @@ class OrderService {
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersByStatus(String status) {
     return _ordersRef
         .where('status', isEqualTo: status)
-        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 

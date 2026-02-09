@@ -126,6 +126,12 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
 
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text('Error loading orders: ${snapshot.error}'),
+                );
+              }
+
               final docs = snapshot.data?.docs ?? [];
               if (docs.isEmpty) {
                 return Center(child: Text('No $_status orders'));
