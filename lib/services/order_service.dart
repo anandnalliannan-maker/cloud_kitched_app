@@ -38,4 +38,22 @@ class OrderService {
 
     await batch.commit();
   }
+
+  Future<void> createTestOrder() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('User not signed in');
+    }
+
+    await _ordersRef.add({
+      'customerId': user.uid,
+      'customerPhone': user.phoneNumber ?? 'Unknown',
+      'status': 'new',
+      'total': 250,
+      'items': [
+        {'name': 'Test Item', 'qty': 1, 'price': 250}
+      ],
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

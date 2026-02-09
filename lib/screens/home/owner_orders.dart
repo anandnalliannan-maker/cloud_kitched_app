@@ -87,6 +87,14 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
     );
   }
 
+  Future<void> _createTestOrder() async {
+    await _orderService.createTestOrder();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Test order created')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canAssign = _status == 'new' && _selectedOrderIds.isNotEmpty;
@@ -160,18 +168,28 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
             },
           ),
         ),
-        if (canAssign)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _openAssignSheet,
-                icon: const Icon(Icons.assignment_ind),
-                label: Text('Assign ${_selectedOrderIds.length} Order(s)'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _createTestOrder,
+                  icon: const Icon(Icons.bug_report),
+                  label: const Text('Test Order'),
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: canAssign ? _openAssignSheet : null,
+                  icon: const Icon(Icons.assignment_ind),
+                  label: Text('Assign (${_selectedOrderIds.length})'),
+                ),
+              ),
+            ],
           ),
+        ),
       ],
     );
   }
