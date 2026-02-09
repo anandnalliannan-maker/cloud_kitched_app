@@ -33,9 +33,26 @@ class UserService {
       await userRef.set({
         'role': role,
         'approved': approved,
+        'active': true,
         'phone': user.phoneNumber,
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchUsers() {
+    return _firestore.collection('users').snapshots();
+  }
+
+  Future<void> setApproved(String uid, bool approved) {
+    return _firestore.collection('users').doc(uid).update({
+      'approved': approved,
+    });
+  }
+
+  Future<void> setActive(String uid, bool active) {
+    return _firestore.collection('users').doc(uid).update({
+      'active': active,
+    });
   }
 }
