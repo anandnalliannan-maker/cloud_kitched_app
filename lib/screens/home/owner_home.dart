@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'owner_menu.dart';
-import 'owner_orders.dart';
 import 'owner_approvals.dart';
 import 'owner_delivery.dart';
+import 'owner_menu.dart';
+import 'owner_orders.dart';
+import 'owner_areas.dart';
 
 class OwnerHomeScreen extends StatefulWidget {
   const OwnerHomeScreen({super.key});
@@ -24,7 +25,6 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Owner')),
-      body: _pages[_index],
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -56,6 +56,16 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
                 );
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.place),
+              title: const Text('Set Area'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const OwnerAreasScreen()),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -73,6 +83,7 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
           ),
         ],
       ),
+      body: _pages[_index],
     );
   }
 }
