@@ -87,9 +87,9 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
           Center(
             child: Padding(
               padding: const EdgeInsets.only(right: 16),
-              child: ValueListenableBuilder(
-                valueListenable: _cart,
-                builder: (context, _, __) => Text('Total: INR ${_cart.total}'),
+              child: AnimatedBuilder(
+                animation: _cart,
+                builder: (context, _) => Text('Total: INR ${_cart.total}'),
               ),
             ),
           ),
@@ -142,12 +142,12 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: FilledButton.icon(
-            onPressed: _cart.items.isEmpty ? null : _placeOrder,
-            icon: const Icon(Icons.shopping_cart_checkout),
-            label: ValueListenableBuilder(
-              valueListenable: _cart,
-              builder: (context, _, __) => Text('Place Order (INR ${_cart.total})'),
+          child: AnimatedBuilder(
+            animation: _cart,
+            builder: (context, _) => FilledButton.icon(
+              onPressed: _cart.items.isEmpty ? null : _placeOrder,
+              icon: const Icon(Icons.shopping_cart_checkout),
+              label: Text('Place Order (INR ${_cart.total})'),
             ),
           ),
         ),

@@ -74,7 +74,7 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
                       deliveryUserId: doc.id,
                       deliveryPhone: phone,
                     );
-                    if (!mounted) return;
+                    if (!mounted || !context.mounted) return;
                     Navigator.of(context).pop();
                     setState(() => _selectedOrderIds.clear());
                   },
