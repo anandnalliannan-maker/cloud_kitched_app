@@ -44,6 +44,15 @@ class UserService {
     return _firestore.collection('users').snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchActiveDeliveryUsers() {
+    return _firestore
+        .collection('users')
+        .where('role', isEqualTo: 'delivery')
+        .where('approved', isEqualTo: true)
+        .where('active', isEqualTo: true)
+        .snapshots();
+  }
+
   Future<void> setApproved(String uid, bool approved) {
     return _firestore.collection('users').doc(uid).update({
       'approved': approved,
