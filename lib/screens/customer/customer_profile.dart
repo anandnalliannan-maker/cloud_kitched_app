@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../services/area_service.dart';
 import '../../services/profile_service.dart';
@@ -20,6 +21,9 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   final _streetController = TextEditingController();
   String? _selectedArea;
   bool _saving = false;
+  bool _locating = false;
+  double? _lat;
+  double? _lng;
 
   final _areaService = AreaService();
   final _profileService = ProfileService();
@@ -48,6 +52,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       apartment: _apartmentController.text.trim(),
       street: _streetController.text.trim(),
       area: _selectedArea ?? '',
+      latitude: _lat,
+      longitude: _lng,
     );
 
     if (mounted) {
@@ -55,6 +61,47 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile saved')),
       );
+    }
+  }
+
+  Future<void> _getLocation() async {
+    setState(() => _locating = true);
+
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied')),
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (mounted) {
+        setState(() {
+          _lat = position.latitude;
+          _lng = position.longitude;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to get location')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _locating = false);
+      }
     }
   }
 
@@ -145,6 +192,16 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   );
                 },
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _locating ? null : _getLocation,
+                icon: const Icon(Icons.my_location),
+                label: Text(_locating ? 'Getting location...' : 'Use current location'),
+              ),
+              if (_lat != null && _lng != null) ...[
+                const SizedBox(height: 8),
+                Text('Location: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}'),
+              ],
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

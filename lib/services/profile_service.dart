@@ -18,8 +18,10 @@ class ProfileService {
     required String apartment,
     required String street,
     required String area,
+    double? latitude,
+    double? longitude,
   }) {
-    return userRef(uid).update({
+    final data = <String, dynamic>{
       'name': name,
       'phone': phone,
       'address': {
@@ -30,6 +32,15 @@ class ProfileService {
       },
       'profileCompleted': true,
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (latitude != null && longitude != null) {
+      data['location'] = {
+        'lat': latitude,
+        'lng': longitude,
+      };
+    }
+
+    return userRef(uid).update(data);
   }
 }
