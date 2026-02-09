@@ -23,6 +23,8 @@ class CartModel extends ChangeNotifier {
 
   int get total => _items.values.fold(0, (sum, item) => sum + item.lineTotal);
 
+  int quantityFor(String id) => _items[id]?.quantity ?? 0;
+
   void addItem({
     required String id,
     required String name,
@@ -49,6 +51,12 @@ class CartModel extends ChangeNotifier {
       _items[id]!.quantity = quantity;
     }
     notifyListeners();
+  }
+
+  void decrement(String id) {
+    if (!_items.containsKey(id)) return;
+    final next = _items[id]!.quantity - 1;
+    updateQuantity(id, next);
   }
 
   void clear() {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/cart_model.dart';
 import '../../services/menu_service.dart';
 import '../../services/order_service.dart';
+import 'customer_profile.dart';
 
 class CustomerMenuScreen extends StatefulWidget {
   const CustomerMenuScreen({super.key});
@@ -57,25 +58,33 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
 
     final items = _cart.items
         .map((item) => {
+              'id': item.id,
               'name': item.name,
               'qty': item.quantity,
               'price': item.price,
             })
         .toList();
 
-    await _orderService.createOrder(
-      customerId: user.uid,
-      customerPhone: user.phoneNumber ?? 'Unknown',
-      items: items,
-      total: _cart.total,
-      deliveryType: deliveryType,
-    );
+    try {
+      await _orderService.createOrder(
+        customerId: user.uid,
+        customerPhone: user.phoneNumber ?? 'Unknown',
+        items: items,
+        total: _cart.total,
+        deliveryType: deliveryType,
+      );
 
-    if (!mounted) return;
-    _cart.clear();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Order placed')),
-    );
+      if (!mounted) return;
+      _cart.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order placed')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Some items are out of stock')),
+      );
+    }
   }
 
   @override
@@ -83,6 +92,14 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Menu'),
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CustomerProfileScreen()),
+            );
+          },
+        ),
         actions: [
           Center(
             child: Padding(
@@ -119,20 +136,37 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
               final name = data['name'] ?? '';
               final price = data['price'] ?? 0;
               final description = data['description'] ?? '';
-              final quantity = data['quantity'] ?? 0;
+              final available = data['quantity'] ?? 0;
+
+              final count = _cart.quantityFor(doc.id);
+              final soldOut = available <= 0;
+              final canAdd = !soldOut && count < available;
 
               return Card(
                 child: ListTile(
                   title: Text(name),
-                  subtitle: Text('INR $price | Qty: $quantity\n$description'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () => _cart.addItem(
-                      id: doc.id,
-                      name: name,
-                      price: price,
-                    ),
+                  subtitle: Text('INR $price\n$description'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: count > 0 ? () => _cart.decrement(doc.id) : null,
+                        icon: const Icon(Icons.remove_circle_outline),
+                      ),
+                      Text('$count'),
+                      IconButton(
+                        onPressed: canAdd
+                            ? () => _cart.addItem(
+                                  id: doc.id,
+                                  name: name,
+                                  price: price,
+                                )
+                            : null,
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ],
                   ),
+                  enabled: !soldOut,
                 ),
               );
             },
