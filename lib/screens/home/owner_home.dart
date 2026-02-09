@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'owner_approvals.dart';
 import 'owner_delivery.dart';
 import 'owner_menu.dart';
+import 'owner_orders.dart';
 
 class OwnerHomeScreen extends StatefulWidget {
   const OwnerHomeScreen({super.key});
@@ -18,6 +19,7 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
     const OwnerApprovalsScreen(),
     const OwnerDeliveryScreen(),
     const OwnerMenuScreen(),
+    const OwnerOrdersScreen(),
   ];
 
   @override
@@ -40,6 +42,10 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.restaurant_menu),
             label: 'Menu',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long),
+            label: 'Orders',
           ),
         ],
       ),
