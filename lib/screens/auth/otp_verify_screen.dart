@@ -60,28 +60,32 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
 
       if (!approved && widget.role != 'customer') {
         if (!mounted) return;
-        Navigator.of(context).pushReplacement(
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => PendingApprovalScreen(role: widget.role),
           ),
+          (_) => false,
         );
         return;
       }
 
       if (widget.role == 'owner') {
         if (!mounted) return;
-        Navigator.of(context).pushReplacement(
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const OwnerHomeScreen()),
+          (_) => false,
         );
       } else if (widget.role == 'delivery') {
         if (!mounted) return;
-        Navigator.of(context).pushReplacement(
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const DeliveryHomeScreen()),
+          (_) => false,
         );
       } else {
         if (!mounted) return;
-        Navigator.of(context).pushReplacement(
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const CustomerHomeScreen()),
+          (_) => false,
         );
       }
     } on FirebaseAuthException catch (e) {

@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../role_select_screen.dart';
 import 'owner_approvals.dart';
 import 'owner_delivery.dart';
 import 'owner_menu.dart';
@@ -21,13 +23,22 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
     OwnerOrdersScreen(),
   ];
 
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
+        (_) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Owner')),
       drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
           children: [
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.teal),
@@ -36,35 +47,48 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
                 style: TextStyle(color: Colors.white, fontSize: 18),
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.verified_user),
-              title: const Text('Approvals'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const OwnerApprovalsScreen()),
-                );
-              },
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.verified_user),
+                    title: const Text('Approvals'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const OwnerApprovalsScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.delivery_dining),
+                    title: const Text('Delivery'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const OwnerDeliveryScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.place),
+                    title: const Text('Set Area'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const OwnerAreasScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
+            const Divider(height: 1),
             ListTile(
-              leading: const Icon(Icons.delivery_dining),
-              title: const Text('Delivery'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const OwnerDeliveryScreen()),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.place),
-              title: const Text('Set Area'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const OwnerAreasScreen()),
-                );
-              },
+              leading: const Icon(Icons.logout),
+              title: const Text('Log out'),
+              onTap: _logout,
             ),
           ],
         ),
