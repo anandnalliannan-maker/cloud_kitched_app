@@ -29,10 +29,14 @@ class CartModel extends ChangeNotifier {
     required String id,
     required String name,
     required int price,
+    int? maxQuantity,
   }) {
     if (_items.containsKey(id)) {
-      _items[id]!.quantity += 1;
+      final next = _items[id]!.quantity + 1;
+      if (maxQuantity != null && next > maxQuantity) return;
+      _items[id]!.quantity = next;
     } else {
+      if (maxQuantity != null && maxQuantity < 1) return;
       _items[id] = CartItem(id: id, name: name, price: price, quantity: 1);
     }
     notifyListeners();

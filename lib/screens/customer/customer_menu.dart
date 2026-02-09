@@ -126,50 +126,55 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
             return const Center(child: Text('No items available'));
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: visible.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final doc = visible[index];
-              final data = doc.data();
-              final name = data['name'] ?? '';
-              final price = data['price'] ?? 0;
-              final description = data['description'] ?? '';
-              final available = data['quantity'] ?? 0;
+          return AnimatedBuilder(
+            animation: _cart,
+            builder: (context, _) => ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: visible.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final doc = visible[index];
+                final data = doc.data();
+                final name = data['name'] ?? '';
+                final price = data['price'] ?? 0;
+                final description = data['description'] ?? '';
+                final available = data['quantity'] ?? 0;
 
-              final count = _cart.quantityFor(doc.id);
-              final soldOut = available <= 0;
-              final canAdd = !soldOut && count < available;
+                final count = _cart.quantityFor(doc.id);
+                final soldOut = available <= 0;
+                final canAdd = !soldOut && count < available;
 
-              return Card(
-                child: ListTile(
-                  title: Text(name),
-                  subtitle: Text('INR $price\n$description'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        onPressed: count > 0 ? () => _cart.decrement(doc.id) : null,
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      Text('$count'),
-                      IconButton(
-                        onPressed: canAdd
-                            ? () => _cart.addItem(
-                                  id: doc.id,
-                                  name: name,
-                                  price: price,
-                                )
-                            : null,
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                    ],
+                return Card(
+                  child: ListTile(
+                    title: Text(name),
+                    subtitle: Text('INR $price\n$description'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed:
+                              count > 0 ? () => _cart.decrement(doc.id) : null,
+                          icon: const Icon(Icons.remove_circle_outline),
+                        ),
+                        Text('$count'),
+                        IconButton(
+                          onPressed: canAdd
+                              ? () => _cart.addItem(
+                                    id: doc.id,
+                                    name: name,
+                                    price: price,
+                                    maxQuantity: available,
+                                  )
+                              : null,
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
+                      ],
+                    ),
+                    enabled: !soldOut,
                   ),
-                  enabled: !soldOut,
-                ),
-              );
-            },
+                );
+              },
+            ),
           );
         },
       ),
