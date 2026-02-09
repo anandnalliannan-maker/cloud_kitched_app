@@ -53,13 +53,13 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
         approved: isCustomer,
       );
 
-      if (!mounted) return;
-
       final userDoc = await _userService.getCurrentUserDoc();
+      if (!mounted) return;
       final data = userDoc.data() ?? {};
       final approved = data['approved'] == true;
 
       if (!approved && widget.role != 'customer') {
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => PendingApprovalScreen(role: widget.role),
@@ -69,22 +69,29 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
       }
 
       if (widget.role == 'owner') {
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const OwnerHomeScreen()),
         );
       } else if (widget.role == 'delivery') {
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const DeliveryHomeScreen()),
         );
       } else {
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const CustomerHomeScreen()),
         );
       }
     } on FirebaseAuthException catch (e) {
-      setState(() => _error = e.message ?? 'Verification failed');
+      if (mounted) {
+        setState(() => _error = e.message ?? 'Verification failed');
+      }
     } catch (e) {
-      setState(() => _error = 'Verification failed');
+      if (mounted) {
+        setState(() => _error = 'Verification failed');
+      }
     } finally {
       if (mounted) {
         setState(() => _loading = false);

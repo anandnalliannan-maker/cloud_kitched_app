@@ -38,7 +38,7 @@ class OwnerMenuScreen extends StatelessWidget {
                     return Card(
                       child: ListTile(
                         title: Text(name),
-                        subtitle: Text('?$price • Qty: $quantity'),
+                        subtitle: Text('INR $price | Qty: $quantity'),
                         trailing: Switch(
                           value: enabled,
                           onChanged: (value) =>

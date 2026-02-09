@@ -14,10 +14,10 @@ class OwnerHomeScreen extends StatefulWidget {
 class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
   int _index = 0;
 
-  final _pages = const [
-    OwnerApprovalsScreen(),
-    OwnerDeliveryScreen(),
-    OwnerMenuScreen(),
+  final _pages = [
+    const OwnerApprovalsScreen(),
+    const OwnerDeliveryScreen(),
+    const OwnerMenuScreen(),
   ];
 
   @override
