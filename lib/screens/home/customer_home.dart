@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../customer/customer_menu.dart';
 import '../customer/customer_profile.dart';
 
 class CustomerHomeScreen extends StatelessWidget {
@@ -9,7 +10,7 @@ class CustomerHomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Customer')),
-      body: const Center(child: Text('Customer Home')),
+      body: const CustomerMenuScreen(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.of(context).push(

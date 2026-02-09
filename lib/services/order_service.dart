@@ -13,9 +13,7 @@ class OrderService {
       _firestore.collection('orders');
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersByStatus(String status) {
-    return _ordersRef
-        .where('status', isEqualTo: status)
-        .snapshots();
+    return _ordersRef.where('status', isEqualTo: status).snapshots();
   }
 
   Future<void> assignOrders({
@@ -36,5 +34,23 @@ class OrderService {
     }
 
     await batch.commit();
+  }
+
+  Future<void> createOrder({
+    required String customerId,
+    required String customerPhone,
+    required List<Map<String, dynamic>> items,
+    required int total,
+    required String deliveryType,
+  }) async {
+    await _ordersRef.add({
+      'customerId': customerId,
+      'customerPhone': customerPhone,
+      'items': items,
+      'total': total,
+      'deliveryType': deliveryType,
+      'status': 'new',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 }
