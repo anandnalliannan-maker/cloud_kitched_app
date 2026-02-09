@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'auth/phone_input_screen.dart';
 
 enum UserRole { owner, delivery, customer }
 
@@ -14,10 +15,17 @@ class _RoleSelectScreenState extends State<RoleSelectScreen> {
 
   void _continue() {
     if (selectedRole == null) return;
-    final roleName = selectedRole!.name;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Selected role: $roleName')),
+    final role = selectedRole == UserRole.owner
+        ? 'owner'
+        : selectedRole == UserRole.delivery
+            ? 'delivery'
+            : 'customer';
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PhoneInputScreen(role: role),
+      ),
     );
   }
 

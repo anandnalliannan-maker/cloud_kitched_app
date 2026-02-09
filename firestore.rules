@@ -47,7 +47,12 @@ service cloud.firestore {
       allow read: if isSelf(uid) || isOwner();
       allow create: if isSelf(uid)
         && request.resource.data.role in ['customer', 'owner', 'delivery']
-        && request.resource.data.approved == false;
+        && (
+          (request.resource.data.role == 'customer'
+            && request.resource.data.approved == true)
+          || (request.resource.data.role != 'customer'
+            && request.resource.data.approved == false)
+        );
       allow update: if isSelf(uid) || isOwner();
       allow delete: if isOwner();
     }
