@@ -93,7 +93,7 @@ class _RoleTile extends StatelessWidget {
               width: selected ? 2 : 1,
             ),
             color: selected
-                ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
                 : Colors.white,
           ),
           child: Row(
