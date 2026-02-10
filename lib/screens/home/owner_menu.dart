@@ -16,6 +16,7 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
   final _menuService = MenuService();
   final _publishedService = PublishedMenuService();
   final Set<String> _selected = {};
+  String _query = '';
 
   Future<void> _openPublishDialog(List<QueryDocumentSnapshot<Map<String, dynamic>>> items) async {
     if (_selected.isEmpty) return;
@@ -119,6 +120,7 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
         'id': doc.id,
         'name': data['name'] ?? '',
         'price': data['price'] ?? 0,
+        'description': data['description'] ?? '',
         'qty': qty,
       });
     }
@@ -138,6 +140,16 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
     );
   }
 
+  void _toggleSelected(String id) {
+    setState(() {
+      if (_selected.contains(id)) {
+        _selected.remove(id);
+      } else {
+        _selected.add(id);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -148,65 +160,92 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
         }
 
         final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
+        final filtered = docs.where((doc) {
+          if (_query.isEmpty) return true;
+          final name = (doc.data()['name'] ?? '').toString().toLowerCase();
+          return name.contains(_query);
+        }).toList();
+
+        if (filtered.isEmpty) {
           return const Center(child: Text('No menu items yet'));
         }
 
         return Scaffold(
-          body: ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final doc = docs[index];
-              final data = doc.data();
-              final name = data['name'] ?? '';
-              final price = data['price'] ?? 0;
-              final description = data['description'] ?? '';
-              final checked = _selected.contains(doc.id);
-
-              return Card(
-                child: ListTile(
-                  title: Text(name),
-                  subtitle: Text('INR $price\n$description'),
-                  leading: Checkbox(
-                    value: checked,
-                    onChanged: (value) {
-                      setState(() {
-                        if (value == true) {
-                          _selected.add(doc.id);
-                        } else {
-                          _selected.remove(doc.id);
-                        }
-                      });
-                    },
+          body: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: TextField(
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Search menu items',
+                    border: OutlineInputBorder(),
                   ),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => MenuFormScreen(
-                          initialName: name,
-                          initialDescription: description,
-                          initialPrice: price,
-                          onSubmit: ({
-                            required String name,
-                            required String description,
-                            required int price,
-                          }) {
-                            return _menuService.updateMenuItem(
-                              doc.id,
-                              name: name,
-                              description: description,
-                              price: price,
-                            );
-                          },
+                  onChanged: (value) => setState(() => _query = value.toLowerCase()),
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final doc = filtered[index];
+                    final data = doc.data();
+                    final name = data['name'] ?? '';
+                    final price = data['price'] ?? 0;
+                    final description = data['description'] ?? '';
+                    final checked = _selected.contains(doc.id);
+
+                    return Card(
+                      child: ListTile(
+                        title: Text(name),
+                        subtitle: Text('INR $price\n$description'),
+                        leading: Checkbox(
+                          value: checked,
+                          onChanged: (_) => _toggleSelected(doc.id),
                         ),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (value) {
+                            if (value == 'edit') {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => MenuFormScreen(
+                                    initialName: name,
+                                    initialDescription: description,
+                                    initialPrice: price,
+                                    onSubmit: ({
+                                      required String name,
+                                      required String description,
+                                      required int price,
+                                    }) {
+                                      return _menuService.updateMenuItem(
+                                        doc.id,
+                                        name: name,
+                                        description: description,
+                                        price: price,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              );
+                            }
+                            if (value == 'delete') {
+                              _menuService.deleteMenuItem(doc.id);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                            PopupMenuItem(value: 'delete', child: Text('Delete')),
+                          ],
+                        ),
+                        onTap: () => _toggleSelected(doc.id),
                       ),
                     );
                   },
                 ),
-              );
-            },
+              ),
+            ],
           ),
           floatingActionButton: FloatingActionButton(
             onPressed: () {

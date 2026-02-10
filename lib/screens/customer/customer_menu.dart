@@ -89,6 +89,7 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
                               final item = doc.data();
                               final name = item['name'] ?? '';
                               final price = item['price'] ?? 0;
+                              final description = item['description'] ?? '';
                               final available = item['qty'] ?? 0;
 
                               final key = '${menuDoc.id}:${doc.id}';
@@ -99,7 +100,7 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
                               return ListTile(
                                 contentPadding: EdgeInsets.zero,
                                 title: Text(name),
-                                subtitle: Text('INR $price'),
+                                subtitle: Text('INR $price\n$description'),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [

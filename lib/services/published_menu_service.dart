@@ -47,6 +47,7 @@ class PublishedMenuService {
         'name': item['name'],
         'price': item['price'],
         'qty': item['qty'],
+        'description': item['description'],
       });
     }
 
