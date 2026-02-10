@@ -45,12 +45,27 @@ class OrderService {
     required String deliveryType,
   }) async {
     await _firestore.runTransaction((tx) async {
+      if (items.isEmpty) {
+        throw StateError('Cart is empty');
+      }
+
+      final docRefs = <DocumentReference<Map<String, dynamic>>>[];
+      final quantities = <String, int>{};
+
       for (final item in items) {
         final id = item['id'] as String;
         final qty = item['qty'] as int;
-
         final docRef = _menuService.menuRef.doc(id);
-        final snap = await tx.get(docRef);
+        docRefs.add(docRef);
+        quantities[id] = qty;
+      }
+
+      final snapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
+      for (final ref in docRefs) {
+        snapshots.add(await tx.get(ref));
+      }
+
+      for (final snap in snapshots) {
         if (!snap.exists) {
           throw StateError('Menu item not found');
         }
@@ -59,12 +74,14 @@ class OrderService {
         final enabled = data['enabled'] == true;
         final available = (data['quantity'] ?? 0) as int;
         final name = (data['name'] ?? 'Item') as String;
+        final id = snap.id;
+        final qty = quantities[id] ?? 0;
 
         if (!enabled || available < qty) {
           throw StateError('Item out of stock: $name');
         }
 
-        tx.update(docRef, {
+        tx.update(snap.reference, {
           'quantity': available - qty,
           'updatedAt': FieldValue.serverTimestamp(),
         });
