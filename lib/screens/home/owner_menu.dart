@@ -81,13 +81,27 @@ class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
                     for (final doc in selectedItems)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: TextField(
-                          controller: qtyControllers[doc.id],
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: doc.data()['name'] ?? doc.id,
-                            border: const OutlineInputBorder(),
-                          ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                (doc.data()['name'] ?? doc.id).toString(),
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 100,
+                              child: TextField(
+                                controller: qtyControllers[doc.id],
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'Qty',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
