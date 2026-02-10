@@ -7,6 +7,7 @@ import 'owner_delivery.dart';
 import 'owner_menu.dart';
 import 'owner_orders.dart';
 import 'owner_areas.dart';
+import 'owner_published_menus.dart';
 
 class OwnerHomeScreen extends StatefulWidget {
   const OwnerHomeScreen({super.key});
@@ -78,6 +79,16 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
                       Navigator.of(context).pop();
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const OwnerAreasScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.event_note),
+                    title: const Text('Published Menus'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const OwnerPublishedMenusScreen()),
                       );
                     },
                   ),

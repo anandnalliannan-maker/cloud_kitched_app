@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'menu_service.dart';
+
 class OrderService {
   OrderService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -11,6 +13,10 @@ class OrderService {
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersByStatus(String status) {
     return _ordersRef.where('status', isEqualTo: status).snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersByMenu(String menuId) {
+    return _ordersRef.where('publishedMenuId', isEqualTo: menuId).snapshots();
   }
 
   Future<void> assignOrders({

@@ -54,6 +54,49 @@ class PublishedMenuService {
     await batch.commit();
   }
 
+  Future<void> updatePublishedMenu({
+    required String menuId,
+    required DateTime date,
+    required String meal,
+  }) {
+    return _menusRef.doc(menuId).update({
+      'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
+      'meal': meal,
+      'mealOrder': _mealOrder(meal),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> updatePublishedItem({
+    required String menuId,
+    required String itemId,
+    required int qty,
+    required int price,
+  }) {
+    return _menusRef.doc(menuId).collection('items').doc(itemId).update({
+      'qty': qty,
+      'price': price,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> deletePublishedItem({
+    required String menuId,
+    required String itemId,
+  }) {
+    return _menusRef.doc(menuId).collection('items').doc(itemId).delete();
+  }
+
+  Future<void> deletePublishedMenu(String menuId) async {
+    final items = await _menusRef.doc(menuId).collection('items').get();
+    final batch = _firestore.batch();
+    for (final doc in items.docs) {
+      batch.delete(doc.reference);
+    }
+    batch.delete(_menusRef.doc(menuId));
+    await batch.commit();
+  }
+
   int _mealOrder(String meal) {
     switch (meal) {
       case 'breakfast':
