@@ -11,76 +11,81 @@ class OwnerPublishedMenusScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final service = PublishedMenuService();
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: service.watchPublishedMenus(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return Scaffold(
+      appBar: AppBar(title: const Text('Published Menus')),
+      body: SafeArea(
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: service.watchPublishedMenus(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        final menus = (snapshot.data?.docs ?? []).toList()
-          ..sort((a, b) {
-            final aDate = (a.data()['date'] as Timestamp?)?.toDate();
-            final bDate = (b.data()['date'] as Timestamp?)?.toDate();
-            final dateCompare = (aDate ?? DateTime(2100))
-                .compareTo(bDate ?? DateTime(2100));
-            if (dateCompare != 0) return dateCompare;
-            final aOrder = (a.data()['mealOrder'] ?? 99) as int;
-            final bOrder = (b.data()['mealOrder'] ?? 99) as int;
-            return aOrder.compareTo(bOrder);
-          });
+            final menus = (snapshot.data?.docs ?? []).toList()
+              ..sort((a, b) {
+                final aDate = (a.data()['date'] as Timestamp?)?.toDate();
+                final bDate = (b.data()['date'] as Timestamp?)?.toDate();
+                final dateCompare = (aDate ?? DateTime(2100))
+                    .compareTo(bDate ?? DateTime(2100));
+                if (dateCompare != 0) return dateCompare;
+                final aOrder = (a.data()['mealOrder'] ?? 99) as int;
+                final bOrder = (b.data()['mealOrder'] ?? 99) as int;
+                return aOrder.compareTo(bOrder);
+              });
 
-        if (menus.isEmpty) {
-          return const Center(child: Text('No published menus yet'));
-        }
+            if (menus.isEmpty) {
+              return const Center(child: Text('No published menus yet'));
+            }
 
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: menus.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 16),
-          itemBuilder: (context, index) {
-            final menuDoc = menus[index];
-            final data = menuDoc.data();
-            final ts = data['date'] as Timestamp?;
-            final date = ts?.toDate();
-            final meal = (data['meal'] ?? '').toString();
-            final header = date == null
-                ? _mealLabel(meal)
-                : '${date.toLocal().toString().split(' ')[0]} | ${_mealLabel(meal)}';
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: menus.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 16),
+              itemBuilder: (context, index) {
+                final menuDoc = menus[index];
+                final data = menuDoc.data();
+                final ts = data['date'] as Timestamp?;
+                final date = ts?.toDate();
+                final meal = (data['meal'] ?? '').toString();
+                final header = date == null
+                    ? _mealLabel(meal)
+                    : '${date.toLocal().toString().split(' ')[0]} | ${_mealLabel(meal)}';
 
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            header,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                header,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_calendar),
+                              onPressed: () => _editMenu(context, menuDoc),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => service.deletePublishedMenu(menuDoc.id),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.edit_calendar),
-                          onPressed: () => _editMenu(context, menuDoc),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => service.deletePublishedMenu(menuDoc.id),
-                        ),
+                        const SizedBox(height: 8),
+                        _MenuItemsList(menuId: menuDoc.id),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    _MenuItemsList(menuId: menuDoc.id),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 

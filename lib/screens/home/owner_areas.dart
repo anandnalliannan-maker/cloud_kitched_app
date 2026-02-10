@@ -10,45 +10,48 @@ class OwnerAreasScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final areaService = AreaService();
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: areaService.watchAreas(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return Scaffold(
+      appBar: AppBar(title: const Text('Set Area')),
+      body: SafeArea(
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: areaService.watchAreas(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        final docs = snapshot.data?.docs ?? [];
+            final docs = snapshot.data?.docs ?? [];
 
-        return Scaffold(
-          body: docs.isEmpty
-              ? const Center(child: Text('No service areas yet'))
-              : ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: docs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data();
-                    final name = data['name'] ?? '';
+            return docs.isEmpty
+                ? const Center(child: Text('No service areas yet'))
+                : ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: docs.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final doc = docs[index];
+                      final data = doc.data();
+                      final name = data['name'] ?? '';
 
-                    return Card(
-                      child: ListTile(
-                        title: Text(name),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => areaService.deleteArea(doc.id),
+                      return Card(
+                        child: ListTile(
+                          title: Text(name),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => areaService.deleteArea(doc.id),
+                          ),
+                          onTap: () => _showEditDialog(context, areaService, doc.id, name),
                         ),
-                        onTap: () => _showEditDialog(context, areaService, doc.id, name),
-                      ),
-                    );
-                  },
-                ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => _showAddDialog(context, areaService),
-            child: const Icon(Icons.add),
-          ),
-        );
-      },
+                      );
+                    },
+                  );
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(context, areaService),
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
