@@ -6,24 +6,18 @@ class MenuFormScreen extends StatefulWidget {
     required this.onSubmit,
     this.initialName,
     this.initialDescription,
-    this.initialQuantity,
     this.initialPrice,
-    this.initialEnabled,
   });
 
   final Future<void> Function({
     required String name,
     required String description,
-    required int quantity,
     required int price,
-    required bool enabled,
   }) onSubmit;
 
   final String? initialName;
   final String? initialDescription;
-  final int? initialQuantity;
   final int? initialPrice;
-  final bool? initialEnabled;
 
   @override
   State<MenuFormScreen> createState() => _MenuFormScreenState();
@@ -33,9 +27,7 @@ class _MenuFormScreenState extends State<MenuFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
-  final _qtyController = TextEditingController();
   final _priceController = TextEditingController();
-  bool _enabled = true;
   bool _saving = false;
 
   @override
@@ -43,16 +35,13 @@ class _MenuFormScreenState extends State<MenuFormScreen> {
     super.initState();
     _nameController.text = widget.initialName ?? '';
     _descController.text = widget.initialDescription ?? '';
-    _qtyController.text = widget.initialQuantity?.toString() ?? '';
     _priceController.text = widget.initialPrice?.toString() ?? '';
-    _enabled = widget.initialEnabled ?? true;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
-    _qtyController.dispose();
     _priceController.dispose();
     super.dispose();
   }
@@ -64,9 +53,7 @@ class _MenuFormScreenState extends State<MenuFormScreen> {
     await widget.onSubmit(
       name: _nameController.text.trim(),
       description: _descController.text.trim(),
-      quantity: int.parse(_qtyController.text.trim()),
       price: int.parse(_priceController.text.trim()),
-      enabled: _enabled,
     );
     if (mounted) {
       Navigator.of(context).pop();
@@ -105,20 +92,6 @@ class _MenuFormScreenState extends State<MenuFormScreen> {
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _qtyController,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity available',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  final qty = int.tryParse(value ?? '');
-                  if (qty == null || qty < 0) return 'Enter valid quantity';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
                 controller: _priceController,
                 decoration: const InputDecoration(
                   labelText: 'Price (INR)',
@@ -130,12 +103,6 @@ class _MenuFormScreenState extends State<MenuFormScreen> {
                   if (price == null || price <= 0) return 'Enter valid price';
                   return null;
                 },
-              ),
-              const SizedBox(height: 12),
-              SwitchListTile(
-                value: _enabled,
-                onChanged: (value) => setState(() => _enabled = value),
-                title: const Text('Enabled'),
               ),
               const SizedBox(height: 24),
               SizedBox(

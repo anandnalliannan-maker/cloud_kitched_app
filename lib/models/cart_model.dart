@@ -18,6 +18,7 @@ class CartItem {
 
 class CartModel extends ChangeNotifier {
   final Map<String, CartItem> _items = {};
+  String? _menuId;
 
   List<CartItem> get items => _items.values.toList();
 
@@ -31,6 +32,14 @@ class CartModel extends ChangeNotifier {
     required int price,
     int? maxQuantity,
   }) {
+    final menuId = id.contains(':') ? id.split(':').first : null;
+    if (_menuId != null && menuId != null && _menuId != menuId) {
+      _items.clear();
+      _menuId = menuId;
+    } else if (_menuId == null) {
+      _menuId = menuId;
+    }
+
     if (_items.containsKey(id)) {
       final next = _items[id]!.quantity + 1;
       if (maxQuantity != null && next > maxQuantity) return;
@@ -65,6 +74,7 @@ class CartModel extends ChangeNotifier {
 
   void clear() {
     _items.clear();
+    _menuId = null;
     notifyListeners();
   }
 }

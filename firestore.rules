@@ -59,13 +59,23 @@ service cloud.firestore {
 
     match /menu_items/{itemId} {
       allow read: if true;
-      allow create, delete: if isOwner();
-      allow update: if isOwner() || (isCustomer()
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['quantity', 'updatedAt'])
-        && request.resource.data.quantity is int
-        && request.resource.data.quantity >= 0
-        && request.resource.data.quantity <= resource.data.quantity);
+      allow create, update, delete: if isOwner();
+    }
+
+    match /published_menus/{menuId} {
+      allow read: if true;
+      allow create, update, delete: if isOwner();
+
+      match /items/{itemId} {
+        allow read: if true;
+        allow create, update, delete: if isOwner();
+        allow update: if isCustomer()
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['qty'])
+          && request.resource.data.qty is int
+          && request.resource.data.qty >= 0
+          && request.resource.data.qty <= resource.data.qty;
+      }
     }
 
     match /orders/{orderId} {

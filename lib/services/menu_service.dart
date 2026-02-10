@@ -16,16 +16,12 @@ class MenuService {
   Future<void> addMenuItem({
     required String name,
     required String description,
-    required int quantity,
     required int price,
-    required bool enabled,
   }) async {
     await menuRef.add({
       'name': name,
       'description': description,
-      'quantity': quantity,
       'price': price,
-      'enabled': enabled,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -34,23 +30,12 @@ class MenuService {
     String id, {
     required String name,
     required String description,
-    required int quantity,
     required int price,
-    required bool enabled,
   }) {
     return menuRef.doc(id).update({
       'name': name,
       'description': description,
-      'quantity': quantity,
       'price': price,
-      'enabled': enabled,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  Future<void> toggleEnabled(String id, bool enabled) {
-    return menuRef.doc(id).update({
-      'enabled': enabled,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

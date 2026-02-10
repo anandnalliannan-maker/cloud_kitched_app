@@ -1,14 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'menu_service.dart';
-
 class OrderService {
-  OrderService({FirebaseFirestore? firestore, MenuService? menuService})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _menuService = menuService ?? MenuService();
+  OrderService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
-  final MenuService _menuService;
 
   CollectionReference<Map<String, dynamic>> get _ordersRef =>
       _firestore.collection('orders');
@@ -44,24 +40,39 @@ class OrderService {
     required int total,
     required String deliveryType,
   }) async {
+    if (items.isEmpty) {
+      throw StateError('Cart is empty');
+    }
+
+    final menuId = _extractMenuId(items.first['id'] as String);
+    for (final item in items) {
+      final id = item['id'] as String;
+      if (_extractMenuId(id) != menuId) {
+        throw StateError('Please order from one menu at a time');
+      }
+    }
+
     await _firestore.runTransaction((tx) async {
-      if (items.isEmpty) {
-        throw StateError('Cart is empty');
+      final menuRef = _firestore.collection('published_menus').doc(menuId);
+      final menuSnap = await tx.get(menuRef);
+      if (!menuSnap.exists) {
+        throw StateError('Menu not found');
       }
 
-      final docRefs = <DocumentReference<Map<String, dynamic>>>[];
+      final itemRefs = <DocumentReference<Map<String, dynamic>>>[];
       final quantities = <String, int>{};
 
       for (final item in items) {
         final id = item['id'] as String;
+        final itemId = _extractItemId(id);
         final qty = item['qty'] as int;
-        final docRef = _menuService.menuRef.doc(id);
-        docRefs.add(docRef);
-        quantities[id] = qty;
+        final itemRef = menuRef.collection('items').doc(itemId);
+        itemRefs.add(itemRef);
+        quantities[itemId] = qty;
       }
 
       final snapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
-      for (final ref in docRefs) {
+      for (final ref in itemRefs) {
         snapshots.add(await tx.get(ref));
       }
 
@@ -71,19 +82,17 @@ class OrderService {
         }
 
         final data = snap.data() as Map<String, dynamic>;
-        final enabled = data['enabled'] == true;
-        final available = (data['quantity'] ?? 0) as int;
+        final available = (data['qty'] ?? 0) as int;
         final name = (data['name'] ?? 'Item') as String;
-        final id = snap.id;
-        final qty = quantities[id] ?? 0;
+        final itemId = snap.id;
+        final qty = quantities[itemId] ?? 0;
 
-        if (!enabled || available < qty) {
+        if (available < qty) {
           throw StateError('Item out of stock: $name');
         }
 
         tx.update(snap.reference, {
-          'quantity': available - qty,
-          'updatedAt': FieldValue.serverTimestamp(),
+          'qty': available - qty,
         });
       }
 
@@ -94,8 +103,19 @@ class OrderService {
         'total': total,
         'deliveryType': deliveryType,
         'status': 'new',
+        'publishedMenuId': menuId,
         'createdAt': FieldValue.serverTimestamp(),
       });
     });
+  }
+
+  String _extractMenuId(String compositeId) {
+    final parts = compositeId.split(':');
+    return parts.first;
+  }
+
+  String _extractItemId(String compositeId) {
+    final parts = compositeId.split(':');
+    return parts.length > 1 ? parts[1] : compositeId;
   }
 }
