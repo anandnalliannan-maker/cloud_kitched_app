@@ -3,7 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/cart_model.dart';
+import '../../services/address_service.dart';
 import '../../services/order_service.dart';
+import '../customer/customer_add_address.dart';
+import '../customer/customer_addresses.dart';
 import '../customer/customer_menu.dart';
 import '../customer/customer_orders.dart';
 import '../customer/customer_profile.dart';
@@ -19,6 +22,7 @@ class CustomerHomeScreen extends StatefulWidget {
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   final _cart = CartModel();
   final _orderService = OrderService();
+  final _addressService = AddressService();
 
   @override
   void dispose() {
@@ -67,6 +71,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
 
     if (deliveryType == null) return;
 
+    Map<String, dynamic>? selectedAddress;
+    if (deliveryType == 'delivery') {
+      selectedAddress = await _selectDeliveryAddress(user.uid);
+      if (selectedAddress == null) return;
+    }
+
     final items = _cart.items
         .map((item) => {
               'id': item.id,
@@ -83,6 +93,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         items: items,
         total: _cart.total,
         deliveryType: deliveryType,
+        deliveryAddress: selectedAddress,
       );
 
       if (!mounted) return;
@@ -97,6 +108,164 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         SnackBar(content: Text('Order failed: $msg')),
       );
     }
+  }
+
+  Future<Map<String, dynamic>?> _selectDeliveryAddress(String uid) async {
+    String? selectedId = await _addressService.getDefaultAddressId(uid);
+    if (!mounted) return null;
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> cachedDocs = const [];
+
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateSheet) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _addressService.watchAddresses(uid),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SizedBox(
+                        height: 240,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+
+                    final docs = snapshot.data?.docs ?? [];
+                    cachedDocs = docs;
+
+                    if (docs.isEmpty) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('No saved address. Add one to continue.'),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: () async {
+                              final created = await Navigator.of(context).push<bool>(
+                                MaterialPageRoute(
+                                  builder: (_) => const CustomerAddAddressScreen(),
+                                ),
+                              );
+                              if (created == true) {
+                                setStateSheet(() {});
+                              }
+                            },
+                            icon: const Icon(Icons.add_location_alt),
+                            label: const Text('Add Address'),
+                          ),
+                        ],
+                      );
+                    }
+
+                    selectedId ??= docs.first.id;
+                    if (!docs.any((d) => d.id == selectedId)) {
+                      selectedId = docs.first.id;
+                    }
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select delivery address',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: docs.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final doc = docs[index];
+                              final data = doc.data();
+                              final subtitle = _formatAddress(data);
+                              return RadioListTile<String>(
+                                value: doc.id,
+                                groupValue: selectedId,
+                                onChanged: (value) =>
+                                    setStateSheet(() => selectedId = value),
+                                title: Text((data['name'] ?? 'Address').toString()),
+                                subtitle: Text(subtitle),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                if (docs.length >= 5) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('You can save up to 5 addresses'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final created =
+                                    await Navigator.of(context).push<bool>(
+                                  MaterialPageRoute(
+                                    builder: (_) => const CustomerAddAddressScreen(),
+                                  ),
+                                );
+                                if (created == true) {
+                                  setStateSheet(() {});
+                                }
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add Address'),
+                            ),
+                            const Spacer(),
+                            FilledButton(
+                              onPressed: selectedId == null
+                                  ? null
+                                  : () {
+                                      final selected = cachedDocs.firstWhere(
+                                        (doc) => doc.id == selectedId,
+                                      );
+                                      final data = selected.data();
+                                      Navigator.of(context).pop({
+                                        'id': selected.id,
+                                        ...data,
+                                      });
+                                    },
+                              child: const Text('Use Address'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    return result;
+  }
+
+  String _formatAddress(Map<String, dynamic> data) {
+    final flat = (data['flat'] ?? '').toString();
+    final apartment = (data['apartment'] ?? '').toString();
+    final street = (data['street'] ?? '').toString();
+    final area = (data['area'] ?? '').toString();
+    final parts = <String>[
+      if (flat.isNotEmpty) flat,
+      if (apartment.isNotEmpty) apartment,
+      if (street.isNotEmpty) street,
+      if (area.isNotEmpty) area,
+    ];
+    return parts.join(', ');
   }
 
   @override
@@ -153,6 +322,18 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const CustomerOrdersScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.location_on),
+                    title: const Text('Add Address'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CustomerAddressesScreen(),
                         ),
                       );
                     },

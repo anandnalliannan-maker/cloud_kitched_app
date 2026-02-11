@@ -90,6 +90,8 @@ class _OrdersList extends StatelessWidget {
             final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
             final items = (data['items'] as List<dynamic>? ?? [])
                 .cast<Map<String, dynamic>>();
+            final deliveryAddress =
+                (data['deliveryAddress'] as Map<String, dynamic>?);
 
             final itemSummary = items.isEmpty
                 ? 'No items'
@@ -103,11 +105,12 @@ class _OrdersList extends StatelessWidget {
 
             return Card(
               child: ListTile(
-                title: Text('INR $total • ${_statusLabel(status)}'),
+                title: Text('INR $total | ${_statusLabel(status)}'),
                 subtitle: Text(
                   '$itemSummary\n'
                   '${_deliveryLabel(deliveryType)}'
-                  '${createdAt == null ? '' : ' • ${_formatDate(createdAt)}'}',
+                  '${createdAt == null ? '' : ' | ${_formatDate(createdAt)}'}'
+                  '${_addressLine(deliveryType, deliveryAddress)}',
                 ),
                 isThreeLine: true,
               ),
@@ -148,4 +151,24 @@ class _OrdersList extends StatelessWidget {
     final mm = local.minute.toString().padLeft(2, '0');
     return '$y-$m-$d $hh:$mm';
   }
+
+  String _addressLine(
+    String deliveryType,
+    Map<String, dynamic>? deliveryAddress,
+  ) {
+    if (deliveryType != 'delivery' || deliveryAddress == null) return '';
+    final flat = (deliveryAddress['flat'] ?? '').toString();
+    final apartment = (deliveryAddress['apartment'] ?? '').toString();
+    final street = (deliveryAddress['street'] ?? '').toString();
+    final area = (deliveryAddress['area'] ?? '').toString();
+    final parts = <String>[
+      if (flat.isNotEmpty) flat,
+      if (apartment.isNotEmpty) apartment,
+      if (street.isNotEmpty) street,
+      if (area.isNotEmpty) area,
+    ];
+    if (parts.isEmpty) return '';
+    return '\nAddress: ${parts.join(', ')}';
+  }
 }
+

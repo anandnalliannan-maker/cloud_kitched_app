@@ -53,8 +53,8 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
             final meal = (data['meal'] ?? '').toString();
 
             final header = date == null
-                ? meal
-                : '${date.toLocal().toString().split(' ')[0]} | ${_mealLabel(meal)}';
+                ? _mealLabel(meal).toUpperCase()
+                : '${_formatDate(date)} - ${_mealLabel(meal).toUpperCase()}';
 
             return Card(
               child: Padding(
@@ -62,9 +62,23 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      header,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        header,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -152,6 +166,46 @@ class _CustomerMenuScreenState extends State<CustomerMenuScreen> {
         return 'Dinner';
       default:
         return meal;
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final local = date.toLocal();
+    final day = local.day;
+    final month = _monthShort(local.month);
+    final year = local.year;
+    return '$day${_ordinal(day)} $month $year';
+  }
+
+  String _monthShort(int month) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
+  }
+
+  String _ordinal(int day) {
+    if (day >= 11 && day <= 13) return 'th';
+    switch (day % 10) {
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
     }
   }
 }

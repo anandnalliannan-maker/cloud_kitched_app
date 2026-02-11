@@ -106,6 +106,7 @@ class OwnerPublishedMenusScreen extends StatelessWidget {
       initialDate: initialDate,
     );
     if (date == null) return;
+    if (!context.mounted) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -162,6 +163,7 @@ class OwnerPublishedMenusScreen extends StatelessWidget {
     );
 
     if (confirmed != true) return;
+    if (!context.mounted) return;
 
     await service.updatePublishedMenu(
       menuId: menuDoc.id,

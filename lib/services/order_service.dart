@@ -54,6 +54,7 @@ class OrderService {
     required List<Map<String, dynamic>> items,
     required int total,
     required String deliveryType,
+    Map<String, dynamic>? deliveryAddress,
   }) async {
     if (items.isEmpty) {
       throw StateError('Cart is empty');
@@ -123,6 +124,7 @@ class OrderService {
         'items': items,
         'total': total,
         'deliveryType': deliveryType,
+        if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
         'status': 'new',
         'publishedMenuId': menuId,
         'createdAt': FieldValue.serverTimestamp(),

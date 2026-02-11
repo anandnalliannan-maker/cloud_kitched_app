@@ -55,6 +55,10 @@ service cloud.firestore {
         );
       allow update: if isSelf(uid) || isOwner();
       allow delete: if isOwner();
+
+      match /addresses/{addressId} {
+        allow read, create, update, delete: if isSelf(uid) || isOwner();
+      }
     }
 
     match /menu_items/{itemId} {

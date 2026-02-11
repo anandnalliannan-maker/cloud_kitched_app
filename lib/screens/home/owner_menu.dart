@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/menu_service.dart';
-import '../../services/published_menu_service.dart';
 import 'menu_form_screen.dart';
 import 'publish_menu_screen.dart';
 
@@ -15,7 +14,6 @@ class OwnerMenuScreen extends StatefulWidget {
 
 class _OwnerMenuScreenState extends State<OwnerMenuScreen> {
   final _menuService = MenuService();
-  final _publishedService = PublishedMenuService();
   final Set<String> _selected = {};
   String _query = '';
 
