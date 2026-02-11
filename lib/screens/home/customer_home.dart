@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/cart_model.dart';
 import '../../services/address_service.dart';
@@ -20,6 +21,8 @@ class CustomerHomeScreen extends StatefulWidget {
 }
 
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
+  static const String _supportPhone = '+919999999999';
+
   final _cart = CartModel();
   final _orderService = OrderService();
   final _addressService = AddressService();
@@ -36,6 +39,16 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const RoleSelectScreen()),
         (_) => false,
+      );
+    }
+  }
+
+  Future<void> _contactSupport() async {
+    final uri = Uri(scheme: 'tel', path: _supportPhone);
+    final launched = await launchUrl(uri);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open dialer')),
       );
     }
   }
@@ -72,9 +85,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     if (deliveryType == null) return;
 
     Map<String, dynamic>? selectedAddress;
+    String customerName = '';
     if (deliveryType == 'delivery') {
       selectedAddress = await _selectDeliveryAddress(user.uid);
       if (selectedAddress == null) return;
+      customerName = (selectedAddress['name'] ?? '').toString();
 
       final confirmed = await _confirmOrder(
         deliveryType: deliveryType,
@@ -87,6 +102,15 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         selectedAddress: null,
       );
       if (!confirmed) return;
+    }
+
+    if (customerName.isEmpty) {
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      customerName = (userDoc.data()?['name'] ?? '').toString();
+    }
+    if (customerName.isEmpty) {
+      customerName = 'Customer';
     }
 
     final items = _cart.items
@@ -102,6 +126,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       await _orderService.createOrder(
         customerId: user.uid,
         customerPhone: user.phoneNumber ?? 'Unknown',
+        customerName: customerName,
         items: items,
         total: _cart.total,
         deliveryType: deliveryType,
@@ -422,6 +447,14 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                           builder: (_) => const CustomerAddressesScreen(),
                         ),
                       );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.support_agent),
+                    title: const Text('Contact Support'),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await _contactSupport();
                     },
                   ),
                 ],

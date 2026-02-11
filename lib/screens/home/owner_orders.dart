@@ -14,12 +14,7 @@ class OwnerOrdersScreen extends StatefulWidget {
 class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
   final _orderService = OrderService();
   final _userService = UserService();
-
-  final _statuses = const ['new', 'assigned', 'delivered'];
-  int _statusIndex = 0;
   final Set<String> _selectedOrderIds = {};
-
-  String get _status => _statuses[_statusIndex];
 
   void _toggleSelection(String id) {
     setState(() {
@@ -48,7 +43,6 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
             }
 
             final docs = snapshot.data?.docs ?? [];
-
             if (docs.isEmpty) {
               return const Padding(
                 padding: EdgeInsets.all(24),
@@ -89,96 +83,237 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canAssign = _status == 'new' && _selectedOrderIds.isNotEmpty;
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 0, label: Text('New')),
-              ButtonSegment(value: 1, label: Text('Assigned')),
-              ButtonSegment(value: 2, label: Text('Delivered')),
-            ],
-            selected: {_statusIndex},
-            onSelectionChanged: (value) {
-              setState(() {
-                _statusIndex = value.first;
-                _selectedOrderIds.clear();
-              });
-            },
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: TabBar(
+              tabs: [
+                Tab(text: 'Summary'),
+                Tab(text: 'Active Orders'),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _orderService.watchOrdersByStatus(_status),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          Expanded(
+            child: TabBarView(
+              children: [
+                _OwnerOrderSummary(orderService: _orderService),
+                _OwnerActiveOrders(
+                  orderService: _orderService,
+                  selectedOrderIds: _selectedOrderIds,
+                  onToggleSelection: _toggleSelection,
+                  onAssign: _openAssignSheet,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-              if (snapshot.hasError) {
-                return Center(
-                  child: Text('Error loading orders: ${snapshot.error}'),
-                );
-              }
+class _OwnerOrderSummary extends StatelessWidget {
+  const _OwnerOrderSummary({required this.orderService});
 
-              final docs = snapshot.data?.docs ?? [];
-              if (docs.isEmpty) {
-                return Center(child: Text('No $_status orders'));
-              }
+  final OrderService orderService;
 
-              return ListView.separated(
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: orderService.watchOrdersByStatuses(const ['new', 'assigned']),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error loading summary: ${snapshot.error}'));
+        }
+
+        final orders = snapshot.data?.docs ?? [];
+        final totalOrders = orders.length;
+        final itemQty = <String, int>{};
+        final areaCount = <String, int>{};
+
+        for (final doc in orders) {
+          final data = doc.data();
+          final items = (data['items'] as List<dynamic>? ?? []);
+          for (final raw in items) {
+            final item = raw as Map<String, dynamic>;
+            final name = (item['name'] ?? 'Item').toString();
+            final qty = (item['qty'] ?? 0) as int;
+            itemQty[name] = (itemQty[name] ?? 0) + qty;
+          }
+
+          final address = data['deliveryAddress'] as Map<String, dynamic>?;
+          final area = (address?['area'] ?? 'Unknown').toString();
+          areaCount[area] = (areaCount[area] ?? 0) + 1;
+        }
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              child: ListTile(
+                title: const Text('Active Orders'),
+                trailing: Text(
+                  '$totalOrders',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 22,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Menu Quantity Summary',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            if (itemQty.isEmpty)
+              const Card(child: ListTile(title: Text('No active order items')))
+            else
+              ...itemQty.entries.map(
+                (entry) => Card(
+                  child: ListTile(
+                    title: Text(entry.key),
+                    trailing: Text(
+                      '${entry.value}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            const Text(
+              'Active Orders by Area',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            if (areaCount.isEmpty)
+              const Card(child: ListTile(title: Text('No area data')))
+            else
+              ...areaCount.entries.map(
+                (entry) => Card(
+                  child: ListTile(
+                    title: Text(entry.key),
+                    trailing: Text(
+                      '${entry.value}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _OwnerActiveOrders extends StatelessWidget {
+  const _OwnerActiveOrders({
+    required this.orderService,
+    required this.selectedOrderIds,
+    required this.onToggleSelection,
+    required this.onAssign,
+  });
+
+  final OrderService orderService;
+  final Set<String> selectedOrderIds;
+  final ValueChanged<String> onToggleSelection;
+  final VoidCallback onAssign;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: orderService.watchOrdersByStatuses(const ['new', 'assigned']),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error loading orders: ${snapshot.error}'));
+        }
+
+        final docs = (snapshot.data?.docs ?? []).toList()
+          ..sort((a, b) {
+            final aTs = a.data()['createdAt'] as Timestamp?;
+            final bTs = b.data()['createdAt'] as Timestamp?;
+            final aDate = aTs?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bDate = bTs?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bDate.compareTo(aDate);
+          });
+
+        if (docs.isEmpty) {
+          return const Center(child: Text('No active orders'));
+        }
+
+        return Column(
+          children: [
+            Expanded(
+              child: ListView.separated(
                 padding: const EdgeInsets.all(16),
                 itemCount: docs.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
                   final doc = docs[index];
                   final data = doc.data();
+                  final status = (data['status'] ?? 'new').toString();
+                  final isNew = status == 'new';
                   final orderId = (data['orderId'] ?? doc.id).toString();
-                  final customerPhone = data['customerPhone'] ?? 'Unknown';
-                  final total = data['total'] ?? 0;
-                  final deliveryPhone = data['deliveryPhone'];
-
-                  final isSelected = _selectedOrderIds.contains(doc.id);
+                  final phone = (data['customerPhone'] ?? 'Unknown').toString();
+                  final name = (data['customerName'] ?? 'Customer').toString();
+                  final items = (data['items'] as List<dynamic>? ?? [])
+                      .cast<Map<String, dynamic>>();
+                  final itemDetails = items
+                      .map((item) {
+                        final itemName = (item['name'] ?? 'Item').toString();
+                        final qty = item['qty'] ?? 0;
+                        return '$itemName x$qty';
+                      })
+                      .join(', ');
+                  final isSelected = selectedOrderIds.contains(doc.id);
 
                   return Card(
                     child: ListTile(
-                      leading: _status == 'new'
+                      leading: isNew
                           ? Checkbox(
                               value: isSelected,
-                              onChanged: (_) => _toggleSelection(doc.id),
+                              onChanged: (_) => onToggleSelection(doc.id),
                             )
-                          : null,
+                          : const Icon(Icons.assignment_turned_in_outlined),
                       title: Text('Order: $orderId'),
                       subtitle: Text(
-                        deliveryPhone == null
-                            ? 'Customer: $customerPhone | Total: INR $total'
-                            : 'Customer: $customerPhone | Total: INR $total | Delivery: $deliveryPhone',
+                        'Status: ${status == 'assigned' ? 'Active' : 'New'}\n'
+                        'Name: $name | Phone: $phone\n'
+                        'Items: $itemDetails',
                       ),
-                      onTap: _status == 'new'
-                          ? () => _toggleSelection(doc.id)
-                          : null,
+                      isThreeLine: true,
+                      onTap: isNew ? () => onToggleSelection(doc.id) : null,
                     ),
                   );
                 },
-              );
-            },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: canAssign ? _openAssignSheet : null,
-              icon: const Icon(Icons.assignment_ind),
-              label: Text('Assign (${_selectedOrderIds.length})'),
+              ),
             ),
-          ),
-        ),
-      ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: selectedOrderIds.isNotEmpty ? onAssign : null,
+                  icon: const Icon(Icons.assignment_ind),
+                  label: Text('Assign (${selectedOrderIds.length})'),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
+

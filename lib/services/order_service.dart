@@ -17,6 +17,12 @@ class OrderService {
     return _ordersRef.where('publishedMenuId', isEqualTo: menuId).snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersByStatuses(
+    List<String> statuses,
+  ) {
+    return _ordersRef.where('status', whereIn: statuses).snapshots();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersForCustomer({
     required String customerId,
   }) {
@@ -46,6 +52,7 @@ class OrderService {
   Future<void> createOrder({
     required String customerId,
     required String customerPhone,
+    required String customerName,
     required List<Map<String, dynamic>> items,
     required int total,
     required String deliveryType,
@@ -120,6 +127,7 @@ class OrderService {
         'orderId': orderId,
         'customerId': customerId,
         'customerPhone': customerPhone,
+        'customerName': customerName,
         'items': items,
         'total': total,
         'deliveryType': deliveryType,
@@ -146,7 +154,13 @@ class OrderService {
     final y = now.year.toString().padLeft(4, '0');
     final m = now.month.toString().padLeft(2, '0');
     final d = now.day.toString().padLeft(2, '0');
-    final suffix = docId.substring(0, 6).toUpperCase();
+
+    final bytes = docId.codeUnits;
+    var sum = 0;
+    for (final b in bytes) {
+      sum = (sum * 31 + b) % 1000000;
+    }
+    final suffix = sum.toString().padLeft(6, '0');
     return 'CK-$y$m$d-$suffix';
   }
 }

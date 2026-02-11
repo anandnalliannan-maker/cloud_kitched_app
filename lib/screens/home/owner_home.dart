@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../role_select_screen.dart';
 import 'owner_approvals.dart';
 import 'owner_delivery.dart';
+import 'owner_order_dashboard.dart';
 import 'owner_menu.dart';
 import 'owner_orders.dart';
 import 'owner_areas.dart';
@@ -89,6 +90,18 @@ class _OwnerHomeScreenState extends State<OwnerHomeScreen> {
                       Navigator.of(context).pop();
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const OwnerPublishedMenusScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.analytics),
+                    title: const Text('Order Dashboard'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OwnerOrderDashboardScreen(),
+                        ),
                       );
                     },
                   ),
