@@ -1,9 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/cart_model.dart';
 import '../../services/order_service.dart';
 import '../customer/customer_menu.dart';
+import '../customer/customer_orders.dart';
 import '../customer/customer_profile.dart';
 import '../role_select_screen.dart';
 
@@ -139,6 +141,18 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const CustomerProfileScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.receipt_long),
+                    title: const Text('Order History'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CustomerOrdersScreen(),
                         ),
                       );
                     },

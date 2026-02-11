@@ -23,6 +23,7 @@ class PublishedMenuService {
   Future<void> publishMenu({
     required DateTime date,
     required String meal,
+    DateTime? expiresAt,
     required List<Map<String, dynamic>> items,
   }) async {
     final user = _auth.currentUser;
@@ -33,13 +34,17 @@ class PublishedMenuService {
     final menuRef = _menusRef.doc();
     final batch = _firestore.batch();
 
-    batch.set(menuRef, {
+    final menuPayload = <String, dynamic>{
       'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
       'meal': meal,
       'mealOrder': _mealOrder(meal),
       'createdAt': FieldValue.serverTimestamp(),
       'createdBy': user.uid,
-    });
+    };
+    if (expiresAt != null) {
+      menuPayload['expiresAt'] = Timestamp.fromDate(expiresAt);
+    }
+    batch.set(menuRef, menuPayload);
 
     for (final item in items) {
       final itemRef = menuRef.collection('items').doc(item['id'] as String);
@@ -58,13 +63,18 @@ class PublishedMenuService {
     required String menuId,
     required DateTime date,
     required String meal,
+    DateTime? expiresAt,
   }) {
-    return _menusRef.doc(menuId).update({
+    final payload = <String, dynamic>{
       'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
       'meal': meal,
       'mealOrder': _mealOrder(meal),
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (expiresAt != null) {
+      payload['expiresAt'] = Timestamp.fromDate(expiresAt);
+    }
+    return _menusRef.doc(menuId).update(payload);
   }
 
   Future<void> updatePublishedItem({

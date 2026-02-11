@@ -1,7 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'menu_service.dart';
-
 class OrderService {
   OrderService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -17,6 +15,17 @@ class OrderService {
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersByMenu(String menuId) {
     return _ordersRef.where('publishedMenuId', isEqualTo: menuId).snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersForCustomer({
+    required String customerId,
+    required List<String> statuses,
+  }) {
+    return _ordersRef
+        .where('customerId', isEqualTo: customerId)
+        .where('status', whereIn: statuses)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
   }
 
   Future<void> assignOrders({
@@ -63,6 +72,12 @@ class OrderService {
       final menuSnap = await tx.get(menuRef);
       if (!menuSnap.exists) {
         throw StateError('Menu not found');
+      }
+
+      final menuData = menuSnap.data() as Map<String, dynamic>;
+      final expiresAt = menuData['expiresAt'] as Timestamp?;
+      if (expiresAt != null && expiresAt.toDate().isBefore(DateTime.now())) {
+        throw StateError('Menu expired');
       }
 
       final itemRefs = <DocumentReference<Map<String, dynamic>>>[];
