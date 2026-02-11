@@ -19,13 +19,8 @@ class OrderService {
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchOrdersForCustomer({
     required String customerId,
-    required List<String> statuses,
   }) {
-    return _ordersRef
-        .where('customerId', isEqualTo: customerId)
-        .where('status', whereIn: statuses)
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+    return _ordersRef.where('customerId', isEqualTo: customerId).snapshots();
   }
 
   Future<void> assignOrders({
@@ -67,6 +62,9 @@ class OrderService {
         throw StateError('Please order from one menu at a time');
       }
     }
+
+    final orderRef = _ordersRef.doc();
+    final orderId = _buildOrderId(orderRef.id);
 
     await _firestore.runTransaction((tx) async {
       final menuRef = _firestore.collection('published_menus').doc(menuId);
@@ -118,7 +116,8 @@ class OrderService {
         });
       }
 
-      tx.set(_ordersRef.doc(), {
+      tx.set(orderRef, {
+        'orderId': orderId,
         'customerId': customerId,
         'customerPhone': customerPhone,
         'items': items,
@@ -140,5 +139,14 @@ class OrderService {
   String _extractItemId(String compositeId) {
     final parts = compositeId.split(':');
     return parts.length > 1 ? parts[1] : compositeId;
+  }
+
+  String _buildOrderId(String docId) {
+    final now = DateTime.now();
+    final y = now.year.toString().padLeft(4, '0');
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    final suffix = docId.substring(0, 6).toUpperCase();
+    return 'CK-$y$m$d-$suffix';
   }
 }

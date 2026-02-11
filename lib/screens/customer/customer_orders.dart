@@ -65,14 +65,32 @@ class _OrdersList extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: service.watchOrdersForCustomer(
         customerId: customerId,
-        statuses: statuses,
       ),
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error loading orders: ${snapshot.error}',
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final orders = snapshot.data?.docs ?? [];
+        final allOrders = (snapshot.data?.docs ?? []).toList()
+          ..sort((a, b) {
+            final aTs = a.data()['createdAt'] as Timestamp?;
+            final bTs = b.data()['createdAt'] as Timestamp?;
+            final aDate = aTs?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bDate = bTs?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bDate.compareTo(aDate);
+          });
+        final orders = allOrders.where((doc) {
+          final status = (doc.data()['status'] ?? '').toString();
+          return statuses.contains(status);
+        }).toList();
         if (orders.isEmpty) {
           return Center(child: Text(emptyText));
         }
@@ -84,6 +102,7 @@ class _OrdersList extends StatelessWidget {
           itemBuilder: (context, index) {
             final doc = orders[index];
             final data = doc.data();
+            final orderId = (data['orderId'] ?? doc.id).toString();
             final status = (data['status'] ?? 'new').toString();
             final total = data['total'] ?? 0;
             final deliveryType = (data['deliveryType'] ?? '').toString();
@@ -105,7 +124,7 @@ class _OrdersList extends StatelessWidget {
 
             return Card(
               child: ListTile(
-                title: Text('INR $total | ${_statusLabel(status)}'),
+                title: Text('$orderId | INR $total | ${_statusLabel(status)}'),
                 subtitle: Text(
                   '$itemSummary\n'
                   '${_deliveryLabel(deliveryType)}'
@@ -171,4 +190,3 @@ class _OrdersList extends StatelessWidget {
     return '\nAddress: ${parts.join(', ')}';
   }
 }
-

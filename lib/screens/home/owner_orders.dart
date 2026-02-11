@@ -136,6 +136,7 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
                 itemBuilder: (context, index) {
                   final doc = docs[index];
                   final data = doc.data();
+                  final orderId = (data['orderId'] ?? doc.id).toString();
                   final customerPhone = data['customerPhone'] ?? 'Unknown';
                   final total = data['total'] ?? 0;
                   final deliveryPhone = data['deliveryPhone'];
@@ -150,11 +151,11 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
                               onChanged: (_) => _toggleSelection(doc.id),
                             )
                           : null,
-                      title: Text('Customer: $customerPhone'),
+                      title: Text('Order: $orderId'),
                       subtitle: Text(
                         deliveryPhone == null
-                            ? 'Total: INR $total'
-                            : 'Total: INR $total | Delivery: $deliveryPhone',
+                            ? 'Customer: $customerPhone | Total: INR $total'
+                            : 'Customer: $customerPhone | Total: INR $total | Delivery: $deliveryPhone',
                       ),
                       onTap: _status == 'new'
                           ? () => _toggleSelection(doc.id)

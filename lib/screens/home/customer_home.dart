@@ -75,6 +75,18 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     if (deliveryType == 'delivery') {
       selectedAddress = await _selectDeliveryAddress(user.uid);
       if (selectedAddress == null) return;
+
+      final confirmed = await _confirmOrder(
+        deliveryType: deliveryType,
+        selectedAddress: selectedAddress,
+      );
+      if (!confirmed) return;
+    } else {
+      final confirmed = await _confirmOrder(
+        deliveryType: deliveryType,
+        selectedAddress: null,
+      );
+      if (!confirmed) return;
     }
 
     final items = _cart.items
@@ -108,6 +120,80 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         SnackBar(content: Text('Order failed: $msg')),
       );
     }
+  }
+
+  Future<bool> _confirmOrder({
+    required String deliveryType,
+    required Map<String, dynamic>? selectedAddress,
+  }) async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Confirm Order',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Items',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                ..._cart.items.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${item.name} x${item.quantity} = INR ${item.lineTotal}',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Delivery: ${deliveryType == 'delivery' ? 'Home Delivery' : 'Self Pickup'}',
+                ),
+                if (deliveryType == 'delivery' && selectedAddress != null) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Address',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(_formatAddress(selectedAddress)),
+                ],
+                const SizedBox(height: 10),
+                Text(
+                  'Total: INR ${_cart.total}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Confirm & Place'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
   }
 
   Future<Map<String, dynamic>?> _selectDeliveryAddress(String uid) async {
