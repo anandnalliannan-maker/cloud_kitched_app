@@ -36,9 +36,8 @@ class CartModel extends ChangeNotifier {
     if (_menuId != null && menuId != null && _menuId != menuId) {
       _items.clear();
       _menuId = menuId;
-    } else {
-      _menuId ??= menuId;
     }
+    _menuId ??= menuId;
 
     if (_items.containsKey(id)) {
       final next = _items[id]!.quantity + 1;

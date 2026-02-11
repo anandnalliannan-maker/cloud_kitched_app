@@ -82,6 +82,7 @@ class UserService {
 
   Future<void> setDeliveryAgentActive(String phone, bool active) async {
     final normalized = _normalizePhone(phone);
+    final candidates = _phoneCandidates(normalized);
     await _firestore.collection('delivery_agents').doc(normalized).set({
       'active': active,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -90,7 +91,7 @@ class UserService {
     final users = await _firestore
         .collection('users')
         .where('role', isEqualTo: 'delivery')
-        .where('phone', isEqualTo: normalized)
+        .where('phone', whereIn: candidates)
         .get();
     final batch = _firestore.batch();
     for (final doc in users.docs) {
@@ -110,25 +111,14 @@ class UserService {
     final normalized = _normalizePhone(phone);
 
     if (role == 'delivery') {
-      final agent = await _firestore
-          .collection('delivery_agents')
-          .where('phone', isEqualTo: normalized)
-          .where('active', isEqualTo: true)
-          .limit(1)
-          .get();
-      return agent.docs.isNotEmpty;
+      final agent = await _getDeliveryAgentByPhoneCandidates(
+        _phoneCandidates(normalized),
+      );
+      return agent != null;
     }
 
     if (role == 'owner') {
-      final owner = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'owner')
-          .where('phone', isEqualTo: normalized)
-          .where('approved', isEqualTo: true)
-          .where('active', isEqualTo: true)
-          .limit(1)
-          .get();
-      return owner.docs.isNotEmpty;
+      return true;
     }
 
     return false;
@@ -138,6 +128,7 @@ class UserService {
     final user = _auth.currentUser;
     if (user == null) throw StateError('User not signed in');
     final phone = _normalizePhone(user.phoneNumber ?? '');
+    final candidates = _phoneCandidates(phone);
     if (phone.isEmpty) throw StateError('Phone number missing');
 
     if (role == 'customer') {
@@ -146,16 +137,11 @@ class UserService {
     }
 
     if (role == 'delivery') {
-      final agentSnap = await _firestore
-          .collection('delivery_agents')
-          .where('phone', isEqualTo: phone)
-          .where('active', isEqualTo: true)
-          .limit(1)
-          .get();
-      if (agentSnap.docs.isEmpty) {
+      final agent = await _getDeliveryAgentByPhoneCandidates(candidates);
+      if (agent == null) {
         throw StateError('Contact admin');
       }
-      final agent = agentSnap.docs.first.data();
+      await ensureUserDoc(role: 'delivery', approved: false);
       await _firestore.collection('users').doc(user.uid).set({
         'role': 'delivery',
         'approved': true,
@@ -170,24 +156,23 @@ class UserService {
     }
 
     if (role == 'owner') {
-      final ownerSnap = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'owner')
-          .where('phone', isEqualTo: phone)
-          .where('approved', isEqualTo: true)
-          .where('active', isEqualTo: true)
-          .limit(1)
-          .get();
-      if (ownerSnap.docs.isEmpty) {
+      final selfDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (!selfDoc.exists) {
         throw StateError('Contact admin');
       }
-      final existing = ownerSnap.docs.first.data();
+      final ownerDoc = selfDoc.data() ?? <String, dynamic>{};
+      final isValidOwner = ownerDoc['role'] == 'owner' &&
+          ownerDoc['approved'] == true &&
+          ownerDoc['active'] != false;
+      if (!isValidOwner) {
+        throw StateError('Contact admin');
+      }
       await _firestore.collection('users').doc(user.uid).set({
         'role': 'owner',
         'approved': true,
         'active': true,
         'phone': phone,
-        if (existing['name'] != null) 'name': existing['name'],
+        if (ownerDoc['name'] != null) 'name': ownerDoc['name'],
         'updatedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -212,5 +197,44 @@ class UserService {
     if (digits.length == 12 && digits.startsWith('91')) return '+$digits';
     if (raw.startsWith('+')) return raw;
     return raw;
+  }
+
+  List<String> _phoneCandidates(String normalized) {
+    final candidates = <String>{};
+    candidates.add(normalized);
+    final digits = normalized.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 12 && digits.startsWith('91')) {
+      final local = digits.substring(2);
+      candidates.add(local);
+      candidates.add(digits);
+      candidates.add('+$digits');
+    } else if (digits.length == 10) {
+      candidates.add(digits);
+      candidates.add('+91$digits');
+      candidates.add('91$digits');
+    }
+    return candidates.take(10).toList();
+  }
+
+  Future<Map<String, dynamic>?> _getDeliveryAgentByPhoneCandidates(
+    List<String> candidates,
+  ) async {
+    for (final candidate in candidates) {
+      try {
+        final doc = await _firestore
+            .collection('delivery_agents')
+            .doc(candidate)
+            .get();
+        if (!doc.exists) continue;
+        final data = doc.data();
+        if (data == null) continue;
+        if (data['active'] != true) continue;
+        return data;
+      } on FirebaseException catch (_) {
+        // Try next phone candidate when read is denied for one format.
+        continue;
+      }
+    }
+    return null;
   }
 }

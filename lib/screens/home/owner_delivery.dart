@@ -20,9 +20,10 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
     String? selectedArea;
+    String? dialogError;
     bool saving = false;
 
-    await showDialog<void>(
+    final created = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -99,13 +100,21 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                           );
                         },
                       ),
+                      if (dialogError != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          dialogError!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      saving ? null : () => Navigator.of(dialogContext).pop(false),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
@@ -113,7 +122,10 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                       ? null
                       : () async {
                           if (!formKey.currentState!.validate()) return;
-                          setDialogState(() => saving = true);
+                          setDialogState(() {
+                            saving = true;
+                            dialogError = null;
+                          });
                           try {
                             await _userService.addDeliveryAgent(
                               name: nameController.text.trim(),
@@ -121,20 +133,14 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                               area: selectedArea ?? '',
                             );
                             if (!dialogContext.mounted) return;
-                            Navigator.of(dialogContext).pop();
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Delivery agent added')),
-                            );
+                            Navigator.of(dialogContext).pop(true);
                           } catch (e) {
-                            if (!dialogContext.mounted) return;
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  e.toString().replaceFirst('Bad state: ', ''),
-                                ),
-                              ),
-                            );
+                            if (dialogContext.mounted) {
+                              setDialogState(() {
+                                dialogError =
+                                    e.toString().replaceFirst('Bad state: ', '');
+                              });
+                            }
                           } finally {
                             if (dialogContext.mounted) {
                               setDialogState(() => saving = false);
@@ -155,6 +161,11 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
         );
       },
     );
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Delivery agent added')),
+      );
+    }
     nameController.dispose();
     phoneController.dispose();
   }
@@ -210,4 +221,3 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
     );
   }
 }
-
