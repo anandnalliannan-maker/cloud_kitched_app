@@ -5,7 +5,6 @@ import '../../services/user_service.dart';
 import '../home/customer_home.dart';
 import '../home/delivery_home.dart';
 import '../home/owner_home.dart';
-import 'pending_approval_screen.dart';
 
 class OtpVerifyScreen extends StatefulWidget {
   const OtpVerifyScreen({
@@ -46,28 +45,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
-
-      final isCustomer = widget.role == 'customer';
-      await _userService.ensureUserDoc(
-        role: widget.role,
-        approved: isCustomer,
-      );
-
-      final userDoc = await _userService.getCurrentUserDoc();
-      if (!mounted) return;
-      final data = userDoc.data() ?? {};
-      final approved = data['approved'] == true;
-
-      if (!approved && widget.role != 'customer') {
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => PendingApprovalScreen(role: widget.role),
-          ),
-          (_) => false,
-        );
-        return;
-      }
+      await _userService.syncRoleAccessAfterLogin(widget.role);
 
       if (widget.role == 'owner') {
         if (!mounted) return;
@@ -93,8 +71,12 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
         setState(() => _error = e.message ?? 'Verification failed');
       }
     } catch (e) {
+      final message = e.toString().replaceFirst('Bad state: ', '');
+      if (message == 'Contact admin') {
+        await FirebaseAuth.instance.signOut();
+      }
       if (mounted) {
-        setState(() => _error = 'Verification failed');
+        setState(() => _error = message.isEmpty ? 'Verification failed' : message);
       }
     } finally {
       if (mounted) {

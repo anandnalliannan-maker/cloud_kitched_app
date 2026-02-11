@@ -97,5 +97,13 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isOwner();
     }
+
+    match /delivery_agents/{agentPhone} {
+      allow read: if isOwner()
+        || (signedIn()
+          && request.auth.token.phone_number != null
+          && request.auth.token.phone_number == resource.data.phone);
+      allow create, update, delete: if isOwner();
+    }
   }
 }

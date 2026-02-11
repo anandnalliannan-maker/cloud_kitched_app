@@ -115,102 +115,179 @@ class _OwnerOrdersScreenState extends State<OwnerOrdersScreen> {
   }
 }
 
-class _OwnerOrderSummary extends StatelessWidget {
+class _OwnerOrderSummary extends StatefulWidget {
   const _OwnerOrderSummary({required this.orderService});
 
   final OrderService orderService;
 
   @override
+  State<_OwnerOrderSummary> createState() => _OwnerOrderSummaryState();
+}
+
+class _OwnerOrderSummaryState extends State<_OwnerOrderSummary> {
+  final Map<String, bool> _menuChecked = {};
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: orderService.watchOrdersByStatuses(const ['new', 'assigned']),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      stream: widget.orderService.watchOrdersByStatuses(const ['new', 'assigned']),
+      builder: (context, orderSnap) {
+        if (orderSnap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error loading summary: ${snapshot.error}'));
+        if (orderSnap.hasError) {
+          return Center(child: Text('Error loading summary: ${orderSnap.error}'));
         }
 
-        final orders = snapshot.data?.docs ?? [];
-        final totalOrders = orders.length;
-        final itemQty = <String, int>{};
-        final areaCount = <String, int>{};
+        final allOrders = orderSnap.data?.docs ?? [];
+        final activeMenuIds = allOrders
+            .map((doc) => (doc.data()['publishedMenuId'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
 
-        for (final doc in orders) {
-          final data = doc.data();
-          final items = (data['items'] as List<dynamic>? ?? []);
-          for (final raw in items) {
-            final item = raw as Map<String, dynamic>;
-            final name = (item['name'] ?? 'Item').toString();
-            final qty = (item['qty'] ?? 0) as int;
-            itemQty[name] = (itemQty[name] ?? 0) + qty;
-          }
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('published_menus').snapshots(),
+          builder: (context, menuSnap) {
+            final menuDocs = menuSnap.data?.docs ?? [];
+            final menuById = <String, Map<String, dynamic>>{
+              for (final doc in menuDocs) doc.id: doc.data(),
+            };
 
-          final address = data['deliveryAddress'] as Map<String, dynamic>?;
-          final area = (address?['area'] ?? 'Unknown').toString();
-          areaCount[area] = (areaCount[area] ?? 0) + 1;
-        }
+            for (final id in activeMenuIds) {
+              _menuChecked.putIfAbsent(id, () => true);
+            }
+            _menuChecked.removeWhere((id, _) => !activeMenuIds.contains(id));
 
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: ListTile(
-                title: const Text('Active Orders'),
-                trailing: Text(
-                  '$totalOrders',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 22,
+            final selectedMenuIds = _menuChecked.entries
+                .where((entry) => entry.value)
+                .map((entry) => entry.key)
+                .toSet();
+
+            final orders = allOrders.where((doc) {
+              final menuId = (doc.data()['publishedMenuId'] ?? '').toString();
+              if (activeMenuIds.isEmpty) return true;
+              return selectedMenuIds.contains(menuId);
+            }).toList();
+
+            final totalOrders = orders.length;
+            final itemQty = <String, int>{};
+            final areaCount = <String, int>{};
+
+            for (final doc in orders) {
+              final data = doc.data();
+              final items = (data['items'] as List<dynamic>? ?? []);
+              for (final raw in items) {
+                final item = raw as Map<String, dynamic>;
+                final name = (item['name'] ?? 'Item').toString();
+                final qty = (item['qty'] ?? 0) as int;
+                itemQty[name] = (itemQty[name] ?? 0) + qty;
+              }
+
+              final address = data['deliveryAddress'] as Map<String, dynamic>?;
+              final area = (address?['area'] ?? 'Unknown').toString();
+              areaCount[area] = (areaCount[area] ?? 0) + 1;
+            }
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (activeMenuIds.isNotEmpty) ...[
+                  const Text(
+                    'Filter by Date & Meal',
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Menu Quantity Summary',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            if (itemQty.isEmpty)
-              const Card(child: ListTile(title: Text('No active order items')))
-            else
-              ...itemQty.entries.map(
-                (entry) => Card(
+                  const SizedBox(height: 8),
+                  Card(
+                    child: Column(
+                      children: activeMenuIds.map((menuId) {
+                        final checked = _menuChecked[menuId] ?? true;
+                        final label = _menuLabel(menuId, menuById[menuId]);
+                        return CheckboxListTile(
+                          value: checked,
+                          onChanged: (value) {
+                            setState(() {
+                              _menuChecked[menuId] = value ?? false;
+                            });
+                          },
+                          title: Text(label),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          dense: true,
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                Card(
                   child: ListTile(
-                    title: Text(entry.key),
+                    title: const Text('Active Orders'),
                     trailing: Text(
-                      '${entry.value}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      '$totalOrders',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 22,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            const SizedBox(height: 16),
-            const Text(
-              'Active Orders by Area',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            if (areaCount.isEmpty)
-              const Card(child: ListTile(title: Text('No area data')))
-            else
-              ...areaCount.entries.map(
-                (entry) => Card(
-                  child: ListTile(
-                    title: Text(entry.key),
-                    trailing: Text(
-                      '${entry.value}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                const SizedBox(height: 12),
+                const Text(
+                  'Menu Quantity Summary',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                if (itemQty.isEmpty)
+                  const Card(child: ListTile(title: Text('No active order items')))
+                else
+                  ...itemQty.entries.map(
+                    (entry) => Card(
+                      child: ListTile(
+                        title: Text(entry.key),
+                        trailing: Text(
+                          '${entry.value}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
                     ),
                   ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Active Orders by Area',
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
-              ),
-          ],
+                const SizedBox(height: 8),
+                if (areaCount.isEmpty)
+                  const Card(child: ListTile(title: Text('No area data')))
+                else
+                  ...areaCount.entries.map(
+                    (entry) => Card(
+                      child: ListTile(
+                        title: Text(entry.key),
+                        trailing: Text(
+                          '${entry.value}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  String _menuLabel(String menuId, Map<String, dynamic>? data) {
+    if (data == null) return 'Unknown Menu ($menuId)';
+    final ts = data['date'] as Timestamp?;
+    final date = ts?.toDate();
+    final meal = (data['meal'] ?? '').toString().toUpperCase();
+    final dateLabel = date == null
+        ? 'Unknown Date'
+        : '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}';
+    return '$dateLabel - $meal';
   }
 }
 
@@ -316,4 +393,3 @@ class _OwnerActiveOrders extends StatelessWidget {
     );
   }
 }
-

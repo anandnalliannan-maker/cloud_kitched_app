@@ -29,6 +29,15 @@ class OrderService {
     return _ordersRef.where('customerId', isEqualTo: customerId).snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchAssignedOrdersForDelivery(
+    String deliveryUserId,
+  ) {
+    return _ordersRef
+        .where('deliveryId', isEqualTo: deliveryUserId)
+        .where('status', isEqualTo: 'assigned')
+        .snapshots();
+  }
+
   Future<void> assignOrders({
     required List<String> orderIds,
     required String deliveryUserId,
@@ -47,6 +56,14 @@ class OrderService {
     }
 
     await batch.commit();
+  }
+
+  Future<void> markDelivered(String orderId) {
+    return _ordersRef.doc(orderId).update({
+      'status': 'delivered',
+      'deliveredAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> createOrder({
