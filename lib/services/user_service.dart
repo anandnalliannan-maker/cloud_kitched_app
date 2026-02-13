@@ -78,11 +78,15 @@ class UserService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    await _reassignOrdersForArea(area);
   }
 
   Future<void> setDeliveryAgentActive(String phone, bool active) async {
     final normalized = _normalizePhone(phone);
     final candidates = _phoneCandidates(normalized);
+    final before = await _firestore.collection('delivery_agents').doc(normalized).get();
+    final oldArea = (before.data()?['area'] ?? '').toString();
     await _firestore.collection('delivery_agents').doc(normalized).set({
       'active': active,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -101,6 +105,51 @@ class UserService {
       });
     }
     await batch.commit();
+
+    if (oldArea.isNotEmpty) {
+      await _reassignOrdersForArea(oldArea);
+    }
+  }
+
+  Future<void> updateDeliveryAgent({
+    required String oldPhone,
+    required String name,
+    required String area,
+  }) async {
+    final normalized = _normalizePhone(oldPhone);
+    final ref = _firestore.collection('delivery_agents').doc(normalized);
+    final snap = await ref.get();
+    if (!snap.exists) {
+      throw StateError('Delivery agent not found');
+    }
+    final oldArea = (snap.data()?['area'] ?? '').toString();
+
+    await ref.set({
+      'name': name,
+      'area': area,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final candidates = _phoneCandidates(normalized);
+    final users = await _firestore
+        .collection('users')
+        .where('role', isEqualTo: 'delivery')
+        .where('phone', whereIn: candidates)
+        .get();
+    final batch = _firestore.batch();
+    for (final doc in users.docs) {
+      batch.update(doc.reference, {
+        'name': name,
+        'assignedArea': area,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+
+    if (oldArea.isNotEmpty) {
+      await _reassignOrdersForArea(oldArea);
+    }
+    await _reassignOrdersForArea(area);
   }
 
   Future<bool> canRoleLogin({
@@ -151,6 +200,12 @@ class UserService {
         'assignedArea': (agent['area'] ?? '').toString(),
         'updatedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      final normalized = _normalizePhone(phone);
+      await _firestore.collection('delivery_agents').doc(normalized).set({
+        'userId': user.uid,
+        'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       return;
     }
@@ -236,5 +291,77 @@ class UserService {
       }
     }
     return null;
+  }
+
+  Future<void> _reassignOrdersForArea(String area) async {
+    final trimmedArea = area.trim();
+    if (trimmedArea.isEmpty) return;
+
+    final agentSnap = await _firestore
+        .collection('delivery_agents')
+        .where('area', isEqualTo: trimmedArea)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    String? deliveryPhone;
+    String? deliveryId;
+    if (agentSnap.docs.isNotEmpty) {
+      final agent = agentSnap.docs.first.data();
+      final phone = (agent['phone'] ?? '').toString();
+      if (phone.isNotEmpty) {
+        deliveryPhone = phone;
+      }
+      final userId = (agent['userId'] ?? '').toString();
+      if (userId.isNotEmpty) {
+        deliveryId = userId;
+      } else if (deliveryPhone != null) {
+        final candidates = _phoneCandidates(_normalizePhone(deliveryPhone));
+        final userSnap = await _firestore
+            .collection('users')
+            .where('role', isEqualTo: 'delivery')
+            .where('phone', whereIn: candidates)
+            .where('approved', isEqualTo: true)
+            .where('active', isEqualTo: true)
+            .limit(1)
+            .get();
+        if (userSnap.docs.isNotEmpty) {
+          deliveryId = userSnap.docs.first.id;
+        }
+      }
+    }
+
+    final deliveryOrders = await _firestore
+        .collection('orders')
+        .where('deliveryType', isEqualTo: 'delivery')
+        .get();
+
+    final batch = _firestore.batch();
+    for (final doc in deliveryOrders.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString();
+      if (status != 'new' && status != 'assigned') continue;
+      final addr = data['deliveryAddress'] as Map<String, dynamic>?;
+      final orderArea = (addr?['area'] ?? '').toString();
+      if (orderArea != trimmedArea) continue;
+
+      if (deliveryPhone == null) {
+        batch.update(doc.reference, {
+          'status': 'new',
+          'deliveryPhone': FieldValue.delete(),
+          'deliveryId': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        batch.update(doc.reference, {
+          'status': 'assigned',
+          'deliveryPhone': deliveryPhone,
+          if (deliveryId != null) 'deliveryId': deliveryId,
+          if (deliveryId == null) 'deliveryId': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+    await batch.commit();
   }
 }

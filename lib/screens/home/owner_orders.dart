@@ -341,11 +341,14 @@ class _OwnerActiveOrders extends StatelessWidget {
                   final data = doc.data();
                   final status = (data['status'] ?? 'new').toString();
                   final isNew = status == 'new';
-                  final orderId = (data['orderId'] ?? doc.id).toString();
+                  final rawOrderId = (data['orderId'] ?? doc.id).toString();
+                  final orderId = _displayOrderId(rawOrderId);
                   final phone = (data['customerPhone'] ?? 'Unknown').toString();
                   final name = (data['customerName'] ?? 'Customer').toString();
                   final items = (data['items'] as List<dynamic>? ?? [])
                       .cast<Map<String, dynamic>>();
+                  final deliveryAddress =
+                      data['deliveryAddress'] as Map<String, dynamic>?;
                   final itemDetails = items
                       .map((item) {
                         final itemName = (item['name'] ?? 'Item').toString();
@@ -353,6 +356,7 @@ class _OwnerActiveOrders extends StatelessWidget {
                         return '$itemName x$qty';
                       })
                       .join(', ');
+                  final address = _formatAddress(deliveryAddress);
                   final isSelected = selectedOrderIds.contains(doc.id);
 
                   return Card(
@@ -366,10 +370,12 @@ class _OwnerActiveOrders extends StatelessWidget {
                       title: Text('Order: $orderId'),
                       subtitle: Text(
                         'Status: ${status == 'assigned' ? 'Active' : 'New'}\n'
-                        'Name: $name | Phone: $phone\n'
-                        'Items: $itemDetails',
+                        'Name: $name\n'
+                        'Phone: $phone\n'
+                        'Items: $itemDetails\n'
+                        'Address: ${address.isEmpty ? 'N/A' : address}',
                       ),
-                      isThreeLine: true,
+                      isThreeLine: false,
                       onTap: isNew ? () => onToggleSelection(doc.id) : null,
                     ),
                   );
@@ -391,5 +397,29 @@ class _OwnerActiveOrders extends StatelessWidget {
         );
       },
     );
+  }
+
+  String _displayOrderId(String raw) {
+    final parts = raw.split('-');
+    if (parts.length < 3) return raw;
+    final prefix = parts[0];
+    final ymd = parts[1];
+    final suffix = parts.sublist(2).join('-');
+    if (prefix != 'CK' || ymd.length != 8) return raw;
+    final yyyy = ymd.substring(0, 4);
+    final mm = ymd.substring(4, 6);
+    final dd = ymd.substring(6, 8);
+    return 'CK-$dd$mm$yyyy-$suffix';
+  }
+
+  String _formatAddress(Map<String, dynamic>? address) {
+    if (address == null) return '';
+    final flat = (address['flat'] ?? '').toString();
+    final apartment = (address['apartment'] ?? '').toString();
+    final street = (address['street'] ?? '').toString();
+    final area = (address['area'] ?? '').toString();
+    return [flat, apartment, street, area]
+        .where((part) => part.trim().isNotEmpty)
+        .join(', ');
   }
 }

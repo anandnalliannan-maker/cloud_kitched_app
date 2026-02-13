@@ -70,8 +70,8 @@ class DeliveryHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final uid = user?.uid;
-    if (uid == null) {
+    final phone = _normalizePhone(user?.phoneNumber ?? '');
+    if (phone.isEmpty) {
       return const Scaffold(
         body: Center(child: Text('Please sign in')),
       );
@@ -105,7 +105,7 @@ class DeliveryHomeScreen extends StatelessWidget {
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: orderService.watchAssignedOrdersForDelivery(uid),
+        stream: orderService.watchAssignedOrdersForDelivery(phone),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -114,7 +114,13 @@ class DeliveryHomeScreen extends StatelessWidget {
             return Center(child: Text('Error loading orders: ${snapshot.error}'));
           }
 
-          final docs = (snapshot.data?.docs ?? []).toList()
+          final candidates = _phoneCandidates(phone);
+          final docs = (snapshot.data?.docs ?? [])
+              .where((doc) =>
+                  candidates.contains(
+                    (doc.data()['deliveryPhone'] ?? '').toString(),
+                  ))
+              .toList()
             ..sort((a, b) {
               final aTs = a.data()['createdAt'] as Timestamp?;
               final bTs = b.data()['createdAt'] as Timestamp?;
@@ -208,6 +214,31 @@ class DeliveryHomeScreen extends StatelessWidget {
     );
   }
 
+  String _normalizePhone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 10) return '+91$digits';
+    if (digits.length == 12 && digits.startsWith('91')) return '+$digits';
+    if (raw.startsWith('+')) return raw;
+    return raw;
+  }
+
+  List<String> _phoneCandidates(String normalized) {
+    final candidates = <String>{};
+    candidates.add(normalized);
+    final digits = normalized.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 12 && digits.startsWith('91')) {
+      final local = digits.substring(2);
+      candidates.add(local);
+      candidates.add(digits);
+      candidates.add('+$digits');
+    } else if (digits.length == 10) {
+      candidates.add(digits);
+      candidates.add('+91$digits');
+      candidates.add('91$digits');
+    }
+    return candidates.toList();
+  }
+
   String _addressText(Map<String, dynamic>? address) {
     if (address == null) return '';
     final flat = (address['flat'] ?? '').toString();
@@ -219,4 +250,3 @@ class DeliveryHomeScreen extends StatelessWidget {
         .join(', ');
   }
 }
-

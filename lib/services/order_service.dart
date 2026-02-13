@@ -30,12 +30,9 @@ class OrderService {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchAssignedOrdersForDelivery(
-    String deliveryUserId,
+    String deliveryPhone,
   ) {
-    return _ordersRef
-        .where('deliveryId', isEqualTo: deliveryUserId)
-        .where('status', isEqualTo: 'assigned')
-        .snapshots();
+    return _ordersRef.where('status', isEqualTo: 'assigned').snapshots();
   }
 
   Future<void> assignOrders({
@@ -89,6 +86,8 @@ class OrderService {
 
     final orderRef = _ordersRef.doc();
     final orderId = _buildOrderId(orderRef.id);
+
+    final autoAssignment = await _findActiveDeliveryForArea(deliveryAddress);
 
     await _firestore.runTransaction((tx) async {
       final menuRef = _firestore.collection('published_menus').doc(menuId);
@@ -149,7 +148,9 @@ class OrderService {
         'total': total,
         'deliveryType': deliveryType,
         if (deliveryAddress != null) 'deliveryAddress': deliveryAddress,
-        'status': 'new',
+        'status': autoAssignment == null ? 'new' : 'assigned',
+        if (autoAssignment != null) 'deliveryPhone': autoAssignment.phone,
+        if (autoAssignment?.userId != null) 'deliveryId': autoAssignment!.userId,
         'publishedMenuId': menuId,
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -180,4 +181,76 @@ class OrderService {
     final suffix = sum.toString().padLeft(6, '0');
     return 'CK-$y$m$d-$suffix';
   }
+
+  String _normalizePhone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 10) return '+91$digits';
+    if (digits.length == 12 && digits.startsWith('91')) return '+$digits';
+    if (raw.startsWith('+')) return raw;
+    return raw;
+  }
+
+  List<String> _phoneCandidates(String normalized) {
+    final candidates = <String>{};
+    candidates.add(normalized);
+    final digits = normalized.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 12 && digits.startsWith('91')) {
+      final local = digits.substring(2);
+      candidates.add(local);
+      candidates.add(digits);
+      candidates.add('+$digits');
+    } else if (digits.length == 10) {
+      candidates.add(digits);
+      candidates.add('+91$digits');
+      candidates.add('91$digits');
+    }
+    return candidates.take(10).toList();
+  }
+
+  Future<_DeliveryAssignment?> _findActiveDeliveryForArea(
+    Map<String, dynamic>? deliveryAddress,
+  ) async {
+    if (deliveryAddress == null) return null;
+    final area = (deliveryAddress['area'] ?? '').toString().trim();
+    if (area.isEmpty) return null;
+
+    final agentSnap = await _firestore
+        .collection('delivery_agents')
+        .where('area', isEqualTo: area)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
+    if (agentSnap.docs.isEmpty) return null;
+
+    final data = agentSnap.docs.first.data();
+    final phone = (data['phone'] ?? '').toString();
+    if (phone.isEmpty) return null;
+
+    final savedUserId = (data['userId'] ?? '').toString();
+    if (savedUserId.isNotEmpty) {
+      return _DeliveryAssignment(phone: phone, userId: savedUserId);
+    }
+
+    final candidates = _phoneCandidates(_normalizePhone(phone));
+    final userSnap = await _firestore
+        .collection('users')
+        .where('role', isEqualTo: 'delivery')
+        .where('phone', whereIn: candidates)
+        .where('approved', isEqualTo: true)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    if (userSnap.docs.isEmpty) {
+      return _DeliveryAssignment(phone: phone, userId: null);
+    }
+    return _DeliveryAssignment(phone: phone, userId: userSnap.docs.first.id);
+  }
+}
+
+class _DeliveryAssignment {
+  const _DeliveryAssignment({required this.phone, required this.userId});
+
+  final String phone;
+  final String? userId;
 }
