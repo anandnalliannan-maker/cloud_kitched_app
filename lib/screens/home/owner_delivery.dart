@@ -15,11 +15,69 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
   final _userService = UserService();
   final _areaService = AreaService();
 
+  Future<List<String>> _pickSecondaryAreas({
+    required List<String> allAreas,
+    required String primaryArea,
+    required List<String> current,
+  }) async {
+    final options = allAreas.where((a) => a != primaryArea).toList();
+    final selected = current.toSet();
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Select Secondary Areas'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: options.isEmpty
+                    ? const Text('No additional areas available')
+                    : ListView(
+                        shrinkWrap: true,
+                        children: options.map((area) {
+                          return CheckboxListTile(
+                            value: selected.contains(area),
+                            title: Text(area),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  selected.add(area);
+                                } else {
+                                  selected.remove(area);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(current),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop(selected.toList()),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    return result ?? current;
+  }
+
   Future<void> _openAddAgentDialog() async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
     String? selectedArea;
+    List<String> secondaryAreas = <String>[];
+    List<String> allAreas = <String>[];
     String? dialogError;
     bool saving = false;
 
@@ -70,20 +128,22 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                         stream: _areaService.watchAreas(),
                         builder: (context, snapshot) {
                           final docs = snapshot.data?.docs ?? [];
-                          final areas = docs
+                          allAreas = docs
                               .map((doc) => (doc.data()['name'] ?? '').toString())
                               .where((name) => name.isNotEmpty)
                               .toList();
-                          if (selectedArea == null && areas.isNotEmpty) {
-                            selectedArea = areas.first;
+                          if (selectedArea == null && allAreas.isNotEmpty) {
+                            selectedArea = allAreas.first;
                           }
+                          secondaryAreas =
+                              secondaryAreas.where((a) => a != selectedArea).toList();
                           return DropdownButtonFormField<String>(
                             value: selectedArea,
                             decoration: const InputDecoration(
-                              labelText: 'Area assignment',
+                              labelText: 'Primary area',
                               border: OutlineInputBorder(),
                             ),
-                            items: areas
+                            items: allAreas
                                 .map((area) => DropdownMenuItem(
                                       value: area,
                                       child: Text(area),
@@ -100,6 +160,36 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                           );
                         },
                       ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: selectedArea == null
+                              ? null
+                              : () async {
+                                  final picked = await _pickSecondaryAreas(
+                                    allAreas: allAreas,
+                                    primaryArea: selectedArea!,
+                                    current: secondaryAreas,
+                                  );
+                                  setDialogState(() {
+                                    secondaryAreas = picked;
+                                  });
+                                },
+                          icon: const Icon(Icons.add_location_alt_outlined),
+                          label: const Text('Select secondary areas'),
+                        ),
+                      ),
+                      if (secondaryAreas.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: secondaryAreas
+                              .map((area) => Chip(label: Text(area)))
+                              .toList(),
+                        ),
+                      ],
                       if (dialogError != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -131,6 +221,7 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                               name: nameController.text.trim(),
                               phone: phoneController.text.trim(),
                               area: selectedArea ?? '',
+                              secondaryAreas: secondaryAreas,
                             );
                             if (!dialogContext.mounted) return;
                             Navigator.of(dialogContext).pop(true);
@@ -174,10 +265,13 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
     required String phone,
     required String initialName,
     required String initialArea,
+    required List<String> initialSecondaryAreas,
   }) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: initialName);
     String? selectedArea = initialArea;
+    List<String> secondaryAreas = List<String>.from(initialSecondaryAreas);
+    List<String> allAreas = <String>[];
     String? dialogError;
     bool saving = false;
 
@@ -221,20 +315,22 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                         stream: _areaService.watchAreas(),
                         builder: (context, snapshot) {
                           final docs = snapshot.data?.docs ?? [];
-                          final areas = docs
+                          allAreas = docs
                               .map((doc) => (doc.data()['name'] ?? '').toString())
                               .where((name) => name.isNotEmpty)
                               .toList();
-                          if (selectedArea == null && areas.isNotEmpty) {
-                            selectedArea = areas.first;
+                          if (selectedArea == null && allAreas.isNotEmpty) {
+                            selectedArea = allAreas.first;
                           }
+                          secondaryAreas =
+                              secondaryAreas.where((a) => a != selectedArea).toList();
                           return DropdownButtonFormField<String>(
                             value: selectedArea,
                             decoration: const InputDecoration(
-                              labelText: 'Area assignment',
+                              labelText: 'Primary area',
                               border: OutlineInputBorder(),
                             ),
-                            items: areas
+                            items: allAreas
                                 .map((area) => DropdownMenuItem(
                                       value: area,
                                       child: Text(area),
@@ -251,6 +347,36 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                           );
                         },
                       ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: selectedArea == null
+                              ? null
+                              : () async {
+                                  final picked = await _pickSecondaryAreas(
+                                    allAreas: allAreas,
+                                    primaryArea: selectedArea!,
+                                    current: secondaryAreas,
+                                  );
+                                  setDialogState(() {
+                                    secondaryAreas = picked;
+                                  });
+                                },
+                          icon: const Icon(Icons.add_location_alt_outlined),
+                          label: const Text('Select secondary areas'),
+                        ),
+                      ),
+                      if (secondaryAreas.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: secondaryAreas
+                              .map((area) => Chip(label: Text(area)))
+                              .toList(),
+                        ),
+                      ],
                       if (dialogError != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -282,6 +408,7 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                               oldPhone: phone,
                               name: nameController.text.trim(),
                               area: selectedArea ?? initialArea,
+                              secondaryAreas: secondaryAreas,
                             );
                             if (!dialogContext.mounted) return;
                             Navigator.of(dialogContext).pop(true);
@@ -353,12 +480,18 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                 final name = (data['name'] ?? 'Agent').toString();
                 final phone = (data['phone'] ?? '').toString();
                 final area = (data['area'] ?? '').toString();
+                final secondaryAreas = List<String>.from(
+                  (data['secondaryAreas'] as List<dynamic>? ?? const []),
+                );
                 final active = data['active'] == true;
+                final areaText = secondaryAreas.isEmpty
+                    ? 'Primary: $area'
+                    : 'Primary: $area\nSecondary: ${secondaryAreas.join(', ')}';
 
                 return Card(
                   child: ListTile(
                     title: Text(name),
-                    subtitle: Text('Phone: $phone\nArea: $area'),
+                    subtitle: Text('Phone: $phone\n$areaText'),
                     isThreeLine: true,
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -370,6 +503,7 @@ class _OwnerDeliveryScreenState extends State<OwnerDeliveryScreen> {
                             phone: phone,
                             initialName: name,
                             initialArea: area,
+                            initialSecondaryAreas: secondaryAreas,
                           ),
                         ),
                         Switch(

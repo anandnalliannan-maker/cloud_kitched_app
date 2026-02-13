@@ -171,6 +171,10 @@ class _OwnerOrderSummaryState extends State<_OwnerOrderSummary> {
             }).toList();
 
             final totalOrders = orders.length;
+            final totalOrderValue = orders.fold<int>(
+              0,
+              (acc, doc) => acc + ((doc.data()['total'] ?? 0) as int),
+            );
             final itemQty = <String, int>{};
             final areaCount = <String, int>{};
 
@@ -227,6 +231,19 @@ class _OwnerOrderSummaryState extends State<_OwnerOrderSummary> {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 22,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    title: const Text('Active Order Value'),
+                    trailing: Text(
+                      'INR $totalOrderValue',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
                       ),
                     ),
                   ),

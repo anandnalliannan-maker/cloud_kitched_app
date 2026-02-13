@@ -64,6 +64,7 @@ class UserService {
     required String name,
     required String phone,
     required String area,
+    List<String> secondaryAreas = const [],
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('User not signed in');
@@ -73,6 +74,7 @@ class UserService {
       'name': name,
       'phone': normalized,
       'area': area,
+      'secondaryAreas': secondaryAreas,
       'active': true,
       'createdBy': user.uid,
       'createdAt': FieldValue.serverTimestamp(),
@@ -115,6 +117,7 @@ class UserService {
     required String oldPhone,
     required String name,
     required String area,
+    List<String> secondaryAreas = const [],
   }) async {
     final normalized = _normalizePhone(oldPhone);
     final ref = _firestore.collection('delivery_agents').doc(normalized);
@@ -127,6 +130,7 @@ class UserService {
     await ref.set({
       'name': name,
       'area': area,
+      'secondaryAreas': secondaryAreas,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -141,6 +145,7 @@ class UserService {
       batch.update(doc.reference, {
         'name': name,
         'assignedArea': area,
+        'assignedSecondaryAreas': secondaryAreas,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }
@@ -198,6 +203,9 @@ class UserService {
         'phone': phone,
         'name': (agent['name'] ?? '').toString(),
         'assignedArea': (agent['area'] ?? '').toString(),
+        'assignedSecondaryAreas': List<String>.from(
+          (agent['secondaryAreas'] as List<dynamic>? ?? const []),
+        ),
         'updatedAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -297,17 +305,10 @@ class UserService {
     final trimmedArea = area.trim();
     if (trimmedArea.isEmpty) return;
 
-    final agentSnap = await _firestore
-        .collection('delivery_agents')
-        .where('area', isEqualTo: trimmedArea)
-        .where('active', isEqualTo: true)
-        .limit(1)
-        .get();
-
     String? deliveryPhone;
     String? deliveryId;
-    if (agentSnap.docs.isNotEmpty) {
-      final agent = agentSnap.docs.first.data();
+    final agent = await _pickAgentForArea(trimmedArea);
+    if (agent != null) {
       final phone = (agent['phone'] ?? '').toString();
       if (phone.isNotEmpty) {
         deliveryPhone = phone;
@@ -363,5 +364,28 @@ class UserService {
       }
     }
     await batch.commit();
+  }
+
+  Future<Map<String, dynamic>?> _pickAgentForArea(String area) async {
+    final snap = await _firestore
+        .collection('delivery_agents')
+        .where('active', isEqualTo: true)
+        .get();
+
+    final docs = snap.docs.map((d) => d.data()).toList();
+    final primary = docs.where((agent) {
+      return (agent['area'] ?? '').toString().trim() == area;
+    }).toList();
+    if (primary.isNotEmpty) return primary.first;
+
+    final secondary = docs.where((agent) {
+      final areas = List<String>.from(
+        (agent['secondaryAreas'] as List<dynamic>? ?? const []),
+      );
+      return areas.any((a) => a.trim() == area);
+    }).toList();
+    if (secondary.isNotEmpty) return secondary.first;
+
+    return null;
   }
 }

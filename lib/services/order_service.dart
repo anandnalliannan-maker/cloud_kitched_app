@@ -214,15 +214,8 @@ class OrderService {
     final area = (deliveryAddress['area'] ?? '').toString().trim();
     if (area.isEmpty) return null;
 
-    final agentSnap = await _firestore
-        .collection('delivery_agents')
-        .where('area', isEqualTo: area)
-        .where('active', isEqualTo: true)
-        .limit(1)
-        .get();
-    if (agentSnap.docs.isEmpty) return null;
-
-    final data = agentSnap.docs.first.data();
+    final data = await _pickAgentForArea(area);
+    if (data == null) return null;
     final phone = (data['phone'] ?? '').toString();
     if (phone.isEmpty) return null;
 
@@ -245,6 +238,29 @@ class OrderService {
       return _DeliveryAssignment(phone: phone, userId: null);
     }
     return _DeliveryAssignment(phone: phone, userId: userSnap.docs.first.id);
+  }
+
+  Future<Map<String, dynamic>?> _pickAgentForArea(String area) async {
+    final snap = await _firestore
+        .collection('delivery_agents')
+        .where('active', isEqualTo: true)
+        .get();
+
+    final docs = snap.docs.map((d) => d.data()).toList();
+    final primary = docs.where((agent) {
+      return (agent['area'] ?? '').toString().trim() == area;
+    }).toList();
+    if (primary.isNotEmpty) return primary.first;
+
+    final secondary = docs.where((agent) {
+      final areas = List<String>.from(
+        (agent['secondaryAreas'] as List<dynamic>? ?? const []),
+      );
+      return areas.any((a) => a.trim() == area);
+    }).toList();
+    if (secondary.isNotEmpty) return secondary.first;
+
+    return null;
   }
 }
 

@@ -112,10 +112,17 @@ class _OwnerOrderDashboardScreenState extends State<OwnerOrderDashboardScreen> {
               all.where((doc) => _matchesFilters(doc.data())).toList();
 
           final areaCount = <String, int>{};
+          final areaValue = <String, int>{};
+          final totalValue = filtered.fold<int>(
+            0,
+            (acc, doc) => acc + ((doc.data()['total'] ?? 0) as int),
+          );
           for (final doc in filtered) {
+            final total = (doc.data()['total'] ?? 0) as int;
             final address = doc.data()['deliveryAddress'] as Map<String, dynamic>?;
             final area = (address?['area'] ?? 'Unknown').toString();
             areaCount[area] = (areaCount[area] ?? 0) + 1;
+            areaValue[area] = (areaValue[area] ?? 0) + total;
           }
 
           return ListView(
@@ -178,6 +185,19 @@ class _OwnerOrderDashboardScreenState extends State<OwnerOrderDashboardScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  title: const Text('Completed Order Value'),
+                  trailing: Text(
+                    'INR $totalValue',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               const Text(
                 'Completed Orders by Area',
@@ -191,9 +211,13 @@ class _OwnerOrderDashboardScreenState extends State<OwnerOrderDashboardScreen> {
                   (entry) => Card(
                     child: ListTile(
                       title: Text(entry.key),
+                      subtitle: Text('Value: INR ${areaValue[entry.key] ?? 0}'),
                       trailing: Text(
                         '${entry.value}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
                   ),
@@ -234,4 +258,3 @@ class _OwnerOrderDashboardScreenState extends State<OwnerOrderDashboardScreen> {
     );
   }
 }
-
