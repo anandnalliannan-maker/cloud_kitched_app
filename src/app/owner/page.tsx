@@ -608,9 +608,16 @@ export default function OwnerPage() {
       return;
     }
     const raw = loginForm.username.trim();
-    const candidates = [raw];
+    const candidates = new Set<string>();
+    candidates.add(raw);
     const normalized = normalizePhone(raw);
-    if (normalized !== raw) candidates.push(normalized);
+    candidates.add(normalized);
+    if (raw.startsWith("+91")) {
+      candidates.add(raw.replace("+91", ""));
+    }
+    if (raw.startsWith("91") && raw.length === 12) {
+      candidates.add(raw.substring(2));
+    }
     for (const candidate of candidates) {
       try {
         await loginOwner(candidate, loginForm.password);
