@@ -1021,16 +1021,13 @@ export default function OwnerPage() {
             ))}
           </div>
           {showNav && (
-            <div className="owner-nav-drawer">
-              <div className="owner-nav-panel">
+            <div className="owner-nav-drawer" onClick={() => setShowNav(false)}>
+              <div
+                className="owner-nav-panel"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <div className="row" style={{ justifyContent: "space-between" }}>
                   <strong>Owner Menu</strong>
-                  <button
-                    className="btn secondary"
-                    onClick={() => setShowNav(false)}
-                  >
-                    Close
-                  </button>
                 </div>
                 {[
                   { id: "menu", label: "Menu" },
