@@ -941,7 +941,7 @@ export default function OwnerPage() {
               <h1>Owner Dashboard</h1>
             </div>
           </div>
-          <div className="row">
+          <div className="row owner-header-actions">
             <button
               className="btn secondary"
               onClick={() => setShowPasswordForm((prev) => !prev)}
@@ -1358,8 +1358,8 @@ export default function OwnerPage() {
               {publishedMenus
                 .filter((menu) => !menu.isArchived)
                 .map((menu) => (
-                  <div key={menu.id} className="row list-card">
-                    <div style={{ flex: 1 }}>
+                  <div key={menu.id} className="list-card menu-card">
+                    <div className="menu-card-body">
                       <div>
                         {formatDateLabel(menu.date)} - {menu.mealType} (
                         {menu.items?.length ?? 0} items)
@@ -1381,25 +1381,27 @@ export default function OwnerPage() {
                         )}
                       </div>
                     </div>
-                    <button
-                      className="btn secondary"
-                      onClick={() => startEditPublishedMenu(menu)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn secondary"
-                      onClick={() => stopOrdersForMenu(menu)}
-                      disabled={menu.ordersStopped}
-                    >
-                      {menu.ordersStopped ? "Orders Stopped" : "Stop Orders"}
-                    </button>
-                    <button
-                      className="btn secondary"
-                      onClick={() => archivePublishedMenu(menu)}
-                    >
-                      Archive
-                    </button>
+                    <div className="menu-card-actions">
+                      <button
+                        className="btn secondary"
+                        onClick={() => startEditPublishedMenu(menu)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn secondary"
+                        onClick={() => stopOrdersForMenu(menu)}
+                        disabled={menu.ordersStopped}
+                      >
+                        {menu.ordersStopped ? "Orders Stopped" : "Stop Orders"}
+                      </button>
+                      <button
+                        className="btn secondary"
+                        onClick={() => archivePublishedMenu(menu)}
+                      >
+                        Archive
+                      </button>
+                    </div>
                   </div>
                 ))}
               <h3>Archived Menus</h3>

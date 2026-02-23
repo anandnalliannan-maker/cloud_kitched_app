@@ -54,6 +54,30 @@ a {
   padding: 12px 14px;
 }
 
+.menu-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.menu-card-body {
+  display: grid;
+  gap: 6px;
+}
+
+.menu-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.owner-header-actions {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .btn {
   background: var(--accent);
   color: #fff;
@@ -154,6 +178,13 @@ a {
     display: inline-flex;
   }
 
+  .owner-nav-toggle {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
   .btn {
     padding: 10px 14px;
     font-size: 14px;
@@ -163,6 +194,32 @@ a {
     width: 100%;
     justify-content: center;
     padding: 10px 12px;
+  }
+
+  .owner-header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .owner-header-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .menu-card {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-card-actions {
+    width: 100%;
+    justify-content: stretch;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .menu-card-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .card {
