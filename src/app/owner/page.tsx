@@ -15,7 +15,14 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
-import { normalizePhone, setDeliveryPassword } from "@/lib/auth";
+import {
+  changeOwnerPassword,
+  loginOwner,
+  normalizePhone,
+  ownerExists,
+  setDeliveryPassword,
+} from "@/lib/auth";
+import { clearSession, getSession, saveSession } from "@/lib/session";
 
 type Mode = "loading" | "setup" | "login" | "dashboard";
 type Tab =
@@ -201,6 +208,15 @@ export default function OwnerPage() {
   const [openAssignmentArea, setOpenAssignmentArea] = useState<string | null>(
     null
   );
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [loginError, setLoginError] = useState("");
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    current: "",
+    next: "",
+  });
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
   const [activeOrderSearch, setActiveOrderSearch] = useState("");
   const [activeOrderAreaFilter, setActiveOrderAreaFilter] = useState("All");
   const [editingPublishedMenuId, setEditingPublishedMenuId] = useState<
@@ -245,8 +261,16 @@ export default function OwnerPage() {
   }
 
   useEffect(() => {
-    // Temporarily bypass owner auth until final rollout.
-    setMode("dashboard");
+    async function loadOwnerAuth() {
+      const session = getSession();
+      if (session?.role === "owner") {
+        setMode("dashboard");
+        return;
+      }
+      const exists = await ownerExists();
+      setMode(exists ? "login" : "setup");
+    }
+    loadOwnerAuth();
   }, []);
 
   useEffect(() => {
@@ -577,6 +601,57 @@ export default function OwnerPage() {
     await reassignOrdersForArea(areaName, agentIds, lastIndex);
   }
 
+  async function handleOwnerLogin() {
+    setLoginError("");
+    if (!loginForm.username || !loginForm.password) {
+      setLoginError("Enter username and password");
+      return;
+    }
+    const raw = loginForm.username.trim();
+    const candidates = [raw];
+    const normalized = normalizePhone(raw);
+    if (normalized !== raw) candidates.push(normalized);
+    for (const candidate of candidates) {
+      try {
+        await loginOwner(candidate, loginForm.password);
+        saveSession({ role: "owner", username: candidate });
+        setMode("dashboard");
+        return;
+      } catch {
+        // try next candidate
+      }
+    }
+    setLoginError("Invalid credentials");
+  }
+
+  function handleOwnerLogout() {
+    clearSession();
+    setMode("login");
+  }
+
+  async function handleChangePassword() {
+    setPasswordError("");
+    setPasswordSuccess("");
+    const session = getSession();
+    if (!session?.username) {
+      setPasswordError("No active session");
+      return;
+    }
+    if (!passwordForm.current || !passwordForm.next) {
+      setPasswordError("Enter current and new password");
+      return;
+    }
+    try {
+      await loginOwner(session.username, passwordForm.current);
+      await changeOwnerPassword(session.username, passwordForm.next);
+      setPasswordSuccess("Password updated");
+      setPasswordForm({ current: "", next: "" });
+      setShowPasswordForm(false);
+    } catch {
+      setPasswordError("Current password is incorrect");
+    }
+  }
+
   async function reassignOrdersForArea(
     areaName: string,
     agentIds: string[],
@@ -805,6 +880,47 @@ export default function OwnerPage() {
 
   return (
     <main className="container">
+      {mode === "loading" && <div className="card">Loading...</div>}
+      {mode === "setup" && (
+        <div className="card stack">
+          <h2>Owner Setup Required</h2>
+          <p>
+            No owner accounts found. Please create owner accounts in Firestore
+            under <code>admin_users</code>.
+          </p>
+        </div>
+      )}
+      {mode === "login" && (
+        <div className="card stack" style={{ maxWidth: 520 }}>
+          <h2>Owner Portal</h2>
+          <p>Login with your owner phone number and password.</p>
+          <div className="field">
+            <label>Username</label>
+            <input
+              className="input"
+              value={loginForm.username}
+              onChange={(e) =>
+                setLoginForm({ ...loginForm, username: e.target.value })
+              }
+            />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input
+              className="input"
+              type="password"
+              value={loginForm.password}
+              onChange={(e) =>
+                setLoginForm({ ...loginForm, password: e.target.value })
+              }
+            />
+          </div>
+          {loginError && <p style={{ color: "crimson" }}>{loginError}</p>}
+          <button className="btn" onClick={handleOwnerLogin}>
+            Login
+          </button>
+        </div>
+      )}
       {mode === "dashboard" && (
         <div className="stack">
           <div className="row" style={{ justifyContent: "space-between" }}>
@@ -818,6 +934,67 @@ export default function OwnerPage() {
               <h1>Owner Dashboard</h1>
             </div>
           </div>
+          <div className="row">
+            <button
+              className="btn secondary"
+              onClick={() => setShowPasswordForm((prev) => !prev)}
+            >
+              Change Password
+            </button>
+            <button className="btn secondary" onClick={handleOwnerLogout}>
+              Logout
+            </button>
+          </div>
+          {showPasswordForm && (
+            <div className="card stack" style={{ maxWidth: 520 }}>
+              <h3>Change Password</h3>
+              <div className="field">
+                <label>Current Password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={passwordForm.current}
+                  onChange={(e) =>
+                    setPasswordForm({
+                      ...passwordForm,
+                      current: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="field">
+                <label>New Password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={passwordForm.next}
+                  onChange={(e) =>
+                    setPasswordForm({
+                      ...passwordForm,
+                      next: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              {passwordError && (
+                <p style={{ color: "crimson" }}>{passwordError}</p>
+              )}
+              {passwordSuccess && (
+                <p style={{ color: "green" }}>{passwordSuccess}</p>
+              )}
+              <div className="row">
+                <button className="btn" onClick={handleChangePassword}>
+                  Update Password
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={() => setShowPasswordForm(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           <div className="row owner-nav">
             {[
               { id: "menu", label: "Menu" },

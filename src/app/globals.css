@@ -47,6 +47,13 @@ a {
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.06);
 }
 
+.list-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
 .btn {
   background: var(--accent);
   color: #fff;
@@ -92,4 +99,58 @@ a {
 .stack {
   display: grid;
   gap: 12px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e6f4f1;
+  color: var(--accent);
+}
+
+.owner-nav {
+  flex-wrap: wrap;
+}
+
+.owner-nav-toggle {
+  display: none;
+}
+
+.owner-nav-drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 50;
+}
+
+.owner-nav-panel {
+  width: 260px;
+  height: 100%;
+  background: var(--card);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 6px 0 20px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .owner-nav {
+    display: none;
+  }
+
+  .owner-nav-toggle {
+    display: inline-flex;
+  }
 }
