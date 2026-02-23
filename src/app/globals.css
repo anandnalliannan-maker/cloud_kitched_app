@@ -144,6 +144,8 @@ a {
 
   .row {
     flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .owner-nav {
@@ -152,5 +154,24 @@ a {
 
   .owner-nav-toggle {
     display: inline-flex;
+  }
+
+  .btn {
+    padding: 10px 12px;
+    font-size: 14px;
+    width: 100%;
+  }
+
+  .owner-nav-panel .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .list-card {
+    padding: 12px;
   }
 }
