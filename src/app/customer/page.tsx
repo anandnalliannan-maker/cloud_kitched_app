@@ -147,11 +147,32 @@ export default function CustomerPage() {
     if (!place.geometry?.location) return;
     const lat = place.geometry.location.lat();
     const lng = place.geometry.location.lng();
+    setLocError("");
     setLocation({ lat, lng });
     setLocLabel(place.formatted_address || place.name || "Location selected");
   }
 
   const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  function useCurrentLocation() {
+    setLocError("");
+    if (!navigator.geolocation) {
+      setLocError("Geolocation is not supported on this device.");
+      return;
+    }
+    setLocLabel("Fetching current location...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocLabel("Current location selected");
+      },
+      () => {
+        setLocError("Unable to fetch current location.");
+        setLocLabel("");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }
 
   function formatDateLabel(value: string) {
     if (!value) return "";
@@ -453,11 +474,20 @@ export default function CustomerPage() {
                         onLoad={onAutocompleteLoad}
                         onPlaceChanged={onPlaceChanged}
                       >
-                        <input
-                          className="input"
-                          placeholder="Search apartment/landmark"
-                          style={{ marginBottom: 12 }}
-                        />
+                        <div className="row" style={{ marginBottom: 12 }}>
+                          <input
+                            className="input"
+                            placeholder="Search apartment/landmark"
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn secondary"
+                            onClick={useCurrentLocation}
+                          >
+                            Use current location
+                          </button>
+                        </div>
                       </Autocomplete>
                       <GoogleMap
                         mapContainerStyle={mapContainerStyle}
