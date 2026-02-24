@@ -1199,6 +1199,46 @@ export default function OwnerPage() {
                       <small>Selected: {menuImageFile.name}</small>
                     )}
                   </div>
+                  {(menuForm.imageUrl || menuImageFile) && (
+                    <div className="stack" style={{ gap: 8 }}>
+                      <small>Preview</small>
+                      <img
+                        src={
+                          menuImageFile
+                            ? URL.createObjectURL(menuImageFile)
+                            : menuForm.imageUrl
+                        }
+                        alt="Menu item preview"
+                        style={{
+                          width: 120,
+                          height: 120,
+                          objectFit: "cover",
+                          borderRadius: 10,
+                          border: "1px solid var(--border)",
+                        }}
+                      />
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() => setMenuImageFile(null)}
+                          disabled={!menuImageFile}
+                        >
+                          Remove selected file
+                        </button>
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() =>
+                            setMenuForm({ ...menuForm, imageUrl: "" })
+                          }
+                          disabled={!menuForm.imageUrl}
+                        >
+                          Clear image URL
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <button
                     className="btn"
                     onClick={addMenuItem}
@@ -1454,10 +1494,8 @@ export default function OwnerPage() {
                     )}
                   </div>
                   {(editMenuForm.imageUrl || editMenuImageFile) && (
-                    <div>
-                      <small style={{ display: "block", marginBottom: 6 }}>
-                        Preview
-                      </small>
+                    <div className="stack" style={{ gap: 8 }}>
+                      <small>Preview</small>
                       <img
                         src={
                           editMenuImageFile
@@ -1473,6 +1511,29 @@ export default function OwnerPage() {
                           border: "1px solid var(--border)",
                         }}
                       />
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() => setEditMenuImageFile(null)}
+                          disabled={!editMenuImageFile}
+                        >
+                          Remove selected file
+                        </button>
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() =>
+                            setEditMenuForm({
+                              ...editMenuForm,
+                              imageUrl: "",
+                            })
+                          }
+                          disabled={!editMenuForm.imageUrl}
+                        >
+                          Clear image URL
+                        </button>
+                      </div>
                     </div>
                   )}
                   <div className="row">
