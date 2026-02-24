@@ -13,8 +13,9 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
 import {
   changeOwnerPassword,
   loginOwner,
@@ -162,6 +163,8 @@ export default function OwnerPage() {
     null
   );
   const [showMenuForm, setShowMenuForm] = useState(false);
+  const [menuImageFile, setMenuImageFile] = useState<File | null>(null);
+  const [menuImageUploading, setMenuImageUploading] = useState(false);
   const [menuSearch, setMenuSearch] = useState("");
   const [menuMealFilter, setMenuMealFilter] = useState("All");
 
@@ -201,6 +204,7 @@ export default function OwnerPage() {
     null
   );
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [editMenuImageFile, setEditMenuImageFile] = useState<File | null>(null);
   const [editAgentForm, setEditAgentForm] = useState({
     name: "",
     phone: "",
@@ -239,6 +243,14 @@ export default function OwnerPage() {
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>(
     {}
   );
+
+  async function uploadMenuImage(file: File) {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `menu_images/${Date.now()}_${safeName}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    return getDownloadURL(storageRef);
+  }
 
   const areaOptions = serviceAreas.length
     ? serviceAreas.map((area) => area.name)
@@ -364,12 +376,21 @@ export default function OwnerPage() {
 
   async function addMenuItem() {
     if (!menuForm.name || !menuForm.price || !menuForm.mealType) return;
+    let imageUrl = menuForm.imageUrl.trim();
+    if (menuImageFile) {
+      setMenuImageUploading(true);
+      try {
+        imageUrl = await uploadMenuImage(menuImageFile);
+      } finally {
+        setMenuImageUploading(false);
+      }
+    }
     await addDoc(collection(db, "menu_items"), {
       name: menuForm.name.trim(),
       price: Number(menuForm.price),
       mealType: menuForm.mealType,
       description: menuForm.description.trim(),
-      imageUrl: menuForm.imageUrl.trim(),
+      imageUrl,
       active: true,
       createdAt: serverTimestamp(),
     });
@@ -380,6 +401,7 @@ export default function OwnerPage() {
       description: "",
       imageUrl: "",
     });
+    setMenuImageFile(null);
   }
 
   async function updateMenuItem(id: string, data: Partial<MenuItem>) {
@@ -415,17 +437,28 @@ export default function OwnerPage() {
     if (!editMenuForm.name || !editMenuForm.price || !editMenuForm.mealType) {
       return;
     }
+    let imageUrl = editMenuForm.imageUrl.trim();
+    if (editMenuImageFile) {
+      setMenuImageUploading(true);
+      try {
+        imageUrl = await uploadMenuImage(editMenuImageFile);
+      } finally {
+        setMenuImageUploading(false);
+      }
+    }
     await updateMenuItem(editingMenuId, {
       name: editMenuForm.name.trim(),
       price: Number(editMenuForm.price),
       mealType: editMenuForm.mealType,
       description: editMenuForm.description.trim(),
-      imageUrl: editMenuForm.imageUrl.trim(),
+      imageUrl,
     });
+    setEditMenuImageFile(null);
     setEditingMenuId(null);
   }
 
   function cancelEditMenu() {
+    setEditMenuImageFile(null);
     setEditingMenuId(null);
   }
 
@@ -1152,8 +1185,26 @@ export default function OwnerPage() {
                       setMenuForm({ ...menuForm, imageUrl: e.target.value })
                     }
                   />
-                  <button className="btn" onClick={addMenuItem}>
-                    Add Menu Item
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Or upload image from device</label>
+                    <input
+                      className="input"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) =>
+                        setMenuImageFile(e.target.files?.[0] ?? null)
+                      }
+                    />
+                    {menuImageFile && (
+                      <small>Selected: {menuImageFile.name}</small>
+                    )}
+                  </div>
+                  <button
+                    className="btn"
+                    onClick={addMenuItem}
+                    disabled={menuImageUploading}
+                  >
+                    {menuImageUploading ? "Uploading..." : "Add Menu Item"}
                   </button>
                 </div>
               )}
@@ -1263,6 +1314,21 @@ export default function OwnerPage() {
                     onChange={() => toggleMenuSelection(item.id)}
                   />
                   <div style={{ flex: 1 }}>
+                    {item.imageUrl && (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        style={{
+                          width: 56,
+                          height: 56,
+                          objectFit: "cover",
+                          borderRadius: 8,
+                          border: "1px solid var(--border)",
+                          marginBottom: 8,
+                          display: "block",
+                        }}
+                      />
+                    )}
                     <strong>{item.name}</strong> - INR {item.price}
                     <div>
                       <small>
@@ -1373,9 +1439,49 @@ export default function OwnerPage() {
                       })
                     }
                   />
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Or upload image from device</label>
+                    <input
+                      className="input"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) =>
+                        setEditMenuImageFile(e.target.files?.[0] ?? null)
+                      }
+                    />
+                    {editMenuImageFile && (
+                      <small>Selected: {editMenuImageFile.name}</small>
+                    )}
+                  </div>
+                  {(editMenuForm.imageUrl || editMenuImageFile) && (
+                    <div>
+                      <small style={{ display: "block", marginBottom: 6 }}>
+                        Preview
+                      </small>
+                      <img
+                        src={
+                          editMenuImageFile
+                            ? URL.createObjectURL(editMenuImageFile)
+                            : editMenuForm.imageUrl
+                        }
+                        alt="Menu item preview"
+                        style={{
+                          width: 120,
+                          height: 120,
+                          objectFit: "cover",
+                          borderRadius: 10,
+                          border: "1px solid var(--border)",
+                        }}
+                      />
+                    </div>
+                  )}
                   <div className="row">
-                    <button className="btn" onClick={saveEditMenu}>
-                      Save
+                    <button
+                      className="btn"
+                      onClick={saveEditMenu}
+                      disabled={menuImageUploading}
+                    >
+                      {menuImageUploading ? "Uploading..." : "Save"}
                     </button>
                     <button className="btn secondary" onClick={cancelEditMenu}>
                       Cancel
