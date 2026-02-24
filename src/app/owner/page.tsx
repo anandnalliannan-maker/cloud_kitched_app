@@ -39,6 +39,7 @@ type MenuItem = {
   price: number;
   mealType: string;
   description?: string;
+  imageUrl?: string;
   active?: boolean;
 };
 
@@ -46,7 +47,14 @@ type PublishedMenu = {
   id: string;
   date: string;
   mealType: string;
-  items: { itemId: string; name: string; qty: number; price: number }[];
+  items: {
+    itemId: string;
+    name: string;
+    qty: number;
+    price: number;
+    description?: string;
+    imageUrl?: string;
+  }[];
   createdAt?: any;
   isArchived?: boolean;
   ordersStopped?: boolean;
@@ -148,6 +156,7 @@ export default function OwnerPage() {
     price: "",
     mealType: "Lunch",
     description: "",
+    imageUrl: "",
   });
   const [openMenuActionsId, setOpenMenuActionsId] = useState<string | null>(
     null
@@ -161,6 +170,7 @@ export default function OwnerPage() {
     price: "",
     mealType: "Lunch",
     description: "",
+    imageUrl: "",
   });
 
   const [publishForm, setPublishForm] = useState({
@@ -359,10 +369,17 @@ export default function OwnerPage() {
       price: Number(menuForm.price),
       mealType: menuForm.mealType,
       description: menuForm.description.trim(),
+      imageUrl: menuForm.imageUrl.trim(),
       active: true,
       createdAt: serverTimestamp(),
     });
-    setMenuForm({ name: "", price: "", mealType: "Lunch", description: "" });
+    setMenuForm({
+      name: "",
+      price: "",
+      mealType: "Lunch",
+      description: "",
+      imageUrl: "",
+    });
   }
 
   async function updateMenuItem(id: string, data: Partial<MenuItem>) {
@@ -388,6 +405,7 @@ export default function OwnerPage() {
       price: String(item.price),
       mealType: item.mealType || "Lunch",
       description: item.description || "",
+      imageUrl: item.imageUrl || "",
     });
     setOpenMenuActionsId(null);
   }
@@ -402,6 +420,7 @@ export default function OwnerPage() {
       price: Number(editMenuForm.price),
       mealType: editMenuForm.mealType,
       description: editMenuForm.description.trim(),
+      imageUrl: editMenuForm.imageUrl.trim(),
     });
     setEditingMenuId(null);
   }
@@ -433,6 +452,8 @@ export default function OwnerPage() {
         itemId: item.id,
         name: item.name,
         price: item.price,
+        description: item.description || "",
+        imageUrl: item.imageUrl || "",
         qty: publishQty[item.id] || 0,
       }))
       .filter((item) => item.qty > 0);
@@ -1123,6 +1144,14 @@ export default function OwnerPage() {
                       setMenuForm({ ...menuForm, description: e.target.value })
                     }
                   />
+                  <input
+                    className="input"
+                    placeholder="Image URL (optional)"
+                    value={menuForm.imageUrl}
+                    onChange={(e) =>
+                      setMenuForm({ ...menuForm, imageUrl: e.target.value })
+                    }
+                  />
                   <button className="btn" onClick={addMenuItem}>
                     Add Menu Item
                   </button>
@@ -1330,6 +1359,17 @@ export default function OwnerPage() {
                       setEditMenuForm({
                         ...editMenuForm,
                         description: e.target.value,
+                      })
+                    }
+                  />
+                  <input
+                    className="input"
+                    placeholder="Image URL (optional)"
+                    value={editMenuForm.imageUrl}
+                    onChange={(e) =>
+                      setEditMenuForm({
+                        ...editMenuForm,
+                        imageUrl: e.target.value,
                       })
                     }
                   />

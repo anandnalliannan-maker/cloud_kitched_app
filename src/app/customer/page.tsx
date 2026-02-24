@@ -25,6 +25,7 @@ type CartItem = {
   name: string;
   price: number;
   qty: number;
+  imageUrl?: string;
 };
 
 const mapContainerStyle = { width: "100%", height: "320px" };
@@ -102,6 +103,7 @@ export default function CustomerPage() {
         price: item.price,
         qty: 0,
         description: item.description || "",
+        imageUrl: item.imageUrl || "",
         remaining: remainingMap.get(item.itemId) ?? 0,
       }));
       setItems(menuItems);
@@ -323,39 +325,55 @@ export default function CustomerPage() {
                   : "No menu published"}
               </span>
             </div>
-            {items.map((item) => (
-              <div key={item.id} className="row">
-                <div style={{ flex: 1 }}>
-                  <div>{item.name}</div>
-                  <small>{item.description}</small>
-                  <div>
-                    <small>INR {item.price}</small>
+            <div className="product-grid">
+              {items.map((item) => (
+                <div key={item.id} className="product-card">
+                  <div className="product-image-wrap">
+                    {item.remaining === 0 && (
+                      <span className="product-badge">Sold Out</span>
+                    )}
+                    {item.imageUrl ? (
+                      // Using plain img keeps setup simple while owner stores image URLs.
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className="product-image"
+                      />
+                    ) : (
+                      <div className="product-image product-image-placeholder">
+                        No image
+                      </div>
+                    )}
                   </div>
-                  {item.remaining === 0 && (
-                    <small style={{ color: "crimson", fontWeight: 600 }}>
-                      Sold Out
-                    </small>
-                  )}
+
+                  <div className="product-content">
+                    <div className="product-title">{item.name}</div>
+                    {item.description && (
+                      <div className="product-desc">{item.description}</div>
+                    )}
+                    <div className="product-price">INR {item.price}</div>
+                  </div>
+
+                  <div className="product-qty-row">
+                    <button
+                      className="btn secondary qty-btn"
+                      onClick={() => updateQty(item.id, -1)}
+                      disabled={item.remaining === 0}
+                    >
+                      -
+                    </button>
+                    <div className="qty-value">{item.qty}</div>
+                    <button
+                      className="btn qty-btn"
+                      onClick={() => updateQty(item.id, 1)}
+                      disabled={item.remaining === 0}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-                <div className="row">
-                  <button
-                    className="btn secondary"
-                    onClick={() => updateQty(item.id, -1)}
-                    disabled={item.remaining === 0}
-                  >
-                    -
-                  </button>
-                  <div>{item.qty}</div>
-                  <button
-                    className="btn"
-                    onClick={() => updateQty(item.id, 1)}
-                    disabled={item.remaining === 0}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
             <div className="row">
               <strong>Total: INR {total}</strong>
               <button
