@@ -28,6 +28,13 @@ type CartItem = {
   imageUrl?: string;
 };
 
+type PaymentSummary = {
+  items: { id: string; name: string; price: number; qty: number }[];
+  total: number;
+  deliveryType: "delivery" | "pickup" | "";
+  location: { lat: number; lng: number } | null;
+};
+
 const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 
@@ -57,6 +64,9 @@ export default function CustomerPage() {
   const [locError, setLocError] = useState("");
   const [payError, setPayError] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
+    null
+  );
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
@@ -214,6 +224,18 @@ export default function CustomerPage() {
       return;
     }
 
+    const summaryForPayment: PaymentSummary = {
+      items: selectedItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        qty: item.qty,
+      })),
+      total,
+      deliveryType,
+      location,
+    };
+
     setIsPlacingOrder(true);
     try {
       const menuRef = doc(db, "published_menus", publishedMenuId);
@@ -300,6 +322,7 @@ export default function CustomerPage() {
         });
         tx.update(menuRef, { remaining });
       });
+      setPaymentSummary(summaryForPayment);
       setStep("payment");
     } catch (err: any) {
       setPayError(err?.message || "Failed to place order.");
@@ -558,24 +581,30 @@ export default function CustomerPage() {
             <h2>Payment</h2>
             <div className="stack">
               <strong>Order Summary</strong>
-              {items
-                .filter((item) => item.qty > 0)
-                .map((item) => (
+              {(paymentSummary?.items || []).map((item) => (
                   <div key={item.id}>
                     {item.name} x{item.qty} = INR {item.price * item.qty}
                   </div>
                 ))}
-              <div>Total: INR {total}</div>
+              <div>Total: INR {paymentSummary?.total ?? 0}</div>
               <div>
-                Delivery: {deliveryType === "delivery" ? "Home" : "Pickup"}
+                Delivery:{" "}
+                {(
+                  paymentSummary?.deliveryType === "delivery"
+                    ? "Home"
+                    : paymentSummary?.deliveryType === "pickup"
+                    ? "Pickup"
+                    : ""
+                ) || "-"}
               </div>
-              {location && (
+              {paymentSummary?.location && (
                 <div>
-                  Location: {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                  Location: {paymentSummary.location.lat.toFixed(5)},{" "}
+                  {paymentSummary.location.lng.toFixed(5)}
                 </div>
               )}
             </div>
-            {deliveryType === "pickup" ? (
+            {paymentSummary?.deliveryType === "pickup" ? (
               <div className="row">
                 <button className="btn">Pay Online</button>
                 <button className="btn secondary">Pay at Outlet</button>
