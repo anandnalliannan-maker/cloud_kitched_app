@@ -144,6 +144,15 @@ a {
   display: none;
 }
 
+.customer-nav-toggle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .owner-nav-drawer {
   position: fixed;
   inset: 0;
@@ -159,6 +168,14 @@ a {
   display: grid;
   gap: 12px;
   box-shadow: 6px 0 20px rgba(0, 0, 0, 0.12);
+}
+
+.customer-nav-panel {
+  width: min(84vw, 320px);
+}
+
+.customer-order-card {
+  gap: 8px;
 }
 
 .product-grid {
@@ -271,9 +288,6 @@ a {
 
   .owner-nav-toggle {
     display: inline-flex;
-  }
-
-  .owner-nav-toggle {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -289,6 +303,10 @@ a {
     width: 100%;
     justify-content: center;
     padding: 10px 12px;
+  }
+
+  .customer-nav-panel {
+    width: min(88vw, 320px);
   }
 
   .owner-header-actions {
@@ -332,6 +350,10 @@ a {
 
   .product-image {
     height: 132px;
+  }
+
+  .customer-order-card .row {
+    gap: 8px;
   }
 }
 

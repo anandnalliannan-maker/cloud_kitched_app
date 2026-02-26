@@ -10,12 +10,14 @@ import {
 import {
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
@@ -33,6 +35,22 @@ type PaymentSummary = {
   total: number;
   deliveryType: "delivery" | "pickup" | "";
   location: { lat: number; lng: number } | null;
+};
+
+type CustomerOrder = {
+  id: string;
+  orderId: string;
+  customerName: string;
+  phone: string;
+  status: string;
+  deliveryType: string;
+  address: string;
+  area: string;
+  total: number;
+  publishedDate: string;
+  mealType: string;
+  createdAt: any;
+  items: { name: string; qty: number; price?: number }[];
 };
 
 const mapContainerStyle = { width: "100%", height: "320px" };
@@ -67,8 +85,19 @@ export default function CustomerPage() {
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
     null
   );
+  const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
+  const [customerView, setCustomerView] = useState<"menu" | "history">("menu");
+  const [historyPhone, setHistoryPhone] = useState("");
+  const [historyOrders, setHistoryOrders] = useState<CustomerOrder[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historySearched, setHistorySearched] = useState(false);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const supportPhone =
+    process.env.NEXT_PUBLIC_SUPPORT_PHONE ||
+    process.env.NEXT_PUBLIC_CONTACT_PHONE ||
+    "";
 
   useEffect(() => {
     const q = query(
@@ -208,6 +237,83 @@ export default function CustomerPage() {
     return `${day}-${monthLabel}-${year}`;
   }
 
+  function formatDateTimeFromTs(value: any) {
+    if (!value) return "-";
+    try {
+      const date =
+        typeof value?.toDate === "function"
+          ? value.toDate()
+          : value?.seconds
+          ? new Date(value.seconds * 1000)
+          : new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return date.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "-";
+    }
+  }
+
+  async function loadOrderHistory() {
+    setHistoryError("");
+    const raw = historyPhone.trim();
+    if (!raw) {
+      setHistoryError("Enter phone number.");
+      return;
+    }
+    const digits = raw.replace(/\D/g, "");
+    const variants = Array.from(
+      new Set(
+        [raw, digits, digits ? `+${digits}` : "", digits.length === 10 ? `+91${digits}` : ""].filter(
+          Boolean
+        )
+      )
+    );
+    setHistoryLoading(true);
+    setHistorySearched(true);
+    try {
+      const results = new Map<string, CustomerOrder>();
+      for (const phoneVariant of variants) {
+        const snap = await getDocs(
+          query(collection(db, "orders"), where("phone", "==", phoneVariant))
+        );
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          results.set(docSnap.id, {
+            id: docSnap.id,
+            orderId: data.orderId || docSnap.id,
+            customerName: data.customerName || "",
+            phone: data.phone || "",
+            status: data.status || "",
+            deliveryType: data.deliveryType || "",
+            address: data.address || "",
+            area: data.area || "",
+            total: Number(data.total || 0),
+            publishedDate: data.publishedDate || "",
+            mealType: data.mealType || "",
+            createdAt: data.createdAt || null,
+            items: Array.isArray(data.items) ? data.items : [],
+          });
+        });
+      }
+      const sorted = Array.from(results.values()).sort((a, b) => {
+        const aSec = a.createdAt?.seconds || 0;
+        const bSec = b.createdAt?.seconds || 0;
+        return bSec - aSec;
+      });
+      setHistoryOrders(sorted);
+    } catch (err: any) {
+      setHistoryError(err?.message || "Failed to load order history.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   async function placeOrder() {
     setPayError("");
     if (!publishedMenuId) {
@@ -334,9 +440,135 @@ export default function CustomerPage() {
   return (
     <main className="container">
       <div className="stack">
-        <h1>MS Kitchen Menu</h1>
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "center" }}
+        >
+          <div className="row" style={{ alignItems: "center" }}>
+            <button
+              className="btn secondary customer-nav-toggle"
+              onClick={() => setCustomerDrawerOpen(true)}
+              aria-label="Open customer menu"
+            >
+              {"\u2630"}
+            </button>
+            <h1>MS Kitchen Menu</h1>
+          </div>
+        </div>
 
-        {step === "menu" && (
+        {customerDrawerOpen && (
+          <div
+            className="owner-nav-drawer"
+            onClick={() => setCustomerDrawerOpen(false)}
+          >
+            <div
+              className="owner-nav-panel customer-nav-panel"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="stack">
+                <strong>Customer Menu</strong>
+                <button
+                  className={`btn ${customerView === "menu" ? "" : "secondary"}`}
+                  onClick={() => {
+                    setCustomerView("menu");
+                    setCustomerDrawerOpen(false);
+                  }}
+                >
+                  Menu
+                </button>
+                <button
+                  className={`btn ${
+                    customerView === "history" ? "" : "secondary"
+                  }`}
+                  onClick={() => {
+                    setCustomerView("history");
+                    setCustomerDrawerOpen(false);
+                  }}
+                >
+                  Order History
+                </button>
+                <a
+                  className="btn secondary"
+                  href={supportPhone ? `tel:${supportPhone}` : undefined}
+                  onClick={(e) => {
+                    if (!supportPhone) {
+                      e.preventDefault();
+                      alert("Contact number not configured yet.");
+                    }
+                  }}
+                >
+                  Contact Us
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {customerView === "history" && (
+          <div className="card stack">
+            <h2>Order History</h2>
+            <div className="field">
+              <label>Mobile Number</label>
+              <div className="row">
+                <input
+                  className="input"
+                  placeholder="Enter phone number"
+                  value={historyPhone}
+                  onChange={(e) => setHistoryPhone(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn" onClick={loadOrderHistory}>
+                  Search
+                </button>
+              </div>
+            </div>
+            {historyLoading && <p>Loading orders...</p>}
+            {historyError && <small style={{ color: "crimson" }}>{historyError}</small>}
+            {!historyLoading &&
+              historySearched &&
+              !historyError &&
+              historyOrders.length === 0 && (
+              <p>No orders found for this phone number.</p>
+            )}
+            <div className="stack">
+              {historyOrders.map((order) => (
+                <div key={order.id} className="list-card stack customer-order-card">
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <strong>{order.orderId}</strong>
+                    <span className="badge">{order.status || "unknown"}</span>
+                  </div>
+                  <div style={{ color: "var(--muted)" }}>
+                    {order.publishedDate
+                      ? `${formatDateLabel(order.publishedDate)}${
+                          order.mealType ? ` - ${order.mealType}` : ""
+                        }`
+                      : formatDateTimeFromTs(order.createdAt)}
+                  </div>
+                  <div>
+                    {order.items.map((it, idx) => (
+                      <div key={`${order.id}-${idx}`}>
+                        {it.name} x{it.qty}
+                      </div>
+                    ))}
+                  </div>
+                  <div>Total: INR {order.total || 0}</div>
+                  <div>
+                    Delivery:{" "}
+                    {order.deliveryType === "delivery" ? "Home Delivery" : "Self Pickup"}
+                  </div>
+                  {order.deliveryType === "delivery" && (
+                    <div>
+                      Address: {order.address || "-"}
+                      {order.area ? `, ${order.area}` : ""}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {customerView === "menu" && step === "menu" && (
           <div className="card stack">
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h2>Menu</h2>
@@ -410,7 +642,7 @@ export default function CustomerPage() {
           </div>
         )}
 
-        {step === "details" && (
+        {customerView === "menu" && step === "details" && (
           <div className="card stack">
             <h2>Customer Details</h2>
             <div className="field">
@@ -576,7 +808,7 @@ export default function CustomerPage() {
           </div>
         )}
 
-        {step === "payment" && (
+        {customerView === "menu" && step === "payment" && (
           <div className="card stack">
             <h2>Payment</h2>
             <div className="stack">
