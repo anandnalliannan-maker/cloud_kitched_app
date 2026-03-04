@@ -31,11 +31,21 @@ type CartItem = {
 };
 
 type PaymentSummary = {
+  orderId: string;
   items: { id: string; name: string; price: number; qty: number }[];
   total: number;
   deliveryType: "delivery" | "pickup" | "";
   location: { lat: number; lng: number } | null;
 };
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => {
+      open: () => void;
+      on: (event: string, handler: (payload: unknown) => void) => void;
+    };
+  }
+}
 
 type CustomerOrder = {
   id: string;
@@ -82,6 +92,7 @@ export default function CustomerPage() {
   const [locError, setLocError] = useState("");
   const [payError, setPayError] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
     null
   );
@@ -98,6 +109,7 @@ export default function CustomerPage() {
     process.env.NEXT_PUBLIC_SUPPORT_PHONE ||
     process.env.NEXT_PUBLIC_CONTACT_PHONE ||
     "";
+  const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
 
   useEffect(() => {
     const q = query(
@@ -330,21 +342,22 @@ export default function CustomerPage() {
       return;
     }
 
-    const summaryForPayment: PaymentSummary = {
-      items: selectedItems.map((item) => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        qty: item.qty,
-      })),
-      total,
-      deliveryType,
-      location,
-    };
-
     setIsPlacingOrder(true);
     try {
       const menuRef = doc(db, "published_menus", publishedMenuId);
+      const orderRef = doc(collection(db, "orders"));
+      const summaryForPayment: PaymentSummary = {
+        orderId: orderRef.id,
+        items: selectedItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          qty: item.qty,
+        })),
+        total,
+        deliveryType,
+        location,
+      };
       await runTransaction(db, async (tx) => {
         const menuSnap = await tx.get(menuRef);
         if (!menuSnap.exists()) {
@@ -370,7 +383,6 @@ export default function CustomerPage() {
           remainingItem.qty = (remainingItem.qty || 0) - item.qty;
         });
 
-        const orderRef = doc(collection(db, "orders"));
         let assignedAgentId = "";
         let assignedAgentName = "";
         if (deliveryType === "delivery" && form.area) {
@@ -403,7 +415,8 @@ export default function CustomerPage() {
 
         tx.set(orderRef, {
           orderId: orderRef.id,
-          status: "active",
+          status: "payment_pending",
+          paymentStatus: "pending",
           createdAt: serverTimestamp(),
           publishedMenuId,
           publishedDate: menuData.date || "",
@@ -434,6 +447,183 @@ export default function CustomerPage() {
       setPayError(err?.message || "Failed to place order.");
     } finally {
       setIsPlacingOrder(false);
+    }
+  }
+
+  async function loadRazorpayScript() {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    if (window.Razorpay) {
+      return true;
+    }
+    return await new Promise<boolean>((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function startOnlinePayment() {
+    setPayError("");
+    if (!paymentSummary) {
+      setPayError("Order summary is missing.");
+      return;
+    }
+    if (!razorpayKeyId) {
+      setPayError("Razorpay key is not configured.");
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded || !window.Razorpay) {
+        throw new Error("Failed to load Razorpay checkout.");
+      }
+
+      const orderResponse = await fetch("/api/razorpay/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appOrderId: paymentSummary.orderId }),
+      });
+      const orderPayload = await orderResponse.json();
+      if (!orderResponse.ok) {
+        throw new Error(orderPayload.error || "Failed to create payment order.");
+      }
+
+      const razorpay = new window.Razorpay({
+        key: orderPayload.keyId,
+        amount: orderPayload.amount,
+        currency: orderPayload.currency,
+        name: "MS Kitchen",
+        description: `Order ${paymentSummary.orderId}`,
+        order_id: orderPayload.razorpayOrderId,
+        prefill: {
+          name: form.name.trim(),
+          contact: form.phone.trim(),
+        },
+        notes: {
+          internalOrderId: paymentSummary.orderId,
+        },
+        theme: {
+          color: "#147d75",
+        },
+        config: {
+          display: {
+            blocks: {
+              upi: {
+                name: "Pay using UPI",
+                instruments: [{ method: "upi" }],
+              },
+            },
+            sequence: ["block.upi"],
+            preferences: {
+              show_default_blocks: false,
+            },
+          },
+        },
+        handler: async (response: Record<string, string>) => {
+          try {
+            const verifyResponse = await fetch("/api/razorpay/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                appOrderId: paymentSummary.orderId,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            const verifyPayload = await verifyResponse.json();
+            if (!verifyResponse.ok) {
+              throw new Error(
+                verifyPayload.error || "Payment verification failed."
+              );
+            }
+
+            setItems((prev) => prev.map((item) => ({ ...item, qty: 0 })));
+            setForm({
+              name: "",
+              phone: "",
+              addressLine1: "",
+              street: "",
+              area: "",
+            });
+            setLocation(null);
+            setLocLabel("");
+            setDeliveryType("");
+            setPaymentSummary(null);
+            setStep("menu");
+            alert(`Payment successful. Order ID: ${paymentSummary.orderId}`);
+          } catch (error: any) {
+            setPayError(error?.message || "Payment verification failed.");
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsProcessingPayment(false);
+          },
+        },
+      });
+
+      razorpay.on("payment.failed", (response: any) => {
+        setPayError(
+          response?.error?.description || "Payment failed. Please try again."
+        );
+        setIsProcessingPayment(false);
+      });
+
+      razorpay.open();
+    } catch (error: any) {
+      setPayError(error?.message || "Unable to start payment.");
+      setIsProcessingPayment(false);
+    }
+  }
+
+  async function confirmPayAtOutlet() {
+    setPayError("");
+    if (!paymentSummary) {
+      setPayError("Order summary is missing.");
+      return;
+    }
+    setIsProcessingPayment(true);
+    try {
+      const response = await fetch("/api/razorpay/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appOrderId: paymentSummary.orderId,
+          offline: true,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to confirm order.");
+      }
+      setItems((prev) => prev.map((item) => ({ ...item, qty: 0 })));
+      setForm({
+        name: "",
+        phone: "",
+        addressLine1: "",
+        street: "",
+        area: "",
+      });
+      setLocation(null);
+      setLocLabel("");
+      setDeliveryType("");
+      setPaymentSummary(null);
+      setStep("menu");
+      alert(`Order placed. Order ID: ${paymentSummary.orderId}`);
+    } catch (error: any) {
+      setPayError(error?.message || "Failed to confirm order.");
+    } finally {
+      setIsProcessingPayment(false);
     }
   }
 
@@ -838,15 +1028,35 @@ export default function CustomerPage() {
             </div>
             {paymentSummary?.deliveryType === "pickup" ? (
               <div className="row">
-                <button className="btn">Pay Online</button>
-                <button className="btn secondary">Pay at Outlet</button>
+                <button
+                  className="btn"
+                  onClick={startOnlinePayment}
+                  disabled={isProcessingPayment}
+                >
+                  Pay Online
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={confirmPayAtOutlet}
+                  disabled={isProcessingPayment}
+                >
+                  Pay at Outlet
+                </button>
               </div>
             ) : (
-              <button className="btn">Pay Online</button>
+              <button
+                className="btn"
+                onClick={startOnlinePayment}
+                disabled={isProcessingPayment}
+              >
+                Pay Online
+              </button>
             )}
-            {isPlacingOrder && <p>Placing order...</p>}
-            {!isPlacingOrder && (
-              <p>Payment integration pending. Order has been reserved.</p>
+            {isProcessingPayment && <p>Preparing payment...</p>}
+            {!isProcessingPayment && (
+              <p>
+                Complete payment to confirm this order.
+              </p>
             )}
           </div>
         )}
