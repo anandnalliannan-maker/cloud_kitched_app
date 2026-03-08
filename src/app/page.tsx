@@ -1,4 +1,4 @@
-\"use client\";
+"use client";
 
 import { useState } from "react";
 
@@ -71,7 +71,7 @@ export default function Home() {
             onClick={() => setShowNav(true)}
             aria-label="Open menu"
           >
-            ☰
+            Menu
           </button>
         </div>
         <p>Choose your portal.</p>
@@ -97,3 +97,5 @@ export default function Home() {
     </main>
   );
 }
+
+
