@@ -679,15 +679,24 @@ export default function CustomerPage() {
                 </button>
                 <a
                   className="btn secondary"
-                  href={supportPhone ? `tel:${supportPhone}` : undefined}
-                  onClick={(e) => {
-                    if (!supportPhone) {
-                      e.preventDefault();
-                      alert("Contact number not configured yet.");
-                    }
-                  }}
+                  href="/contact-us"
                 >
                   Contact Us
+                </a>
+                <a className="btn secondary" href="/about-us">
+                  About Us
+                </a>
+                <a className="btn secondary" href="/terms-and-conditions">
+                  Terms
+                </a>
+                <a className="btn secondary" href="/privacy-policy">
+                  Privacy
+                </a>
+                <a
+                  className="btn secondary"
+                  href="/refund-and-cancellation-policy"
+                >
+                  Refund Policy
                 </a>
               </div>
             </div>
@@ -1060,6 +1069,18 @@ export default function CustomerPage() {
             )}
           </div>
         )}
+
+        <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+          <a href="/about-us">About Us</a>
+          <a href="/contact-us">
+            Contact Us{supportPhone ? ` (${supportPhone})` : ""}
+          </a>
+          <a href="/terms-and-conditions">Terms and Conditions</a>
+          <a href="/privacy-policy">Privacy Policy</a>
+          <a href="/refund-and-cancellation-policy">
+            Refund and Cancellation Policy
+          </a>
+        </div>
       </div>
     </main>
   );

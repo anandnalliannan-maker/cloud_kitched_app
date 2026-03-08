@@ -15,6 +15,15 @@ export default function Home() {
             Delivery Agent
           </a>
         </div>
+        <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+          <a href="/about-us">About Us</a>
+          <a href="/contact-us">Contact Us</a>
+          <a href="/terms-and-conditions">Terms and Conditions</a>
+          <a href="/privacy-policy">Privacy Policy</a>
+          <a href="/refund-and-cancellation-policy">
+            Refund and Cancellation Policy
+          </a>
+        </div>
       </div>
     </main>
   );
