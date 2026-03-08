@@ -105,10 +105,6 @@ export default function CustomerPage() {
   const [historySearched, setHistorySearched] = useState(false);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const supportPhone =
-    process.env.NEXT_PUBLIC_SUPPORT_PHONE ||
-    process.env.NEXT_PUBLIC_CONTACT_PHONE ||
-    "";
   const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
 
   useEffect(() => {
@@ -1070,17 +1066,6 @@ export default function CustomerPage() {
           </div>
         )}
 
-        <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
-          <a href="/about-us">About Us</a>
-          <a href="/contact-us">
-            Contact Us{supportPhone ? ` (${supportPhone})` : ""}
-          </a>
-          <a href="/terms-and-conditions">Terms and Conditions</a>
-          <a href="/privacy-policy">Privacy Policy</a>
-          <a href="/refund-and-cancellation-policy">
-            Refund and Cancellation Policy
-          </a>
-        </div>
       </div>
     </main>
   );

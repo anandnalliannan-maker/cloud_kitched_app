@@ -193,7 +193,7 @@ a {
 }
 
 .customer-nav-panel {
-  width: min(84vw, 320px);
+  width: clamp(220px, 50vw, 280px);
 }
 
 .customer-nav-panel .stack {
@@ -202,8 +202,8 @@ a {
 }
 
 .customer-nav-panel .btn {
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 40px;
+  padding: 8px 10px;
   justify-content: center;
 }
 
@@ -339,12 +339,12 @@ a {
   }
 
   .customer-nav-panel {
-    width: min(88vw, 320px);
+    width: clamp(220px, 50vw, 280px);
   }
 
   .customer-nav-panel .btn {
-    min-height: 44px;
-    padding: 10px 12px;
+    min-height: 40px;
+    padding: 8px 10px;
   }
 
   .owner-header-actions {
