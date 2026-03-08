@@ -167,7 +167,29 @@ a {
   padding: 16px;
   display: grid;
   gap: 12px;
+  align-content: start;
+  grid-auto-rows: max-content;
   box-shadow: 6px 0 20px rgba(0, 0, 0, 0.12);
+}
+
+.home-nav-panel {
+  width: min(86vw, 340px);
+}
+
+.home-link-row {
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.drawer-link {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.drawer-link:hover {
+  color: var(--accent);
 }
 
 .customer-nav-panel {
