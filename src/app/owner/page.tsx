@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
@@ -2244,119 +2244,137 @@ export default function OwnerPage() {
 
               {filteredPickupOrders.length === 0 && <p>No pickup orders found.</p>}
 
-              {filteredPickupOrders.map((order) => (
-                <div key={order.id} className="card stack">
-                  <div className="row">
-                    <div style={{ flex: 1 }}>
-                      <strong>Order #{order.orderId || order.id}</strong>
-                      <small style={{ display: "block" }}>
-                        Booking: {formatDateLabel(order.createdAt || order.publishedDate)}
-                      </small>
-                      <small style={{ display: "block" }}>
-                        Menu: {formatDateLabel(order.publishedDate)} -{" "}
-                        {order.mealType || "Unknown"}
-                      </small>
-                    </div>
-                    <div>
-                      <strong>
-                        {order.pickupPaymentStatus === "paid"
-                          ? "Closed"
-                          : order.pickupPaymentStatus || "unpaid"}
-                      </strong>
-                    </div>
-                  </div>
-                  <div>
-                    {order.customerName || "Customer"} | {order.phone || "-"}
-                  </div>
-                  <div>
-                    {order.items?.map((item) => `${item.name} x${item.qty}`).join(", ") ||
-                      "No items"}
-                  </div>
-                  <div className="row">
-                    <div className="card" style={{ flex: 1 }}>
-                      Total: INR {order.total || 0}
-                    </div>
-                    <div className="card" style={{ flex: 1 }}>
-                      Paid: INR {order.pickupAmountPaid || 0}
-                    </div>
-                    <div className="card" style={{ flex: 1 }}>
-                      Balance: INR{" "}
-                      {typeof order.pickupBalance === "number"
-                        ? order.pickupBalance
-                        : order.total || 0}
-                    </div>
-                  </div>
-                  {order.pickupPaymentNotes && (
-                    <small>Notes: {order.pickupPaymentNotes}</small>
-                  )}
-                  {editingPickupPaymentId === order.id ? (
-                    <div className="card stack">
-                      <div className="row">
-                        <input
-                          className="input"
-                          type="number"
-                          min={0}
-                          placeholder="Amount received"
-                          value={pickupPaymentForm.amount}
-                          onChange={(e) =>
-                            setPickupPaymentForm({
-                              ...pickupPaymentForm,
-                              amount: e.target.value,
-                            })
-                          }
-                        />
-                        <input
-                          className="input"
-                          placeholder="Notes"
-                          value={pickupPaymentForm.notes}
-                          onChange={(e) =>
-                            setPickupPaymentForm({
-                              ...pickupPaymentForm,
-                              notes: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="row">
-                        <button
-                          className="btn"
-                          onClick={() => savePickupPayment(order, false)}
-                        >
-                          Save Payment
-                        </button>
-                        <button
-                          className="btn secondary"
-                          onClick={() => savePickupPayment(order, true)}
-                        >
-                          Mark Fully Paid
-                        </button>
-                        <button
-                          className="btn secondary"
-                          onClick={() => {
-                            setEditingPickupPaymentId(null);
-                            setPickupPaymentForm({ amount: "", notes: "" });
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      className="btn secondary"
-                      onClick={() => {
-                        setEditingPickupPaymentId(order.id);
-                        setPickupPaymentForm({
-                          amount: "",
-                          notes: order.pickupPaymentNotes || "",
-                        });
-                      }}
-                    >
-                      Update Payment
-                    </button>
-                  )}
+              {filteredPickupOrders.length > 0 && (
+                <div className="table-scroll">
+                  <table className="payments-table">
+                    <thead>
+                      <tr>
+                        <th>Booking Date</th>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Phone</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Paid</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                        <th>Notes</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPickupOrders.map((order) => (
+                        <Fragment key={order.id}>
+                          <tr>
+                            <td>
+                              {formatDateLabel(order.createdAt || order.publishedDate)}
+                              <small className="payments-subtext">
+                                {formatDateLabel(order.publishedDate)} -{" "}
+                                {order.mealType || "Unknown"}
+                              </small>
+                            </td>
+                            <td>#{order.orderId || order.id}</td>
+                            <td>{order.customerName || "Customer"}</td>
+                            <td>{order.phone || "-"}</td>
+                            <td>
+                              {(order.items || []).map((item) => (
+                                <div key={`${order.id}-${item.name}`}>
+                                  {item.name} x{item.qty}
+                                </div>
+                              ))}
+                            </td>
+                            <td>INR {order.total || 0}</td>
+                            <td>INR {order.pickupAmountPaid || 0}</td>
+                            <td>
+                              INR{" "}
+                              {typeof order.pickupBalance === "number"
+                                ? order.pickupBalance
+                                : order.total || 0}
+                            </td>
+                            <td>
+                              <span className="status-chip">
+                                {order.pickupPaymentStatus === "paid"
+                                  ? "Closed"
+                                  : order.pickupPaymentStatus || "unpaid"}
+                              </span>
+                            </td>
+                            <td>{order.pickupPaymentNotes || "-"}</td>
+                            <td>
+                              <button
+                                className="btn secondary btn-compact"
+                                onClick={() => {
+                                  setEditingPickupPaymentId(order.id);
+                                  setPickupPaymentForm({
+                                    amount: "",
+                                    notes: order.pickupPaymentNotes || "",
+                                  });
+                                }}
+                              >
+                                Update
+                              </button>
+                            </td>
+                          </tr>
+                          {editingPickupPaymentId === order.id && (
+                            <tr className="payments-edit-row">
+                              <td colSpan={11}>
+                                <div className="payments-edit-grid">
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={0}
+                                    placeholder="Amount received"
+                                    value={pickupPaymentForm.amount}
+                                    onChange={(e) =>
+                                      setPickupPaymentForm({
+                                        ...pickupPaymentForm,
+                                        amount: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  <input
+                                    className="input"
+                                    placeholder="Notes"
+                                    value={pickupPaymentForm.notes}
+                                    onChange={(e) =>
+                                      setPickupPaymentForm({
+                                        ...pickupPaymentForm,
+                                        notes: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  <div className="payments-edit-actions">
+                                    <button
+                                      className="btn btn-compact"
+                                      onClick={() => savePickupPayment(order, false)}
+                                    >
+                                      Save Payment
+                                    </button>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() => savePickupPayment(order, true)}
+                                    >
+                                      Mark Fully Paid
+                                    </button>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() => {
+                                        setEditingPickupPaymentId(null);
+                                        setPickupPaymentForm({ amount: "", notes: "" });
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
+              )}
             </div>
           )}
 
