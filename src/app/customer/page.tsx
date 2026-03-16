@@ -31,7 +31,8 @@ type CartItem = {
 };
 
 type PaymentSummary = {
-  orderId: string;
+  appOrderId: string;
+  displayOrderId: string;
   items: { id: string; name: string; price: number; qty: number }[];
   total: number;
   deliveryType: "delivery" | "pickup" | "";
@@ -342,8 +343,11 @@ export default function CustomerPage() {
     try {
       const menuRef = doc(db, "published_menus", publishedMenuId);
       const orderRef = doc(collection(db, "orders"));
+      const countersRef = doc(db, "app_meta", "counters");
+      let generatedDisplayOrderId = orderRef.id;
       const summaryForPayment: PaymentSummary = {
-        orderId: orderRef.id,
+        appOrderId: orderRef.id,
+        displayOrderId: orderRef.id,
         items: selectedItems.map((item) => ({
           id: item.id,
           name: item.name,
@@ -379,6 +383,27 @@ export default function CustomerPage() {
           remainingItem.qty = (remainingItem.qty || 0) - item.qty;
         });
 
+        const countersSnap = await tx.get(countersRef);
+        const lastOrderNumberRaw = countersSnap.exists()
+          ? Number((countersSnap.data() as any).lastOrderNumber)
+          : 99999;
+        const lastOrderNumber = Number.isFinite(lastOrderNumberRaw)
+          ? lastOrderNumberRaw
+          : 99999;
+        let nextOrderNumber = lastOrderNumber + 1;
+        if (nextOrderNumber > 999999) {
+          nextOrderNumber = 100000;
+        }
+        generatedDisplayOrderId = String(nextOrderNumber).padStart(6, "0");
+        tx.set(
+          countersRef,
+          {
+            lastOrderNumber: nextOrderNumber,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         let assignedAgentId = "";
         let assignedAgentName = "";
         if (deliveryType === "delivery" && form.area) {
@@ -410,7 +435,7 @@ export default function CustomerPage() {
         }
 
         tx.set(orderRef, {
-          orderId: orderRef.id,
+          orderId: generatedDisplayOrderId,
           status: "payment_pending",
           paymentStatus: "pending",
           createdAt: serverTimestamp(),
@@ -437,6 +462,7 @@ export default function CustomerPage() {
         });
         tx.update(menuRef, { remaining });
       });
+      summaryForPayment.displayOrderId = generatedDisplayOrderId;
       setPaymentSummary(summaryForPayment);
       setStep("payment");
     } catch (err: any) {
@@ -484,7 +510,7 @@ export default function CustomerPage() {
       const orderResponse = await fetch("/api/razorpay/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appOrderId: paymentSummary.orderId }),
+        body: JSON.stringify({ appOrderId: paymentSummary.appOrderId }),
       });
       const orderPayload = await orderResponse.json();
       if (!orderResponse.ok) {
@@ -496,14 +522,14 @@ export default function CustomerPage() {
         amount: orderPayload.amount,
         currency: orderPayload.currency,
         name: "MS Kitchen",
-        description: `Order ${paymentSummary.orderId}`,
+        description: `Order ${paymentSummary.displayOrderId}`,
         order_id: orderPayload.razorpayOrderId,
         prefill: {
           name: form.name.trim(),
           contact: form.phone.trim(),
         },
         notes: {
-          internalOrderId: paymentSummary.orderId,
+          internalOrderId: paymentSummary.appOrderId,
         },
         theme: {
           color: "#147d75",
@@ -528,7 +554,7 @@ export default function CustomerPage() {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                appOrderId: paymentSummary.orderId,
+                appOrderId: paymentSummary.appOrderId,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
@@ -554,7 +580,9 @@ export default function CustomerPage() {
             setDeliveryType("");
             setPaymentSummary(null);
             setStep("menu");
-            alert(`Payment successful. Order ID: ${paymentSummary.orderId}`);
+            alert(
+              `Payment successful. Order ID: ${paymentSummary.displayOrderId}`
+            );
           } catch (error: any) {
             setPayError(error?.message || "Payment verification failed.");
           } finally {
@@ -594,7 +622,7 @@ export default function CustomerPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          appOrderId: paymentSummary.orderId,
+          appOrderId: paymentSummary.appOrderId,
           offline: true,
         }),
       });
@@ -615,7 +643,7 @@ export default function CustomerPage() {
       setDeliveryType("");
       setPaymentSummary(null);
       setStep("menu");
-      alert(`Order placed. Order ID: ${paymentSummary.orderId}`);
+      alert(`Order placed. Order ID: ${paymentSummary.displayOrderId}`);
     } catch (error: any) {
       setPayError(error?.message || "Failed to confirm order.");
     } finally {
