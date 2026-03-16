@@ -67,6 +67,22 @@ type CustomerOrder = {
 const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 
+async function generateUniqueSixDigitOrderId() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const timestampPart = Date.now() % 100000;
+    const randomPart = Math.floor(Math.random() * 10);
+    const candidate = String(timestampPart * 10 + randomPart).padStart(6, "0");
+    const existing = await getDocs(
+      query(collection(db, "orders"), where("orderId", "==", candidate), limit(1))
+    );
+    if (existing.empty) {
+      return candidate;
+    }
+  }
+
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 export default function CustomerPage() {
   const [items, setItems] = useState<
     (CartItem & { description: string; remaining: number })[]
@@ -343,11 +359,10 @@ export default function CustomerPage() {
     try {
       const menuRef = doc(db, "published_menus", publishedMenuId);
       const orderRef = doc(collection(db, "orders"));
-      const countersRef = doc(db, "app_meta", "counters");
-      let generatedDisplayOrderId = orderRef.id;
+      const generatedDisplayOrderId = await generateUniqueSixDigitOrderId();
       const summaryForPayment: PaymentSummary = {
         appOrderId: orderRef.id,
-        displayOrderId: orderRef.id,
+        displayOrderId: generatedDisplayOrderId,
         items: selectedItems.map((item) => ({
           id: item.id,
           name: item.name,
@@ -382,27 +397,6 @@ export default function CustomerPage() {
           }
           remainingItem.qty = (remainingItem.qty || 0) - item.qty;
         });
-
-        const countersSnap = await tx.get(countersRef);
-        const lastOrderNumberRaw = countersSnap.exists()
-          ? Number((countersSnap.data() as any).lastOrderNumber)
-          : 99999;
-        const lastOrderNumber = Number.isFinite(lastOrderNumberRaw)
-          ? lastOrderNumberRaw
-          : 99999;
-        let nextOrderNumber = lastOrderNumber + 1;
-        if (nextOrderNumber > 999999) {
-          nextOrderNumber = 100000;
-        }
-        generatedDisplayOrderId = String(nextOrderNumber).padStart(6, "0");
-        tx.set(
-          countersRef,
-          {
-            lastOrderNumber: nextOrderNumber,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
 
         let assignedAgentId = "";
         let assignedAgentName = "";
