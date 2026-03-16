@@ -1026,35 +1026,73 @@ export default function CustomerPage() {
         )}
 
         {customerView === "menu" && step === "payment" && (
-          <div className="card stack">
-            <h2>Payment</h2>
-            <div className="stack">
-              <strong>Order Summary</strong>
-              {(paymentSummary?.items || []).map((item) => (
-                  <div key={item.id}>
-                    {item.name} x{item.qty} = INR {item.price * item.qty}
+          <div className="card payment-card">
+            <div className="payment-card-header">
+              <div>
+                <p className="payment-eyebrow">Secure Checkout</p>
+                <h2>Payment</h2>
+              </div>
+              <span className="badge">Final Step</span>
+            </div>
+
+            <div className="payment-summary-box">
+              <div className="payment-summary-head">
+                <strong>Order Summary</strong>
+                <span>{(paymentSummary?.items || []).length} item(s)</span>
+              </div>
+
+              <div className="payment-items">
+                {(paymentSummary?.items || []).map((item) => (
+                  <div key={item.id} className="payment-item-row">
+                    <div>
+                      <div className="payment-item-name">{item.name}</div>
+                      <div className="payment-item-qty">Qty {item.qty}</div>
+                    </div>
+                    <div className="payment-item-price">
+                      INR {item.price * item.qty}
+                    </div>
                   </div>
                 ))}
-              <div>Total: INR {paymentSummary?.total ?? 0}</div>
-              <div>
-                Delivery:{" "}
-                {(
-                  paymentSummary?.deliveryType === "delivery"
-                    ? "Home"
-                    : paymentSummary?.deliveryType === "pickup"
-                    ? "Pickup"
-                    : ""
-                ) || "-"}
               </div>
-              {paymentSummary?.location && (
-                <div>
-                  Location: {paymentSummary.location.lat.toFixed(5)},{" "}
-                  {paymentSummary.location.lng.toFixed(5)}
+
+              <div className="payment-meta">
+                <div className="payment-meta-row">
+                  <span>Total</span>
+                  <strong>INR {paymentSummary?.total ?? 0}</strong>
                 </div>
-              )}
+                <div className="payment-meta-row">
+                  <span>Delivery</span>
+                  <strong>
+                    {(
+                      paymentSummary?.deliveryType === "delivery"
+                        ? "Home Delivery"
+                        : paymentSummary?.deliveryType === "pickup"
+                        ? "Self Pickup"
+                        : ""
+                    ) || "-"}
+                  </strong>
+                </div>
+                {paymentSummary?.location && (
+                  <div className="payment-location-box">
+                    <span className="payment-location-label">Exact Location</span>
+                    <span className="payment-location-value">
+                      {paymentSummary.location.lat.toFixed(5)},{" "}
+                      {paymentSummary.location.lng.toFixed(5)}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
+
+            <div className="payment-action-box">
+              <div className="payment-action-copy">
+                <strong>Proceed to payment</strong>
+                <p>Complete payment to confirm this order.</p>
+              </div>
+            </div>
+
             {paymentSummary?.deliveryType === "pickup" ? (
-              <div className="row">
+              <div className="row payment-button-row">
                 <button
                   className="btn"
                   onClick={startOnlinePayment}
@@ -1072,17 +1110,19 @@ export default function CustomerPage() {
               </div>
             ) : (
               <button
-                className="btn"
+                className="btn payment-primary-btn"
                 onClick={startOnlinePayment}
                 disabled={isProcessingPayment}
               >
                 Pay Online
               </button>
             )}
-            {isProcessingPayment && <p>Preparing payment...</p>}
+            {isProcessingPayment && (
+              <p className="payment-status-text">Preparing payment...</p>
+            )}
             {!isProcessingPayment && (
-              <p>
-                Complete payment to confirm this order.
+              <p className="payment-status-text">
+                Payment gateway will open securely.
               </p>
             )}
           </div>
