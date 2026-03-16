@@ -6,11 +6,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
+  where,
   updateDoc,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -32,7 +35,9 @@ type Tab =
   | "dashboard"
   | "history"
   | "delivery"
-  | "areas";
+  | "areas"
+  | "pickupPayments"
+  | "createOrder";
 
 type MenuItem = {
   id: string;
@@ -56,6 +61,14 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
   }[];
+  remaining?: {
+    itemId: string;
+    name: string;
+    qty: number;
+    price: number;
+    description?: string;
+    imageUrl?: string;
+  }[];
   createdAt?: any;
   isArchived?: boolean;
   ordersStopped?: boolean;
@@ -67,6 +80,7 @@ type Order = {
   id: string;
   orderId?: string;
   status?: string;
+  paymentStatus?: string;
   customerName?: string;
   phone?: string;
   items?: OrderItem[];
@@ -79,6 +93,14 @@ type Order = {
   publishedDate?: string;
   assignedAgentId?: string;
   assignedAgentName?: string;
+  pickupPaymentStatus?: string;
+  pickupAmountPaid?: number;
+  pickupBalance?: number;
+  pickupPaymentNotes?: string;
+  pickupPaymentUpdatedAt?: any;
+  pickupPaymentClosedAt?: any;
+  orderSource?: string;
+  location?: string | null;
 };
 
 type DeliveryAgent = {
@@ -101,6 +123,21 @@ type AreaAssignment = {
 
 const mealTypes = ["Breakfast", "Lunch", "Snacks", "Dinner"];
 const fallbackAreas = ["Madipakkam", "Medavakkam", "Velachery"];
+
+async function generateUniqueSixDigitOrderId() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const timestampPart = Date.now() % 100000;
+    const randomPart = Math.floor(Math.random() * 10);
+    const candidate = String(timestampPart * 10 + randomPart).padStart(6, "0");
+    const existing = await getDocs(
+      query(collection(db, "orders"), where("orderId", "==", candidate))
+    );
+    if (existing.empty) {
+      return candidate;
+    }
+  }
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 function formatDateKey(value: any) {
   if (!value) return "";
@@ -243,6 +280,32 @@ export default function OwnerPage() {
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>(
     {}
   );
+  const [pickupPaymentFilters, setPickupPaymentFilters] = useState({
+    startDate: "",
+    endDate: "",
+    search: "",
+  });
+  const [editingPickupPaymentId, setEditingPickupPaymentId] = useState<
+    string | null
+  >(null);
+  const [pickupPaymentForm, setPickupPaymentForm] = useState({
+    amount: "",
+    notes: "",
+  });
+  const [ownerOrderMenuId, setOwnerOrderMenuId] = useState("");
+  const [ownerOrderError, setOwnerOrderError] = useState("");
+  const [ownerOrderSuccess, setOwnerOrderSuccess] = useState("");
+  const [ownerOrderSubmitting, setOwnerOrderSubmitting] = useState(false);
+  const [ownerOrderForm, setOwnerOrderForm] = useState({
+    name: "",
+    phone: "",
+    deliveryType: "pickup",
+    addressLine1: "",
+    street: "",
+    area: "",
+    location: "",
+  });
+  const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
 
   async function uploadMenuImage(file: File) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -372,7 +435,6 @@ export default function OwnerPage() {
       unsubAssignments();
     };
   }, [mode]);
-
 
   async function addMenuItem() {
     if (!menuForm.name || !menuForm.price || !menuForm.mealType) return;
@@ -750,6 +812,192 @@ export default function OwnerPage() {
     await updateDoc(doc(db, "area_assignments", areaName), { lastIndex: index });
   }
 
+  async function savePickupPayment(order: Order, markAsFullyPaid = false) {
+    const additionalAmount = markAsFullyPaid
+      ? Math.max((order.total || 0) - (order.pickupAmountPaid || 0), 0)
+      : Number(pickupPaymentForm.amount || 0);
+    if (!markAsFullyPaid && additionalAmount <= 0) {
+      return;
+    }
+    const nextPaid = Math.min(
+      (order.total || 0),
+      (order.pickupAmountPaid || 0) + additionalAmount
+    );
+    const nextBalance = Math.max((order.total || 0) - nextPaid, 0);
+    const nextStatus =
+      nextBalance === 0 ? "paid" : nextPaid > 0 ? "partial" : "unpaid";
+    await updateDoc(doc(db, "orders", order.id), {
+      pickupAmountPaid: nextPaid,
+      pickupBalance: nextBalance,
+      pickupPaymentStatus: nextStatus,
+      pickupPaymentNotes: pickupPaymentForm.notes.trim(),
+      pickupPaymentUpdatedAt: serverTimestamp(),
+      paymentStatus: nextBalance === 0 ? "paid" : order.paymentStatus || "pending",
+      status: nextBalance === 0 ? "closed" : order.status || "active",
+      ...(nextBalance === 0 ? { pickupPaymentClosedAt: serverTimestamp() } : {}),
+    });
+    setEditingPickupPaymentId(null);
+    setPickupPaymentForm({ amount: "", notes: "" });
+  }
+
+  async function createOwnerOrder() {
+    setOwnerOrderError("");
+    setOwnerOrderSuccess("");
+    if (!selectedOwnerMenu) {
+      setOwnerOrderError("Select an active published menu.");
+      return;
+    }
+    if (!ownerOrderForm.name.trim() || !ownerOrderForm.phone.trim()) {
+      setOwnerOrderError("Enter customer name and phone number.");
+      return;
+    }
+    if (
+      ownerOrderForm.deliveryType === "delivery" &&
+      (!ownerOrderForm.addressLine1.trim() ||
+        !ownerOrderForm.street.trim() ||
+        !ownerOrderForm.area)
+    ) {
+      setOwnerOrderError("Enter full delivery address and area.");
+      return;
+    }
+
+    const selectedItems = (selectedOwnerMenu.remaining || selectedOwnerMenu.items || [])
+      .map((item) => ({
+        ...item,
+        qty: ownerOrderQty[item.itemId] || 0,
+      }))
+      .filter((item) => item.qty > 0);
+
+    if (!selectedItems.length) {
+      setOwnerOrderError("Select quantity for at least one item.");
+      return;
+    }
+
+    setOwnerOrderSubmitting(true);
+    try {
+      const displayOrderId = await generateUniqueSixDigitOrderId();
+      const orderRef = doc(collection(db, "orders"));
+      const menuRef = doc(db, "published_menus", selectedOwnerMenu.id);
+      const total = selectedItems.reduce(
+        (sum, item) => sum + item.qty * item.price,
+        0
+      );
+
+      await runTransaction(db, async (tx) => {
+        const menuSnap = await tx.get(menuRef);
+        if (!menuSnap.exists()) {
+          throw new Error("Published menu not found.");
+        }
+        const menuData = menuSnap.data() as any;
+        if (menuData.isArchived || menuData.ordersStopped) {
+          throw new Error("Orders are closed for this menu.");
+        }
+
+        const remaining = (menuData.remaining || menuData.items || []).map(
+          (item: any) => ({ ...item })
+        );
+
+        selectedItems.forEach((item) => {
+          const remainingItem = remaining.find(
+            (rem: any) => rem.itemId === item.itemId
+          );
+          if (!remainingItem || (remainingItem.qty || 0) < item.qty) {
+            throw new Error(`${item.name} is sold out or insufficient.`);
+          }
+          remainingItem.qty = (remainingItem.qty || 0) - item.qty;
+        });
+
+        let assignedAgentId = "";
+        let assignedAgentName = "";
+        if (ownerOrderForm.deliveryType === "delivery" && ownerOrderForm.area) {
+          const assignmentRef = doc(db, "area_assignments", ownerOrderForm.area);
+          const assignmentSnap = await tx.get(assignmentRef);
+          if (assignmentSnap.exists()) {
+            const assignmentData = assignmentSnap.data() as any;
+            const agentIds: string[] = assignmentData.agentIds || [];
+            if (agentIds.length > 0) {
+              const lastIndex =
+                typeof assignmentData.lastIndex === "number"
+                  ? assignmentData.lastIndex
+                  : -1;
+              const nextIndex = (lastIndex + 1) % agentIds.length;
+              const agentId = agentIds[nextIndex];
+              const agentSnap = await tx.get(doc(db, "delivery_agents", agentId));
+              if (agentSnap.exists()) {
+                const agentData = agentSnap.data() as any;
+                if (agentData.active !== false) {
+                  assignedAgentId = agentId;
+                  assignedAgentName = agentData.name || "";
+                  tx.update(assignmentRef, { lastIndex: nextIndex });
+                }
+              }
+            }
+          }
+        }
+
+        tx.set(orderRef, {
+          orderId: displayOrderId,
+          status: "active",
+          paymentStatus:
+            ownerOrderForm.deliveryType === "pickup" ? "pay_at_outlet" : "manual_pending",
+          createdAt: serverTimestamp(),
+          publishedMenuId: selectedOwnerMenu.id,
+          publishedDate: menuData.date || "",
+          mealType: menuData.mealType || "",
+          customerName: ownerOrderForm.name.trim(),
+          phone: ownerOrderForm.phone.trim(),
+          deliveryType: ownerOrderForm.deliveryType,
+          address:
+            ownerOrderForm.deliveryType === "delivery"
+              ? `${ownerOrderForm.addressLine1.trim()}, ${ownerOrderForm.street.trim()}`
+              : "",
+          area: ownerOrderForm.deliveryType === "delivery" ? ownerOrderForm.area : "",
+          location:
+            ownerOrderForm.deliveryType === "delivery"
+              ? ownerOrderForm.location.trim() || null
+              : null,
+          items: selectedItems.map((item) => ({
+            name: item.name,
+            qty: item.qty,
+            price: item.price,
+          })),
+          total,
+          assignedAgentId,
+          assignedAgentName,
+          orderSource: "owner",
+          pickupAmountPaid: 0,
+          pickupBalance: ownerOrderForm.deliveryType === "pickup" ? total : 0,
+          pickupPaymentStatus:
+            ownerOrderForm.deliveryType === "pickup" ? "unpaid" : "",
+          pickupPaymentNotes: "",
+        });
+        tx.update(menuRef, { remaining });
+      });
+
+      setOwnerOrderSuccess(`Order ${displayOrderId} created successfully.`);
+      setOwnerOrderForm({
+        name: "",
+        phone: "",
+        deliveryType: "pickup",
+        addressLine1: "",
+        street: "",
+        area: "",
+        location: "",
+      });
+      if (selectedOwnerMenu) {
+        const resetQty: Record<string, number> = {};
+        (selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).forEach((item) => {
+          resetQty[item.itemId] = 0;
+        });
+        setOwnerOrderQty(resetQty);
+      }
+    } catch (error: any) {
+      setOwnerOrderError(error?.message || "Failed to create order.");
+    } finally {
+      setOwnerOrderSubmitting(false);
+    }
+  }
+
   const activeOrders = useMemo(
     () => orders.filter((order) => order.status !== "closed"),
     [orders]
@@ -854,6 +1102,59 @@ export default function OwnerPage() {
     });
     return keys;
   }, [publishedMenus]);
+
+  const activePublishedMenusForOwnerOrder = useMemo(
+    () =>
+      publishedMenus.filter((menu) => !menu.isArchived && !menu.ordersStopped),
+    [publishedMenus]
+  );
+
+  const selectedOwnerMenu = useMemo(
+    () =>
+      activePublishedMenusForOwnerOrder.find((menu) => menu.id === ownerOrderMenuId) ||
+      null,
+    [activePublishedMenusForOwnerOrder, ownerOrderMenuId]
+  );
+
+  useEffect(() => {
+    if (!selectedOwnerMenu) {
+      setOwnerOrderQty({});
+      return;
+    }
+    const nextQty: Record<string, number> = {};
+    (selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).forEach((item) => {
+      nextQty[item.itemId] = 0;
+    });
+    setOwnerOrderQty(nextQty);
+  }, [selectedOwnerMenu]);
+
+  const filteredPickupOrders = useMemo(() => {
+    return orders
+      .filter((order) => order.deliveryType === "pickup")
+      .filter((order) => {
+        const dateKey = formatDateKey(order.createdAt || order.publishedDate);
+        if (
+          pickupPaymentFilters.startDate &&
+          dateKey < pickupPaymentFilters.startDate
+        ) {
+          return false;
+        }
+        if (
+          pickupPaymentFilters.endDate &&
+          dateKey > pickupPaymentFilters.endDate
+        ) {
+          return false;
+        }
+        if (!pickupPaymentFilters.search.trim()) {
+          return true;
+        }
+        const haystack = `${order.orderId || ""} ${order.customerName || ""} ${
+          order.phone || ""
+        }`.toLowerCase();
+        return haystack.includes(pickupPaymentFilters.search.toLowerCase());
+      })
+      .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
+  }, [orders, pickupPaymentFilters]);
 
   const filteredActiveOrdersSummary = useMemo(
     () =>
@@ -1060,6 +1361,8 @@ export default function OwnerPage() {
             {[
               { id: "menu", label: "Menu" },
               { id: "publish", label: "Publish Menu" },
+              { id: "createOrder", label: "Create Order" },
+              { id: "pickupPayments", label: "Pickup Payments" },
               { id: "dashboard", label: "Report/Dashboard" },
               { id: "history", label: "Orders" },
               { id: "delivery", label: "Delivery Agents" },
@@ -1086,6 +1389,8 @@ export default function OwnerPage() {
                 {[
                   { id: "menu", label: "Menu" },
                   { id: "publish", label: "Publish Menu" },
+                  { id: "createOrder", label: "Create Order" },
+                  { id: "pickupPayments", label: "Pickup Payments" },
                   { id: "dashboard", label: "Report/Dashboard" },
                   { id: "history", label: "Orders" },
                   { id: "delivery", label: "Delivery Agents" },
@@ -1701,6 +2006,357 @@ export default function OwnerPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === "createOrder" && (
+            <div className="card stack">
+              <h2>Create Order</h2>
+              <div className="field">
+                <label>Active published menu</label>
+                <select
+                  className="select"
+                  value={ownerOrderMenuId}
+                  onChange={(e) => setOwnerOrderMenuId(e.target.value)}
+                >
+                  <option value="">Select published menu</option>
+                  {activePublishedMenusForOwnerOrder.map((menu) => (
+                    <option key={menu.id} value={menu.id}>
+                      {formatDateLabel(menu.date)} - {menu.mealType}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!activePublishedMenusForOwnerOrder.length && (
+                <p>No active published menus available.</p>
+              )}
+
+              {selectedOwnerMenu && (
+                <>
+                  <div className="card stack">
+                    <strong>
+                      {formatDateLabel(selectedOwnerMenu.date)} -{" "}
+                      {selectedOwnerMenu.mealType}
+                    </strong>
+                    {(selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).map(
+                      (item) => (
+                        <div key={item.itemId} className="row">
+                          <div style={{ flex: 1 }}>
+                            {item.name} - INR {item.price}
+                            <small style={{ display: "block" }}>
+                              Available: {item.qty}
+                            </small>
+                          </div>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={item.qty}
+                            value={ownerOrderQty[item.itemId] || ""}
+                            onChange={(e) =>
+                              setOwnerOrderQty({
+                                ...ownerOrderQty,
+                                [item.itemId]: Math.min(
+                                  Number(e.target.value || 0),
+                                  item.qty
+                                ),
+                              })
+                            }
+                          />
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  <div className="card stack">
+                    <div className="row">
+                      <input
+                        className="input"
+                        placeholder="Customer name"
+                        value={ownerOrderForm.name}
+                        onChange={(e) =>
+                          setOwnerOrderForm({
+                            ...ownerOrderForm,
+                            name: e.target.value,
+                          })
+                        }
+                      />
+                      <input
+                        className="input"
+                        placeholder="Phone number"
+                        value={ownerOrderForm.phone}
+                        onChange={(e) =>
+                          setOwnerOrderForm({
+                            ...ownerOrderForm,
+                            phone: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="row">
+                      <button
+                        className={`btn ${
+                          ownerOrderForm.deliveryType === "pickup"
+                            ? ""
+                            : "secondary"
+                        }`}
+                        onClick={() =>
+                          setOwnerOrderForm({
+                            ...ownerOrderForm,
+                            deliveryType: "pickup",
+                          })
+                        }
+                      >
+                        Self Pickup
+                      </button>
+                      <button
+                        className={`btn ${
+                          ownerOrderForm.deliveryType === "delivery"
+                            ? ""
+                            : "secondary"
+                        }`}
+                        onClick={() =>
+                          setOwnerOrderForm({
+                            ...ownerOrderForm,
+                            deliveryType: "delivery",
+                          })
+                        }
+                      >
+                        Home Delivery
+                      </button>
+                    </div>
+                    {ownerOrderForm.deliveryType === "delivery" && (
+                      <>
+                        <input
+                          className="input"
+                          placeholder="Door no / Apartment / House name"
+                          value={ownerOrderForm.addressLine1}
+                          onChange={(e) =>
+                            setOwnerOrderForm({
+                              ...ownerOrderForm,
+                              addressLine1: e.target.value,
+                            })
+                          }
+                        />
+                        <div className="row">
+                          <input
+                            className="input"
+                            placeholder="Street"
+                            value={ownerOrderForm.street}
+                            onChange={(e) =>
+                              setOwnerOrderForm({
+                                ...ownerOrderForm,
+                                street: e.target.value,
+                              })
+                            }
+                          />
+                          <select
+                            className="select"
+                            value={ownerOrderForm.area}
+                            onChange={(e) =>
+                              setOwnerOrderForm({
+                                ...ownerOrderForm,
+                                area: e.target.value,
+                              })
+                            }
+                          >
+                            <option value="">Select area</option>
+                            {areaOptions.map((area) => (
+                              <option key={area} value={area}>
+                                {area}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <input
+                          className="input"
+                          placeholder="Exact location / map pin / landmark (optional)"
+                          value={ownerOrderForm.location}
+                          onChange={(e) =>
+                            setOwnerOrderForm({
+                              ...ownerOrderForm,
+                              location: e.target.value,
+                            })
+                          }
+                        />
+                      </>
+                    )}
+
+                    {ownerOrderError && (
+                      <small style={{ color: "crimson" }}>{ownerOrderError}</small>
+                    )}
+                    {ownerOrderSuccess && (
+                      <small style={{ color: "green" }}>{ownerOrderSuccess}</small>
+                    )}
+
+                    <button
+                      className="btn"
+                      onClick={createOwnerOrder}
+                      disabled={ownerOrderSubmitting}
+                    >
+                      {ownerOrderSubmitting ? "Creating..." : "Create Order"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === "pickupPayments" && (
+            <div className="card stack">
+              <h2>Pickup Payments</h2>
+              <div className="row">
+                <input
+                  className="input"
+                  placeholder="Search by Order ID / Phone / Name"
+                  value={pickupPaymentFilters.search}
+                  onChange={(e) =>
+                    setPickupPaymentFilters({
+                      ...pickupPaymentFilters,
+                      search: e.target.value,
+                    })
+                  }
+                />
+                <input
+                  className="input"
+                  type="date"
+                  value={pickupPaymentFilters.startDate}
+                  onChange={(e) =>
+                    setPickupPaymentFilters({
+                      ...pickupPaymentFilters,
+                      startDate: e.target.value,
+                    })
+                  }
+                />
+                <input
+                  className="input"
+                  type="date"
+                  value={pickupPaymentFilters.endDate}
+                  onChange={(e) =>
+                    setPickupPaymentFilters({
+                      ...pickupPaymentFilters,
+                      endDate: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              {filteredPickupOrders.length === 0 && <p>No pickup orders found.</p>}
+
+              {filteredPickupOrders.map((order) => (
+                <div key={order.id} className="card stack">
+                  <div className="row">
+                    <div style={{ flex: 1 }}>
+                      <strong>Order #{order.orderId || order.id}</strong>
+                      <small style={{ display: "block" }}>
+                        Booking: {formatDateLabel(order.createdAt || order.publishedDate)}
+                      </small>
+                      <small style={{ display: "block" }}>
+                        Menu: {formatDateLabel(order.publishedDate)} -{" "}
+                        {order.mealType || "Unknown"}
+                      </small>
+                    </div>
+                    <div>
+                      <strong>
+                        {order.pickupPaymentStatus === "paid"
+                          ? "Closed"
+                          : order.pickupPaymentStatus || "unpaid"}
+                      </strong>
+                    </div>
+                  </div>
+                  <div>
+                    {order.customerName || "Customer"} | {order.phone || "-"}
+                  </div>
+                  <div>
+                    {order.items?.map((item) => `${item.name} x${item.qty}`).join(", ") ||
+                      "No items"}
+                  </div>
+                  <div className="row">
+                    <div className="card" style={{ flex: 1 }}>
+                      Total: INR {order.total || 0}
+                    </div>
+                    <div className="card" style={{ flex: 1 }}>
+                      Paid: INR {order.pickupAmountPaid || 0}
+                    </div>
+                    <div className="card" style={{ flex: 1 }}>
+                      Balance: INR{" "}
+                      {typeof order.pickupBalance === "number"
+                        ? order.pickupBalance
+                        : order.total || 0}
+                    </div>
+                  </div>
+                  {order.pickupPaymentNotes && (
+                    <small>Notes: {order.pickupPaymentNotes}</small>
+                  )}
+                  {editingPickupPaymentId === order.id ? (
+                    <div className="card stack">
+                      <div className="row">
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          placeholder="Amount received"
+                          value={pickupPaymentForm.amount}
+                          onChange={(e) =>
+                            setPickupPaymentForm({
+                              ...pickupPaymentForm,
+                              amount: e.target.value,
+                            })
+                          }
+                        />
+                        <input
+                          className="input"
+                          placeholder="Notes"
+                          value={pickupPaymentForm.notes}
+                          onChange={(e) =>
+                            setPickupPaymentForm({
+                              ...pickupPaymentForm,
+                              notes: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="row">
+                        <button
+                          className="btn"
+                          onClick={() => savePickupPayment(order, false)}
+                        >
+                          Save Payment
+                        </button>
+                        <button
+                          className="btn secondary"
+                          onClick={() => savePickupPayment(order, true)}
+                        >
+                          Mark Fully Paid
+                        </button>
+                        <button
+                          className="btn secondary"
+                          onClick={() => {
+                            setEditingPickupPaymentId(null);
+                            setPickupPaymentForm({ amount: "", notes: "" });
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn secondary"
+                      onClick={() => {
+                        setEditingPickupPaymentId(order.id);
+                        setPickupPaymentForm({
+                          amount: "",
+                          notes: order.pickupPaymentNotes || "",
+                        });
+                      }}
+                    >
+                      Update Payment
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
