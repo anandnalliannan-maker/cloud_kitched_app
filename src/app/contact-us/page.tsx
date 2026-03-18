@@ -12,11 +12,13 @@ export default function ContactUsPage() {
         <p>
           <strong>Address:</strong>
           <br />
-          MS Kitchen
+          B2, Saikishore Apartment,
           <br />
-          4th Street, Veeramani Nagar
+          Kamalam Nagar 1st Main Road,
           <br />
-          Kovilambakkam, Chennai 600129
+          Nanmangalam,
+          <br />
+          Chennai 600129
         </p>
       </div>
     </main>

@@ -34,9 +34,10 @@ a {
 }
 
 .container {
-  max-width: 1080px;
+  width: min(96vw, 1440px);
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 28px;
 }
 
 .card {
@@ -461,6 +462,7 @@ a {
 @media (max-width: 768px) {
   .container {
     padding: 16px;
+    width: 100%;
   }
 
   .row {
