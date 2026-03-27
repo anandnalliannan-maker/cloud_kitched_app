@@ -2593,24 +2593,48 @@ export default function OwnerPage() {
                   {Object.keys(deliveryStatusByAgent).length === 0 && (
                     <p>No active published orders</p>
                   )}
-                  {Object.entries(deliveryStatusByAgent).map(
-                    ([agent, data]) => (
-                      <div key={agent} className="card stack">
-                        <strong>
-                          {agent} - Delivered: {data.delivered} | Pending:{" "}
-                          {data.pending}
-                        </strong>
-                        {Object.entries(data.byArea).map(([area, counts]) => (
-                          <div key={area} className="row">
-                            <div style={{ flex: 1 }}>{area}</div>
-                            <div>
-                              Delivered: {counts.delivered} | Pending:{" "}
-                              {counts.pending}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )
+                  {Object.keys(deliveryStatusByAgent).length > 0 && (
+                    <div className="table-scroll">
+                      <table className="payments-table">
+                        <thead>
+                          <tr>
+                            <th>Agent</th>
+                            <th>Area</th>
+                            <th>Delivered</th>
+                            <th>Pending</th>
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(deliveryStatusByAgent).flatMap(
+                            ([agent, data]) => {
+                              const areaEntries = Object.entries(data.byArea);
+                              return areaEntries.map(([area, counts], index) => (
+                                <tr key={`${agent}-${area}`}>
+                                  <td>
+                                    {index === 0 ? (
+                                      <>
+                                        <strong>{agent}</strong>
+                                        <small className="payments-subtext">
+                                          Total Delivered: {data.delivered} | Total Pending:{" "}
+                                          {data.pending}
+                                        </small>
+                                      </>
+                                    ) : (
+                                      ""
+                                    )}
+                                  </td>
+                                  <td>{area}</td>
+                                  <td>{counts.delivered}</td>
+                                  <td>{counts.pending}</td>
+                                  <td>{counts.delivered + counts.pending}</td>
+                                </tr>
+                              ));
+                            }
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               )}
