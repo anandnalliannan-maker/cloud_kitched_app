@@ -91,7 +91,6 @@ export function normalizeMobile(value: string) {
 }
 
 export function buildIciciSecureHash(payload: Payload, secretKey: string) {
-  const resolvedSecretKey = getIciciSecretCandidates(secretKey)[0] || secretKey;
   const hashText = Object.keys(payload)
     .filter(
       (key) =>
@@ -100,12 +99,12 @@ export function buildIciciSecureHash(payload: Payload, secretKey: string) {
         payload[key] !== null &&
         payload[key] !== ""
     )
-    .sort((a, b) => a.localeCompare(b))
+    .sort()
     .map((key) => String(payload[key]))
     .join("");
 
   return crypto
-    .createHmac("sha256", resolvedSecretKey)
+    .createHmac("sha256", secretKey)
     .update(hashText)
     .digest("hex");
 }
@@ -117,7 +116,7 @@ export function getIciciSecretCandidates(secretKey: string) {
   if (normalized.includes(":")) {
     const suffix = normalized.split(":").slice(1).join(":").trim();
     if (suffix) {
-      candidates.unshift(suffix);
+      candidates.push(suffix);
     }
   }
 
