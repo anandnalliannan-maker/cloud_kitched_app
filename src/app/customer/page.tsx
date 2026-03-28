@@ -39,15 +39,6 @@ type PaymentSummary = {
   location: { lat: number; lng: number } | null;
 };
 
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => {
-      open: () => void;
-      on: (event: string, handler: (payload: unknown) => void) => void;
-    };
-  }
-}
-
 type CustomerOrder = {
   id: string;
   orderId: string;
@@ -108,6 +99,7 @@ export default function CustomerPage() {
   const [locLabel, setLocLabel] = useState("");
   const [locError, setLocError] = useState("");
   const [payError, setPayError] = useState("");
+  const [paymentNotice, setPaymentNotice] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
@@ -122,7 +114,6 @@ export default function CustomerPage() {
   const [historySearched, setHistorySearched] = useState(false);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
 
   useEffect(() => {
     const q = query(
@@ -173,6 +164,41 @@ export default function CustomerPage() {
       setItems(menuItems);
     });
     return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const paymentState = url.searchParams.get("payment");
+    const orderId = url.searchParams.get("orderId");
+
+    if (!paymentState) {
+      return;
+    }
+
+    const messages: Record<string, string> = {
+      success: orderId
+        ? `Payment successful. Order ID: ${orderId}`
+        : "Payment successful.",
+      pending: orderId
+        ? `Payment is pending for order ${orderId}. We will update the status after confirmation.`
+        : "Payment is pending. We will update the status after confirmation.",
+      failed: orderId
+        ? `Payment failed for order ${orderId}. Please try again.`
+        : "Payment failed. Please try again.",
+    };
+
+    setPaymentNotice(messages[paymentState] || "Payment status updated.");
+    setPayError(paymentState === "failed" ? messages.failed : "");
+    setStep("menu");
+    setPaymentSummary(null);
+
+    url.searchParams.delete("payment");
+    url.searchParams.delete("orderId");
+    window.history.replaceState({}, "", url.toString());
   }, []);
 
   useEffect(() => {
@@ -466,138 +492,47 @@ export default function CustomerPage() {
     }
   }
 
-  async function loadRazorpayScript() {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    if (window.Razorpay) {
-      return true;
-    }
-    return await new Promise<boolean>((resolve) => {
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.async = true;
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
+  function resetCheckoutState() {
+    setItems((prev) => prev.map((item) => ({ ...item, qty: 0 })));
+    setForm({
+      name: "",
+      phone: "",
+      addressLine1: "",
+      street: "",
+      area: "",
     });
+    setLocation(null);
+    setLocLabel("");
+    setDeliveryType("");
+    setPaymentSummary(null);
+    setStep("menu");
   }
 
   async function startOnlinePayment() {
     setPayError("");
+    setPaymentNotice("");
     if (!paymentSummary) {
       setPayError("Order summary is missing.");
-      return;
-    }
-    if (!razorpayKeyId) {
-      setPayError("Razorpay key is not configured.");
       return;
     }
 
     setIsProcessingPayment(true);
     try {
-      const scriptLoaded = await loadRazorpayScript();
-      if (!scriptLoaded || !window.Razorpay) {
-        throw new Error("Failed to load Razorpay checkout.");
-      }
-
-      const orderResponse = await fetch("/api/razorpay/create-order", {
+      const orderResponse = await fetch("/api/icici/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ appOrderId: paymentSummary.appOrderId }),
       });
       const orderPayload = await orderResponse.json();
       if (!orderResponse.ok) {
-        throw new Error(orderPayload.error || "Failed to create payment order.");
+        throw new Error(orderPayload.error || "Failed to initiate payment.");
       }
 
-      const razorpay = new window.Razorpay({
-        key: orderPayload.keyId,
-        amount: orderPayload.amount,
-        currency: orderPayload.currency,
-        name: "MS Kitchen",
-        description: `Order ${paymentSummary.displayOrderId}`,
-        order_id: orderPayload.razorpayOrderId,
-        prefill: {
-          name: form.name.trim(),
-          contact: form.phone.trim(),
-        },
-        notes: {
-          internalOrderId: paymentSummary.appOrderId,
-        },
-        theme: {
-          color: "#147d75",
-        },
-        config: {
-          display: {
-            blocks: {
-              upi: {
-                name: "Pay using UPI",
-                instruments: [{ method: "upi" }],
-              },
-            },
-            sequence: ["block.upi"],
-            preferences: {
-              show_default_blocks: false,
-            },
-          },
-        },
-        handler: async (response: Record<string, string>) => {
-          try {
-            const verifyResponse = await fetch("/api/razorpay/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                appOrderId: paymentSummary.appOrderId,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              }),
-            });
-            const verifyPayload = await verifyResponse.json();
-            if (!verifyResponse.ok) {
-              throw new Error(
-                verifyPayload.error || "Payment verification failed."
-              );
-            }
+      if (!orderPayload.paymentUrl) {
+        throw new Error("Payment gateway did not return a redirect URL.");
+      }
 
-            setItems((prev) => prev.map((item) => ({ ...item, qty: 0 })));
-            setForm({
-              name: "",
-              phone: "",
-              addressLine1: "",
-              street: "",
-              area: "",
-            });
-            setLocation(null);
-            setLocLabel("");
-            setDeliveryType("");
-            setPaymentSummary(null);
-            setStep("menu");
-            alert(
-              `Payment successful. Order ID: ${paymentSummary.displayOrderId}`
-            );
-          } catch (error: any) {
-            setPayError(error?.message || "Payment verification failed.");
-          } finally {
-            setIsProcessingPayment(false);
-          }
-        },
-        modal: {
-          ondismiss: () => {
-            setIsProcessingPayment(false);
-          },
-        },
-      });
-
-      razorpay.on("payment.failed", (response: any) => {
-        setPayError(
-          response?.error?.description || "Payment failed. Please try again."
-        );
-        setIsProcessingPayment(false);
-      });
-
-      razorpay.open();
+      window.location.href = orderPayload.paymentUrl;
     } catch (error: any) {
       setPayError(error?.message || "Unable to start payment.");
       setIsProcessingPayment(false);
@@ -606,6 +541,7 @@ export default function CustomerPage() {
 
   async function confirmPayAtOutlet() {
     setPayError("");
+    setPaymentNotice("");
     if (!paymentSummary) {
       setPayError("Order summary is missing.");
       return;
@@ -624,19 +560,7 @@ export default function CustomerPage() {
       if (!response.ok) {
         throw new Error(payload.error || "Failed to confirm order.");
       }
-      setItems((prev) => prev.map((item) => ({ ...item, qty: 0 })));
-      setForm({
-        name: "",
-        phone: "",
-        addressLine1: "",
-        street: "",
-        area: "",
-      });
-      setLocation(null);
-      setLocLabel("");
-      setDeliveryType("");
-      setPaymentSummary(null);
-      setStep("menu");
+      resetCheckoutState();
       alert(`Order placed. Order ID: ${paymentSummary.displayOrderId}`);
     } catch (error: any) {
       setPayError(error?.message || "Failed to confirm order.");
@@ -787,6 +711,8 @@ export default function CustomerPage() {
 
         {customerView === "menu" && step === "menu" && (
           <div className="card stack">
+            {paymentNotice && <small style={{ color: "#147d75" }}>{paymentNotice}</small>}
+            {payError && <small style={{ color: "crimson" }}>{payError}</small>}
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h2>Menu</h2>
               <span style={{ color: "var(--muted)", fontWeight: 600 }}>
@@ -851,7 +777,11 @@ export default function CustomerPage() {
               <button
                 className="btn"
                 disabled={!hasItems}
-                onClick={() => setStep("details")}
+                onClick={() => {
+                  setPayError("");
+                  setPaymentNotice("");
+                  setStep("details");
+                }}
               >
                 Continue
               </button>
@@ -1098,7 +1028,7 @@ export default function CustomerPage() {
                   onClick={startOnlinePayment}
                   disabled={isProcessingPayment}
                 >
-                  Pay Online
+                  Pay with ICICI
                 </button>
                 <button
                   className="btn secondary"
@@ -1114,15 +1044,15 @@ export default function CustomerPage() {
                 onClick={startOnlinePayment}
                 disabled={isProcessingPayment}
               >
-                Pay Online
+                Pay with ICICI
               </button>
             )}
             {isProcessingPayment && (
-              <p className="payment-status-text">Preparing payment...</p>
+              <p className="payment-status-text">Redirecting to ICICI payment gateway...</p>
             )}
             {!isProcessingPayment && (
               <p className="payment-status-text">
-                Payment gateway will open securely.
+                You will be redirected to ICICI to complete payment securely.
               </p>
             )}
           </div>
