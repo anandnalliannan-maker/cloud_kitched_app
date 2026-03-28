@@ -130,6 +130,7 @@ export async function POST(request: Request) {
     );
 
     let iciciResponse = null as Awaited<ReturnType<typeof postIciciJson>> | null;
+    const attemptSummaries: Array<Record<string, string | number | boolean>> = [];
 
     for (const payloadVariant of payloadVariants) {
       const candidateResponse = await postIciciJson(
@@ -141,6 +142,21 @@ export async function POST(request: Request) {
       const hasRedirect =
         String(candidatePayload.redirectURI || candidatePayload.redirectUrl || "") &&
         String(candidatePayload.tranCtx || "");
+
+      attemptSummaries.push({
+        aggregatorID: String(payloadVariant.aggregatorID || ""),
+        aggregatorId: String(payloadVariant.aggregatorId || ""),
+        contentType: String(candidateResponse.requestMeta?.contentType || ""),
+        shape: String(candidateResponse.requestMeta?.shape || ""),
+        responseCode: String(candidatePayload.responseCode || ""),
+        responseDescription: String(
+          candidatePayload.responseDescription ||
+            candidatePayload.respDescription ||
+            candidatePayload.txnRespDescription ||
+            ""
+        ),
+        hasRedirect: Boolean(hasRedirect),
+      });
 
       iciciResponse = candidateResponse;
       if (hasRedirect) {
@@ -159,6 +175,7 @@ export async function POST(request: Request) {
             String(payload.respDescription || payload.txnRespDescription || "") ||
             "Failed to initiate ICICI payment.",
           payload,
+          attempts: attemptSummaries,
         },
         { status: iciciResponse?.status || 502 }
       );
@@ -169,6 +186,7 @@ export async function POST(request: Request) {
         {
           error: "ICICI gateway did not return redirect details.",
           payload,
+          attempts: attemptSummaries,
         },
         { status: 502 }
       );

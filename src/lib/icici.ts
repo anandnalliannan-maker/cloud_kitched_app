@@ -7,6 +7,10 @@ type IciciJsonResult = {
   status: number;
   rawPayload: any;
   payload: Record<string, unknown>;
+  requestMeta?: {
+    contentType: string;
+    shape: "raw" | "wrapped";
+  };
 };
 
 export function getIciciConfig() {
@@ -168,7 +172,8 @@ function normalizeIciciJson(payload: any): Record<string, unknown> {
 async function postJson(
   url: string,
   body: unknown,
-  contentType = "application/json"
+  contentType = "application/json",
+  shape: "raw" | "wrapped" = "raw"
 ): Promise<IciciJsonResult> {
   const response = await fetch(url, {
     method: "POST",
@@ -194,6 +199,10 @@ async function postJson(
     status: response.status,
     rawPayload,
     payload: normalizeIciciJson(rawPayload),
+    requestMeta: {
+      contentType,
+      shape,
+    },
   };
 }
 
@@ -213,7 +222,12 @@ export async function postIciciJson(
   let bestResult: IciciJsonResult | null = null;
 
   for (const attempt of attempts) {
-    const result = await postJson(url, attempt.body, attempt.contentType);
+    const result = await postJson(
+      url,
+      attempt.body,
+      attempt.contentType,
+      attempt.body === payload ? "raw" : "wrapped"
+    );
     lastResult = result;
 
     const hasExpected = expectedKeys.some((key) => {
