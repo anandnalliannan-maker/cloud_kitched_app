@@ -181,8 +181,8 @@ export default function CustomerPage() {
 
     const messages: Record<string, string> = {
       success: orderId
-        ? `Payment successful. Order ID: ${orderId}`
-        : "Payment successful.",
+        ? `Order placed successfully. Order ID: ${orderId}`
+        : "Order placed successfully.",
       pending: orderId
         ? `Payment is pending for order ${orderId}. We will update the status after confirmation.`
         : "Payment is pending. We will update the status after confirmation.",
@@ -191,10 +191,15 @@ export default function CustomerPage() {
         : "Payment failed. Please try again.",
     };
 
-    setPaymentNotice(messages[paymentState] || "Payment status updated.");
+    const nextMessage = messages[paymentState] || "Payment status updated.";
+    setPaymentNotice(nextMessage);
     setPayError(paymentState === "failed" ? messages.failed : "");
-    setStep("menu");
-    setPaymentSummary(null);
+    resetCheckoutState();
+    setCustomerView("menu");
+
+    if (paymentState === "success") {
+      window.alert(nextMessage);
+    }
 
     url.searchParams.delete("payment");
     url.searchParams.delete("orderId");
