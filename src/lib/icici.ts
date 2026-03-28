@@ -138,6 +138,15 @@ export function getIciciSecretCandidates(secretKey: string): SecretCandidate[] {
   }
 
   if (normalized.includes(":")) {
+    const prefix = normalized.split(":")[0]?.trim() || "";
+    if (prefix) {
+      candidates.push({ label: "prefix", key: prefix });
+      const decodedPrefix = tryDecodeBase64(prefix);
+      if (decodedPrefix) {
+        candidates.push({ label: "prefix_base64", key: decodedPrefix });
+      }
+    }
+
     const suffix = normalized.split(":").slice(1).join(":").trim();
     if (suffix) {
       candidates.push({ label: "suffix", key: suffix });
