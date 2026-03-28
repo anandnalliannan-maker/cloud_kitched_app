@@ -647,23 +647,19 @@ export default function CustomerPage() {
               <h2>Elegant home-style meals with a smoother checkout.</h2>
               <p>
                 Browse today&apos;s menu, place your order in minutes, and pay
-                securely through ICICI.
+                securely using UPI.
               </p>
             </div>
             <div className="customer-hero-stats">
               <div className="customer-stat-card">
-                <span>Service</span>
+                <span>Date</span>
                 <strong>
-                  {menuMealLabel || "Today"}
+                  {menuDateLabel ? formatDateLabel(menuDateLabel) : "Today"}
                 </strong>
               </div>
               <div className="customer-stat-card">
-                <span>Mode</span>
-                <strong>{deliveryType ? (deliveryType === "delivery" ? "Delivery" : "Pickup") : "Choose later"}</strong>
-              </div>
-              <div className="customer-stat-card">
-                <span>Cart total</span>
-                <strong>INR {total}</strong>
+                <span>Meal Type</span>
+                <strong>{menuMealLabel || "Not published"}</strong>
               </div>
             </div>
           </section>
@@ -1100,7 +1096,7 @@ export default function CustomerPage() {
                   onClick={startOnlinePayment}
                   disabled={isProcessingPayment}
                 >
-                  Pay with ICICI
+                  Pay using UPI
                 </button>
                 <button
                   className="btn secondary customer-ghost-btn"
@@ -1116,7 +1112,7 @@ export default function CustomerPage() {
                 onClick={startOnlinePayment}
                 disabled={isProcessingPayment}
               >
-                Pay with ICICI
+                Pay using UPI
               </button>
             )}
             {isProcessingPayment && (
