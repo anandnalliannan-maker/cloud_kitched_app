@@ -39,6 +39,22 @@ export function getIciciConfig() {
   };
 }
 
+export function getIciciAggregatorCandidates(aggregatorId: string) {
+  const normalized = String(aggregatorId || "").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const candidates = [normalized];
+  if (/^\d+$/.test(normalized)) {
+    candidates.unshift(`A${normalized}`);
+  } else if (/^A\d+$/.test(normalized)) {
+    candidates.push(normalized.slice(1));
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
 export function formatIciciTxnDate(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Calcutta",
@@ -149,12 +165,16 @@ function normalizeIciciJson(payload: any): Record<string, unknown> {
   return payload as Record<string, unknown>;
 }
 
-async function postJson(url: string, body: unknown): Promise<IciciJsonResult> {
+async function postJson(
+  url: string,
+  body: unknown,
+  contentType = "application/json"
+): Promise<IciciJsonResult> {
   const response = await fetch(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
+      "Content-Type": contentType,
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -182,25 +202,35 @@ export async function postIciciJson(
   payload: Payload,
   expectedKeys: string[]
 ) {
-  const rawResult = await postJson(url, payload);
-  const rawHasExpected = expectedKeys.some((key) => {
-    const value = rawResult.payload[key];
-    return value !== undefined && value !== null && value !== "";
-  });
+  const attempts: Array<{ body: unknown; contentType: string }> = [
+    { body: payload, contentType: "application/json" },
+    { body: payload, contentType: "text/plain" },
+    { body: { request: payload }, contentType: "application/json" },
+    { body: { request: payload }, contentType: "text/plain" },
+  ];
 
-  if (rawHasExpected) {
-    return rawResult;
+  let lastResult: IciciJsonResult | null = null;
+
+  for (const attempt of attempts) {
+    const result = await postJson(url, attempt.body, attempt.contentType);
+    lastResult = result;
+
+    const hasExpected = expectedKeys.some((key) => {
+      const value = result.payload[key];
+      return value !== undefined && value !== null && value !== "";
+    });
+
+    if (hasExpected || result.ok) {
+      return result;
+    }
   }
 
-  const wrappedResult = await postJson(url, { request: payload });
-  const wrappedHasExpected = expectedKeys.some((key) => {
-    const value = wrappedResult.payload[key];
-    return value !== undefined && value !== null && value !== "";
-  });
-
-  if (wrappedHasExpected || wrappedResult.ok) {
-    return wrappedResult;
-  }
-
-  return rawResult;
+  return (
+    lastResult || {
+      ok: false,
+      status: 502,
+      rawPayload: {},
+      payload: {},
+    }
+  );
 }

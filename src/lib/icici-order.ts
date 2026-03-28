@@ -3,6 +3,7 @@ import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { serverDb } from "@/lib/firebase-server";
 import {
   buildIciciSecureHash,
+  getIciciAggregatorCandidates,
   getIciciConfig,
   getIciciSecretCandidates,
   isIciciPaymentPending,
@@ -19,16 +20,26 @@ function buildStatusPayloadVariants(
 ) {
   const variants: Record<string, string>[] = [];
 
-  for (const candidate of getIciciSecretCandidates(secretKey)) {
-    variants.push({
-      ...payload,
-      secureHash: buildIciciSecureHash(payload, candidate),
-    });
+  const aggregatorCandidates = getIciciAggregatorCandidates(
+    payload.aggregatorID || payload.aggregatorId || ""
+  );
 
-    if (payload.aggregatorID) {
-      const altPayload: Record<string, string> = {
+  for (const aggregatorCandidate of aggregatorCandidates.length
+    ? aggregatorCandidates
+    : [payload.aggregatorID || ""]) {
+    for (const candidate of getIciciSecretCandidates(secretKey)) {
+      const basePayload = {
         ...payload,
-        aggregatorId: payload.aggregatorID,
+        aggregatorID: aggregatorCandidate,
+      };
+      variants.push({
+        ...basePayload,
+        secureHash: buildIciciSecureHash(basePayload, candidate),
+      });
+
+      const altPayload: Record<string, string> = {
+        ...basePayload,
+        aggregatorId: aggregatorCandidate,
       };
       delete altPayload.aggregatorID;
       variants.push({

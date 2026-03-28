@@ -5,6 +5,7 @@ import { serverDb } from "@/lib/firebase-server";
 import {
   buildIciciSecureHash,
   formatIciciTxnDate,
+  getIciciAggregatorCandidates,
   getIciciConfig,
   getIciciSecretCandidates,
   normalizeMobile,
@@ -18,16 +19,26 @@ function buildInitiatePayloadVariants(
 ) {
   const variants: Record<string, string>[] = [];
 
-  for (const candidate of getIciciSecretCandidates(secretKey)) {
-    variants.push({
-      ...payload,
-      secureHash: buildIciciSecureHash(payload, candidate),
-    });
+  const aggregatorCandidates = getIciciAggregatorCandidates(
+    payload.aggregatorID || payload.aggregatorId || ""
+  );
 
-    if (payload.aggregatorID) {
-      const altPayload: Record<string, string> = {
+  for (const aggregatorCandidate of aggregatorCandidates.length
+    ? aggregatorCandidates
+    : [payload.aggregatorID || ""]) {
+    for (const candidate of getIciciSecretCandidates(secretKey)) {
+      const basePayload = {
         ...payload,
-        aggregatorId: payload.aggregatorID,
+        aggregatorID: aggregatorCandidate,
+      };
+      variants.push({
+        ...basePayload,
+        secureHash: buildIciciSecureHash(basePayload, candidate),
+      });
+
+      const altPayload: Record<string, string> = {
+        ...basePayload,
+        aggregatorId: aggregatorCandidate,
       };
       delete altPayload.aggregatorID;
       variants.push({
@@ -164,7 +175,7 @@ export async function POST(request: Request) {
     }
 
     await updateDoc(orderRef, {
-      iciciAggregatorId: aggregatorId,
+      iciciAggregatorId: String(payload.aggregatorID || aggregatorId),
       iciciMerchantId: merchantId,
       iciciMerchantTxnNo: appOrderId,
       iciciInitResponseCode: String(payload.responseCode || ""),
