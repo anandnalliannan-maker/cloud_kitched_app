@@ -2,6 +2,12 @@ import crypto from "crypto";
 
 type Primitive = string | number | boolean | null | undefined;
 type Payload = Record<string, Primitive>;
+type IciciJsonResult = {
+  ok: boolean;
+  status: number;
+  rawPayload: any;
+  payload: Record<string, unknown>;
+};
 
 export function getIciciConfig() {
   const merchantId = process.env.ICICI_MERCHANT_ID || "";
@@ -108,4 +114,72 @@ export function isIciciPaymentPending(payload: Record<string, any>) {
   const responseCode = String(payload.responseCode || "").toUpperCase();
   const txnStatus = String(payload.txnStatus || "").toUpperCase();
   return responseCode === "R1000" || txnStatus === "PEN" || txnStatus === "PENDING";
+}
+
+function normalizeIciciJson(payload: any): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+
+  if (payload.request || payload.response) {
+    return normalizeIciciJson(payload.request || payload.response);
+  }
+
+  return payload as Record<string, unknown>;
+}
+
+async function postJson(url: string, body: unknown): Promise<IciciJsonResult> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  const rawText = await response.text();
+  let rawPayload: any = {};
+
+  try {
+    rawPayload = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    rawPayload = { rawText };
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    rawPayload,
+    payload: normalizeIciciJson(rawPayload),
+  };
+}
+
+export async function postIciciJson(
+  url: string,
+  payload: Payload,
+  expectedKeys: string[]
+) {
+  const rawResult = await postJson(url, payload);
+  const rawHasExpected = expectedKeys.some((key) => {
+    const value = rawResult.payload[key];
+    return value !== undefined && value !== null && value !== "";
+  });
+
+  if (rawHasExpected) {
+    return rawResult;
+  }
+
+  const wrappedResult = await postJson(url, { request: payload });
+  const wrappedHasExpected = expectedKeys.some((key) => {
+    const value = wrappedResult.payload[key];
+    return value !== undefined && value !== null && value !== "";
+  });
+
+  if (wrappedHasExpected || wrappedResult.ok) {
+    return wrappedResult;
+  }
+
+  return rawResult;
 }

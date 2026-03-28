@@ -7,20 +7,9 @@ import {
   formatIciciTxnDate,
   getIciciConfig,
   normalizeMobile,
+  postIciciJson,
   verifyIciciSecureHash,
 } from "@/lib/icici";
-
-function normalizeInitiatePayload(payload: any) {
-  if (!payload || typeof payload !== "object") {
-    return {};
-  }
-
-  if (payload.response || payload.request) {
-    return normalizeInitiatePayload(payload.response || payload.request);
-  }
-
-  return payload as Record<string, unknown>;
-}
 
 export async function POST(request: Request) {
   try {
@@ -95,34 +84,19 @@ export async function POST(request: Request) {
 
     const secureHash = buildIciciSecureHash(requestPayload, secretKey);
 
-    const response = await fetch(initiateSaleUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const iciciResponse = await postIciciJson(
+      initiateSaleUrl,
+      {
+        ...requestPayload,
+        secureHash,
       },
-      body: JSON.stringify({
-        request: {
-          ...requestPayload,
-          secureHash,
-        },
-      }),
-      cache: "no-store",
-    });
-
-    const rawText = await response.text();
-    let rawPayload: any = {};
-
-    try {
-      rawPayload = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      rawPayload = { rawText };
-    }
-
-    const payload = normalizeInitiatePayload(rawPayload);
+      ["redirectURI", "redirectUrl", "tranCtx", "responseCode", "respDescription"]
+    );
+    const payload = iciciResponse.payload;
     const redirectUri = String(payload.redirectURI || payload.redirectUrl || "");
     const tranCtx = String(payload.tranCtx || "");
 
-    if (!response.ok) {
+    if (!iciciResponse.ok) {
       return NextResponse.json(
         {
           error:
@@ -130,7 +104,7 @@ export async function POST(request: Request) {
             "Failed to initiate ICICI payment.",
           payload,
         },
-        { status: response.status }
+        { status: iciciResponse.status }
       );
     }
 
@@ -174,6 +148,7 @@ export async function POST(request: Request) {
         : false,
     });
   } catch (error: any) {
+    console.error("ICICI initiate failed", error);
     return NextResponse.json(
       { error: error?.message || "Failed to initiate ICICI payment." },
       { status: 500 }

@@ -6,22 +6,11 @@ import {
   getIciciConfig,
   isIciciPaymentPending,
   isIciciPaymentSuccess,
+  postIciciJson,
   verifyIciciSecureHash,
 } from "@/lib/icici";
 
 type IciciPayload = Record<string, unknown>;
-
-function normalizeIciciPayload(payload: any): IciciPayload {
-  if (!payload || typeof payload !== "object") {
-    return {};
-  }
-
-  if (payload.request || payload.response) {
-    return normalizeIciciPayload(payload.request || payload.response);
-  }
-
-  return payload as IciciPayload;
-}
 
 export async function requestIciciStatus(appOrderId: string) {
   const {
@@ -41,30 +30,15 @@ export async function requestIciciStatus(appOrderId: string) {
 
   const secureHash = buildIciciSecureHash(payload, secretKey);
 
-  const response = await fetch(commandUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const iciciResponse = await postIciciJson(
+    commandUrl,
+    {
+      ...payload,
+      secureHash,
     },
-    body: JSON.stringify({
-      request: {
-        ...payload,
-        secureHash,
-      },
-    }),
-    cache: "no-store",
-  });
-
-  const rawText = await response.text();
-  let rawPayload: any = {};
-
-  try {
-    rawPayload = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    rawPayload = { rawText };
-  }
-
-  const statusPayload = normalizeIciciPayload(rawPayload);
+    ["txnStatus", "responseCode", "txnResponseCode", "txnID"]
+  );
+  const statusPayload = iciciResponse.payload as IciciPayload;
   const secureHashValid = statusPayload.secureHash
     ? verifyIciciSecureHash(
         statusPayload as Record<string, string>,
@@ -74,9 +48,9 @@ export async function requestIciciStatus(appOrderId: string) {
     : false;
 
   return {
-    ok: response.ok,
-    status: response.status,
-    rawPayload,
+    ok: iciciResponse.ok,
+    status: iciciResponse.status,
+    rawPayload: iciciResponse.rawPayload,
     payload: statusPayload,
     secureHashValid,
   };
