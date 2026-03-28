@@ -49,14 +49,11 @@ export function getIciciAggregatorCandidates(aggregatorId: string) {
     return [];
   }
 
-  const candidates = [normalized];
-  if (/^\d+$/.test(normalized)) {
-    candidates.unshift(`A${normalized}`);
-  } else if (/^A\d+$/.test(normalized)) {
-    candidates.push(normalized.slice(1));
+  if (/^A\d+$/.test(normalized)) {
+    return [normalized.slice(1)];
   }
 
-  return Array.from(new Set(candidates.filter(Boolean)));
+  return [normalized];
 }
 
 export function formatIciciTxnDate(date = new Date()) {
@@ -121,6 +118,19 @@ export function getIciciSecretCandidates(secretKey: string) {
   }
 
   return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+export function describeIciciSecretVariant(secretKey: string) {
+  const normalized = String(secretKey || "").trim();
+  if (!normalized) {
+    return "empty";
+  }
+
+  if (normalized.includes(":")) {
+    return "full";
+  }
+
+  return "suffix";
 }
 
 export function verifyIciciSecureHash(

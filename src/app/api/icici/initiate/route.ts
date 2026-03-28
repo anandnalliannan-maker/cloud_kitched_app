@@ -4,6 +4,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { serverDb } from "@/lib/firebase-server";
 import {
   buildIciciSecureHash,
+  describeIciciSecretVariant,
   formatIciciTxnDate,
   getIciciAggregatorCandidates,
   getIciciConfig,
@@ -146,6 +147,19 @@ export async function POST(request: Request) {
       attemptSummaries.push({
         aggregatorID: String(payloadVariant.aggregatorID || ""),
         aggregatorId: String(payloadVariant.aggregatorId || ""),
+        secretVariant: describeIciciSecretVariant(
+          getIciciSecretCandidates(secretKey).find(
+            (candidate) =>
+              buildIciciSecureHash(
+                Object.fromEntries(
+                  Object.entries(payloadVariant).filter(
+                    ([key]) => key !== "secureHash"
+                  )
+                ),
+                candidate
+              ) === payloadVariant.secureHash
+          ) || ""
+        ),
         contentType: String(candidateResponse.requestMeta?.contentType || ""),
         shape: String(candidateResponse.requestMeta?.shape || ""),
         responseCode: String(candidatePayload.responseCode || ""),
