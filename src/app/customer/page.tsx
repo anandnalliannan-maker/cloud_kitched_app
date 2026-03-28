@@ -223,6 +223,40 @@ export default function CustomerPage() {
 
   const hasItems = total > 0;
 
+  function getMissingOrderFields() {
+    const missing: string[] = [];
+    const phoneDigits = form.phone.replace(/\D/g, "");
+
+    if (!form.name.trim()) {
+      missing.push("Name");
+    }
+    if (!form.phone.trim()) {
+      missing.push("Mobile Number");
+    } else if (phoneDigits.length < 10) {
+      missing.push("Valid Mobile Number");
+    }
+    if (!deliveryType) {
+      missing.push("Delivery Type");
+    }
+
+    if (deliveryType === "delivery") {
+      if (!form.addressLine1.trim()) {
+        missing.push("Door No / Apartment / House Name");
+      }
+      if (!form.street.trim()) {
+        missing.push("Street");
+      }
+      if (!form.area.trim()) {
+        missing.push("Area");
+      }
+      if (!location) {
+        missing.push("Exact Location on Map");
+      }
+    }
+
+    return missing;
+  }
+
   function updateQty(id: string, delta: number) {
     setItems((prev) =>
       prev.map((item) =>
@@ -372,8 +406,18 @@ export default function CustomerPage() {
 
   async function placeOrder() {
     setPayError("");
+    setPaymentNotice("");
     if (!publishedMenuId) {
       setPayError("No menu is published yet.");
+      return;
+    }
+    const missingFields = getMissingOrderFields();
+    if (missingFields.length) {
+      const message = `Please fill the following before placing the order:\n\n- ${missingFields.join(
+        "\n- "
+      )}`;
+      setPayError(message);
+      window.alert(message);
       return;
     }
     if (deliveryType === "delivery" && !location) {
@@ -575,23 +619,55 @@ export default function CustomerPage() {
   }
 
   return (
-    <main className="container">
-      <div className="stack">
+    <main className="container customer-shell">
+      <div className="stack customer-shell-stack">
         <div
-          className="row"
+          className="row customer-header-row"
           style={{ justifyContent: "space-between", alignItems: "center" }}
         >
           <div className="row" style={{ alignItems: "center" }}>
             <button
-              className="btn secondary customer-nav-toggle"
+              className="btn secondary customer-nav-toggle customer-ghost-btn"
               onClick={() => setCustomerDrawerOpen(true)}
               aria-label="Open customer menu"
             >
               {"\u2630"}
             </button>
-            <h1>MS Kitchen Menu</h1>
+            <div className="customer-brand-block">
+              <p className="customer-brand-eyebrow">Curated Daily Kitchen</p>
+              <h1>MS Kitchen Menu</h1>
+            </div>
           </div>
         </div>
+
+        {customerView === "menu" && (
+          <section className="card customer-hero">
+            <div className="customer-hero-copy">
+              <span className="badge customer-premium-badge">Freshly plated</span>
+              <h2>Elegant home-style meals with a smoother checkout.</h2>
+              <p>
+                Browse today&apos;s menu, place your order in minutes, and pay
+                securely through ICICI.
+              </p>
+            </div>
+            <div className="customer-hero-stats">
+              <div className="customer-stat-card">
+                <span>Service</span>
+                <strong>
+                  {menuMealLabel || "Today"}
+                </strong>
+              </div>
+              <div className="customer-stat-card">
+                <span>Mode</span>
+                <strong>{deliveryType ? (deliveryType === "delivery" ? "Delivery" : "Pickup") : "Choose later"}</strong>
+              </div>
+              <div className="customer-stat-card">
+                <span>Cart total</span>
+                <strong>INR {total}</strong>
+              </div>
+            </div>
+          </section>
+        )}
 
         {customerDrawerOpen && (
           <div
@@ -651,7 +727,7 @@ export default function CustomerPage() {
         )}
 
         {customerView === "history" && (
-          <div className="card stack">
+          <div className="card stack customer-panel">
             <h2>Order History</h2>
             <div className="field">
               <label>Mobile Number</label>
@@ -663,7 +739,7 @@ export default function CustomerPage() {
                   onChange={(e) => setHistoryPhone(e.target.value)}
                   style={{ flex: 1 }}
                 />
-                <button className="btn" onClick={loadOrderHistory}>
+                <button className="btn customer-primary-btn" onClick={loadOrderHistory}>
                   Search
                 </button>
               </div>
@@ -678,7 +754,7 @@ export default function CustomerPage() {
             )}
             <div className="stack">
               {historyOrders.map((order) => (
-                <div key={order.id} className="list-card stack customer-order-card">
+                <div key={order.id} className="list-card stack customer-order-card customer-history-card">
                   <div className="row" style={{ justifyContent: "space-between" }}>
                     <strong>{order.orderId}</strong>
                     <span className="badge">{order.status || "unknown"}</span>
@@ -715,12 +791,12 @@ export default function CustomerPage() {
         )}
 
         {customerView === "menu" && step === "menu" && (
-          <div className="card stack">
-            {paymentNotice && <small style={{ color: "#147d75" }}>{paymentNotice}</small>}
-            {payError && <small style={{ color: "crimson" }}>{payError}</small>}
+          <div className="card stack customer-panel customer-menu-panel">
+            {paymentNotice && <small className="customer-success-text">{paymentNotice}</small>}
+            {payError && <small className="customer-error-text">{payError}</small>}
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h2>Menu</h2>
-              <span style={{ color: "var(--muted)", fontWeight: 600 }}>
+              <span className="customer-section-meta">
                 {menuDateLabel
                   ? `${formatDateLabel(menuDateLabel)} ${
                       menuMealLabel ? `- ${menuMealLabel}` : ""
@@ -730,7 +806,7 @@ export default function CustomerPage() {
             </div>
             <div className="product-grid">
               {items.map((item) => (
-                <div key={item.id} className="product-card">
+                <div key={item.id} className="product-card customer-product-card">
                   <div className="product-image-wrap">
                     {item.remaining === 0 && (
                       <span className="product-badge">Sold Out</span>
@@ -759,7 +835,7 @@ export default function CustomerPage() {
 
                   <div className="product-qty-row">
                     <button
-                      className="btn secondary qty-btn"
+                      className="btn secondary qty-btn customer-ghost-btn"
                       onClick={() => updateQty(item.id, -1)}
                       disabled={item.remaining === 0}
                     >
@@ -767,7 +843,7 @@ export default function CustomerPage() {
                     </button>
                     <div className="qty-value">{item.qty}</div>
                     <button
-                      className="btn qty-btn"
+                      className="btn qty-btn customer-primary-btn"
                       onClick={() => updateQty(item.id, 1)}
                       disabled={item.remaining === 0}
                     >
@@ -780,7 +856,7 @@ export default function CustomerPage() {
             <div className="row">
               <strong>Total: INR {total}</strong>
               <button
-                className="btn"
+                className="btn customer-primary-btn"
                 disabled={!hasItems}
                 onClick={() => {
                   setPayError("");
@@ -795,7 +871,7 @@ export default function CustomerPage() {
         )}
 
         {customerView === "menu" && step === "details" && (
-          <div className="card stack">
+          <div className="card stack customer-panel customer-details-panel">
             <h2>Customer Details</h2>
             <div className="field">
               <label>Name</label>
@@ -817,7 +893,7 @@ export default function CustomerPage() {
               <label>Delivery Type</label>
               <div className="row">
                 <button
-                  className={`btn ${
+                  className={`btn customer-toggle-btn ${
                     deliveryType === "delivery" ? "" : "secondary"
                   }`}
                   onClick={() => setDeliveryType("delivery")}
@@ -825,7 +901,7 @@ export default function CustomerPage() {
                   Home Delivery
                 </button>
                 <button
-                  className={`btn ${
+                  className={`btn customer-toggle-btn ${
                     deliveryType === "pickup" ? "" : "secondary"
                   }`}
                   onClick={() => setDeliveryType("pickup")}
@@ -887,7 +963,7 @@ export default function CustomerPage() {
                 </div>
 
                 {mapsKey && (
-                  <div className="card stack" style={{ marginTop: 12 }}>
+                  <div className="card stack customer-map-card" style={{ marginTop: 12 }}>
                     <div
                       className="row"
                       style={{ justifyContent: "space-between" }}
@@ -907,7 +983,7 @@ export default function CustomerPage() {
                           />
                           <button
                             type="button"
-                            className="btn secondary"
+                            className="btn secondary customer-ghost-btn"
                             onClick={useCurrentLocation}
                           >
                             Use current location
@@ -936,32 +1012,23 @@ export default function CustomerPage() {
             )}
 
             <div className="row">
-              <button className="btn secondary" onClick={() => setStep("menu")}>
+              <button className="btn secondary customer-ghost-btn" onClick={() => setStep("menu")}>
                 Back
               </button>
               <button
-                className="btn"
-                disabled={
-                  !deliveryType ||
-                  !form.name ||
-                  !form.phone ||
-                  (deliveryType === "delivery" &&
-                    (!form.addressLine1 ||
-                      !form.street ||
-                      !form.area ||
-                      !location))
-                }
+                className="btn customer-primary-btn"
+                disabled={isPlacingOrder}
                 onClick={placeOrder}
               >
-                Proceed and Pay
+                {isPlacingOrder ? "Checking details..." : "Proceed and Pay"}
               </button>
             </div>
-            {payError && <small style={{ color: "crimson" }}>{payError}</small>}
+            {payError && <small className="customer-error-text">{payError}</small>}
           </div>
         )}
 
         {customerView === "menu" && step === "payment" && (
-          <div className="card payment-card">
+          <div className="card payment-card customer-panel">
             <div className="payment-card-header">
               <div>
                 <p className="payment-eyebrow">Secure Checkout</p>
@@ -1029,14 +1096,14 @@ export default function CustomerPage() {
             {paymentSummary?.deliveryType === "pickup" ? (
               <div className="row payment-button-row">
                 <button
-                  className="btn"
+                  className="btn customer-primary-btn"
                   onClick={startOnlinePayment}
                   disabled={isProcessingPayment}
                 >
                   Pay with ICICI
                 </button>
                 <button
-                  className="btn secondary"
+                  className="btn secondary customer-ghost-btn"
                   onClick={confirmPayAtOutlet}
                   disabled={isProcessingPayment}
                 >
@@ -1045,7 +1112,7 @@ export default function CustomerPage() {
               </div>
             ) : (
               <button
-                className="btn payment-primary-btn"
+                className="btn payment-primary-btn customer-primary-btn"
                 onClick={startOnlinePayment}
                 disabled={isProcessingPayment}
               >
