@@ -6,10 +6,41 @@ import {
   buildIciciSecureHash,
   formatIciciTxnDate,
   getIciciConfig,
+  getIciciSecretCandidates,
   normalizeMobile,
   postIciciJson,
   verifyIciciSecureHash,
 } from "@/lib/icici";
+
+function buildInitiatePayloadVariants(
+  payload: Record<string, string>,
+  secretKey: string
+) {
+  const variants: Record<string, string>[] = [];
+
+  for (const candidate of getIciciSecretCandidates(secretKey)) {
+    variants.push({
+      ...payload,
+      secureHash: buildIciciSecureHash(payload, candidate),
+    });
+
+    if (payload.aggregatorID) {
+      const altPayload: Record<string, string> = {
+        ...payload,
+        aggregatorId: payload.aggregatorID,
+      };
+      delete altPayload.aggregatorID;
+      variants.push({
+        ...altPayload,
+        secureHash: buildIciciSecureHash(altPayload, candidate),
+      });
+    }
+  }
+
+  return Array.from(
+    new Map(variants.map((variant) => [JSON.stringify(variant), variant])).values()
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -82,21 +113,35 @@ export async function POST(request: Request) {
       requestPayload.requestType = requestType;
     }
 
-    const secureHash = buildIciciSecureHash(requestPayload, secretKey);
-
-    const iciciResponse = await postIciciJson(
-      initiateSaleUrl,
-      {
-        ...requestPayload,
-        secureHash,
-      },
-      ["redirectURI", "redirectUrl", "tranCtx", "responseCode", "respDescription"]
+    const payloadVariants = buildInitiatePayloadVariants(
+      requestPayload,
+      secretKey
     );
-    const payload = iciciResponse.payload;
+
+    let iciciResponse = null as Awaited<ReturnType<typeof postIciciJson>> | null;
+
+    for (const payloadVariant of payloadVariants) {
+      const candidateResponse = await postIciciJson(
+        initiateSaleUrl,
+        payloadVariant,
+        ["redirectURI", "redirectUrl", "tranCtx", "responseCode", "respDescription"]
+      );
+      const candidatePayload = candidateResponse.payload;
+      const hasRedirect =
+        String(candidatePayload.redirectURI || candidatePayload.redirectUrl || "") &&
+        String(candidatePayload.tranCtx || "");
+
+      iciciResponse = candidateResponse;
+      if (hasRedirect) {
+        break;
+      }
+    }
+
+    const payload = iciciResponse?.payload || {};
     const redirectUri = String(payload.redirectURI || payload.redirectUrl || "");
     const tranCtx = String(payload.tranCtx || "");
 
-    if (!iciciResponse.ok) {
+    if (!iciciResponse?.ok) {
       return NextResponse.json(
         {
           error:
@@ -104,7 +149,7 @@ export async function POST(request: Request) {
             "Failed to initiate ICICI payment.",
           payload,
         },
-        { status: iciciResponse.status }
+        { status: iciciResponse?.status || 502 }
       );
     }
 

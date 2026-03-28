@@ -4,6 +4,7 @@ import { serverDb } from "@/lib/firebase-server";
 import {
   buildIciciSecureHash,
   getIciciConfig,
+  getIciciSecretCandidates,
   isIciciPaymentPending,
   isIciciPaymentSuccess,
   postIciciJson,
@@ -12,7 +13,37 @@ import {
 
 type IciciPayload = Record<string, unknown>;
 
-export async function requestIciciStatus(appOrderId: string) {
+function buildStatusPayloadVariants(
+  payload: Record<string, string>,
+  secretKey: string
+) {
+  const variants: Record<string, string>[] = [];
+
+  for (const candidate of getIciciSecretCandidates(secretKey)) {
+    variants.push({
+      ...payload,
+      secureHash: buildIciciSecureHash(payload, candidate),
+    });
+
+    if (payload.aggregatorID) {
+      const altPayload: Record<string, string> = {
+        ...payload,
+        aggregatorId: payload.aggregatorID,
+      };
+      delete altPayload.aggregatorID;
+      variants.push({
+        ...altPayload,
+        secureHash: buildIciciSecureHash(altPayload, candidate),
+      });
+    }
+  }
+
+  return Array.from(
+    new Map(variants.map((variant) => [JSON.stringify(variant), variant])).values()
+  );
+}
+
+export async function requestIciciStatus(appOrderId: string, amount?: number) {
   const {
     merchantId,
     aggregatorId,
@@ -22,23 +53,39 @@ export async function requestIciciStatus(appOrderId: string) {
 
   const payload = {
     aggregatorID: aggregatorId,
+    amount:
+      typeof amount === "number" && Number.isFinite(amount)
+        ? amount.toFixed(2)
+        : "",
     merchantId,
     merchantTxnNo: appOrderId,
     originalTxnNo: appOrderId,
     transactionType: "STATUS",
   };
 
-  const secureHash = buildIciciSecureHash(payload, secretKey);
+  const payloadVariants = buildStatusPayloadVariants(payload, secretKey);
+  let iciciResponse = null as Awaited<ReturnType<typeof postIciciJson>> | null;
 
-  const iciciResponse = await postIciciJson(
-    commandUrl,
-    {
-      ...payload,
-      secureHash,
-    },
-    ["txnStatus", "responseCode", "txnResponseCode", "txnID"]
-  );
-  const statusPayload = iciciResponse.payload as IciciPayload;
+  for (const payloadVariant of payloadVariants) {
+    const candidateResponse = await postIciciJson(
+      commandUrl,
+      payloadVariant,
+      ["txnStatus", "responseCode", "txnResponseCode", "txnID"]
+    );
+
+    iciciResponse = candidateResponse;
+    if (candidateResponse.ok) {
+      break;
+    }
+  }
+
+  const fallbackResponse = iciciResponse || {
+    ok: false,
+    status: 502,
+    rawPayload: {},
+    payload: {},
+  };
+  const statusPayload = fallbackResponse.payload as IciciPayload;
   const secureHashValid = statusPayload.secureHash
     ? verifyIciciSecureHash(
         statusPayload as Record<string, string>,
@@ -48,9 +95,9 @@ export async function requestIciciStatus(appOrderId: string) {
     : false;
 
   return {
-    ok: iciciResponse.ok,
-    status: iciciResponse.status,
-    rawPayload: iciciResponse.rawPayload,
+    ok: fallbackResponse.ok,
+    status: fallbackResponse.status,
+    rawPayload: fallbackResponse.rawPayload,
     payload: statusPayload,
     secureHashValid,
   };
@@ -65,7 +112,10 @@ export async function syncIciciOrderStatus(appOrderId: string) {
   }
 
   const orderData = orderSnap.data() as any;
-  const statusResponse = await requestIciciStatus(appOrderId);
+  const statusResponse = await requestIciciStatus(
+    appOrderId,
+    Number(orderData.total || 0)
+  );
   const payload = statusResponse.payload;
 
   const sharedUpdate = {

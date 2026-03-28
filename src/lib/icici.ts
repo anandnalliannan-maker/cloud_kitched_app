@@ -71,6 +71,7 @@ export function normalizeMobile(value: string) {
 }
 
 export function buildIciciSecureHash(payload: Payload, secretKey: string) {
+  const resolvedSecretKey = getIciciSecretCandidates(secretKey)[0] || secretKey;
   const hashText = Object.keys(payload)
     .filter(
       (key) =>
@@ -83,7 +84,24 @@ export function buildIciciSecureHash(payload: Payload, secretKey: string) {
     .map((key) => String(payload[key]))
     .join("");
 
-  return crypto.createHmac("sha256", secretKey).update(hashText).digest("hex");
+  return crypto
+    .createHmac("sha256", resolvedSecretKey)
+    .update(hashText)
+    .digest("hex");
+}
+
+export function getIciciSecretCandidates(secretKey: string) {
+  const normalized = String(secretKey || "").trim();
+  const candidates = [normalized];
+
+  if (normalized.includes(":")) {
+    const suffix = normalized.split(":").slice(1).join(":").trim();
+    if (suffix) {
+      candidates.unshift(suffix);
+    }
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)));
 }
 
 export function verifyIciciSecureHash(
@@ -95,8 +113,11 @@ export function verifyIciciSecureHash(
   if (!actual) {
     return false;
   }
-  const expected = buildIciciSecureHash(payload, secretKey);
-  return expected.toLowerCase() === actual.toLowerCase();
+
+  return getIciciSecretCandidates(secretKey).some((candidate) => {
+    const expected = buildIciciSecureHash(payload, candidate);
+    return expected.toLowerCase() === actual.toLowerCase();
+  });
 }
 
 export function isIciciPaymentSuccess(payload: Record<string, any>) {
