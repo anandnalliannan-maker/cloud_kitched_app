@@ -210,6 +210,7 @@ export async function postIciciJson(
   ];
 
   let lastResult: IciciJsonResult | null = null;
+  let bestResult: IciciJsonResult | null = null;
 
   for (const attempt of attempts) {
     const result = await postJson(url, attempt.body, attempt.contentType);
@@ -220,12 +221,18 @@ export async function postIciciJson(
       return value !== undefined && value !== null && value !== "";
     });
 
-    if (hasExpected || result.ok) {
+    if (hasExpected) {
       return result;
+    }
+
+    const responseCode = String(result.payload.responseCode || "").toUpperCase();
+    if (!bestResult || responseCode === "R1000" || responseCode === "000") {
+      bestResult = result;
     }
   }
 
   return (
+    bestResult ||
     lastResult || {
       ok: false,
       status: 502,
