@@ -18,7 +18,7 @@ function buildInitiatePayloadVariants(
   payload: Record<string, string>,
   secretKey: string
 ) {
-  const variants: Record<string, string>[] = [];
+  const variants: Array<Record<string, string> & { __secretVariant?: string }> = [];
 
   const aggregatorCandidates = getIciciAggregatorCandidates(
     payload.aggregatorID || payload.aggregatorId || ""
@@ -34,7 +34,8 @@ function buildInitiatePayloadVariants(
       };
       variants.push({
         ...basePayload,
-        secureHash: buildIciciSecureHash(basePayload, candidate),
+        secureHash: buildIciciSecureHash(basePayload, candidate.key),
+        __secretVariant: candidate.label,
       });
 
       const altPayload: Record<string, string> = {
@@ -44,7 +45,8 @@ function buildInitiatePayloadVariants(
       delete altPayload.aggregatorID;
       variants.push({
         ...altPayload,
-        secureHash: buildIciciSecureHash(altPayload, candidate),
+        secureHash: buildIciciSecureHash(altPayload, candidate.key),
+        __secretVariant: candidate.label,
       });
     }
   }
@@ -136,7 +138,9 @@ export async function POST(request: Request) {
     for (const payloadVariant of payloadVariants) {
       const candidateResponse = await postIciciJson(
         initiateSaleUrl,
-        payloadVariant,
+        Object.fromEntries(
+          Object.entries(payloadVariant).filter(([key]) => !key.startsWith("__"))
+        ),
         ["redirectURI", "redirectUrl", "tranCtx", "responseCode", "respDescription"]
       );
       const candidatePayload = candidateResponse.payload;
@@ -148,17 +152,7 @@ export async function POST(request: Request) {
         aggregatorID: String(payloadVariant.aggregatorID || ""),
         aggregatorId: String(payloadVariant.aggregatorId || ""),
         secretVariant: describeIciciSecretVariant(
-          getIciciSecretCandidates(secretKey).find(
-            (candidate) =>
-              buildIciciSecureHash(
-                Object.fromEntries(
-                  Object.entries(payloadVariant).filter(
-                    ([key]) => key !== "secureHash"
-                  )
-                ),
-                candidate
-              ) === payloadVariant.secureHash
-          ) || ""
+          String(payloadVariant.__secretVariant || "")
         ),
         contentType: String(candidateResponse.requestMeta?.contentType || ""),
         shape: String(candidateResponse.requestMeta?.shape || ""),

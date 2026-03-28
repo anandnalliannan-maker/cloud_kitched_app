@@ -2,6 +2,10 @@ import crypto from "crypto";
 
 type Primitive = string | number | boolean | null | undefined;
 type Payload = Record<string, Primitive>;
+type SecretCandidate = {
+  label: string;
+  key: crypto.BinaryLike;
+};
 type IciciJsonResult = {
   ok: boolean;
   status: number;
@@ -87,7 +91,10 @@ export function normalizeMobile(value: string) {
   return digits;
 }
 
-export function buildIciciSecureHash(payload: Payload, secretKey: string) {
+export function buildIciciSecureHash(
+  payload: Payload,
+  secretKey: crypto.BinaryLike
+) {
   const hashText = Object.keys(payload)
     .filter(
       (key) =>
@@ -106,31 +113,55 @@ export function buildIciciSecureHash(payload: Payload, secretKey: string) {
     .digest("hex");
 }
 
-export function getIciciSecretCandidates(secretKey: string) {
+function tryDecodeBase64(value: string) {
+  if (!/^[A-Za-z0-9+/=]+$/.test(value) || value.length % 4 !== 0) {
+    return null;
+  }
+
+  try {
+    const decoded = Buffer.from(value, "base64");
+    if (!decoded.length) {
+      return null;
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+export function getIciciSecretCandidates(secretKey: string): SecretCandidate[] {
   const normalized = String(secretKey || "").trim();
-  const candidates = [normalized];
+  const candidates: SecretCandidate[] = [];
+
+  if (normalized) {
+    candidates.push({ label: "full", key: normalized });
+  }
 
   if (normalized.includes(":")) {
     const suffix = normalized.split(":").slice(1).join(":").trim();
     if (suffix) {
-      candidates.push(suffix);
+      candidates.push({ label: "suffix", key: suffix });
+      const decodedSuffix = tryDecodeBase64(suffix);
+      if (decodedSuffix) {
+        candidates.push({ label: "suffix_base64", key: decodedSuffix });
+      }
     }
   }
 
-  return Array.from(new Set(candidates.filter(Boolean)));
+  return Array.from(
+    new Map(
+      candidates
+        .filter((candidate) => Boolean(candidate.key))
+        .map((candidate) => [
+          `${candidate.label}:${Buffer.isBuffer(candidate.key) ? candidate.key.toString("base64") : candidate.key}`,
+          candidate,
+        ])
+    ).values()
+  );
 }
 
-export function describeIciciSecretVariant(secretKey: string) {
-  const normalized = String(secretKey || "").trim();
-  if (!normalized) {
-    return "empty";
-  }
-
-  if (normalized.includes(":")) {
-    return "full";
-  }
-
-  return "suffix";
+export function describeIciciSecretVariant(secretLabel: string) {
+  return secretLabel || "unknown";
 }
 
 export function verifyIciciSecureHash(
@@ -144,7 +175,7 @@ export function verifyIciciSecureHash(
   }
 
   return getIciciSecretCandidates(secretKey).some((candidate) => {
-    const expected = buildIciciSecureHash(payload, candidate);
+    const expected = buildIciciSecureHash(payload, candidate.key);
     return expected.toLowerCase() === actual.toLowerCase();
   });
 }
@@ -249,6 +280,17 @@ export async function postIciciJson(
     }
 
     const responseCode = String(result.payload.responseCode || "").toUpperCase();
+    const txnResponseCode = String(
+      result.payload.txnResponseCode || ""
+    ).toUpperCase();
+    if (
+      responseCode === "R1000" ||
+      responseCode === "000" ||
+      txnResponseCode === "0000"
+    ) {
+      return result;
+    }
+
     if (!bestResult || responseCode === "R1000" || responseCode === "000") {
       bestResult = result;
     }

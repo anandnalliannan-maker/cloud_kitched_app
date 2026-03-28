@@ -34,7 +34,7 @@ function buildStatusPayloadVariants(
       };
       variants.push({
         ...basePayload,
-        secureHash: buildIciciSecureHash(basePayload, candidate),
+        secureHash: buildIciciSecureHash(basePayload, candidate.key),
       });
 
       const altPayload: Record<string, string> = {
@@ -44,7 +44,7 @@ function buildStatusPayloadVariants(
       delete altPayload.aggregatorID;
       variants.push({
         ...altPayload,
-        secureHash: buildIciciSecureHash(altPayload, candidate),
+        secureHash: buildIciciSecureHash(altPayload, candidate.key),
       });
     }
   }
