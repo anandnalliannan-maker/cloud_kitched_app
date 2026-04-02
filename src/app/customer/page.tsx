@@ -1190,18 +1190,29 @@ export default function CustomerPage() {
                 <span>{(paymentSummary?.items || []).length} item(s)</span>
               </div>
 
-              <div className="payment-items">
-                {(paymentSummary?.items || []).map((item) => (
-                  <div key={item.id} className="payment-item-row">
-                    <div>
-                      <div className="payment-item-name">{item.name}</div>
-                      <div className="payment-item-qty">Qty {item.qty}</div>
-                    </div>
-                    <div className="payment-item-price">
-                      INR {item.price * item.qty}
-                    </div>
-                  </div>
-                ))}
+              <div className="payment-summary-table-wrap">
+                <table className="payment-summary-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Price</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(paymentSummary?.items || []).map((item) => (
+                      <tr key={item.id}>
+                        <td className="payment-item-name-cell">{item.name}</td>
+                        <td>{item.qty}</td>
+                        <td>INR {item.price}</td>
+                        <td className="payment-item-total-cell">
+                          INR {item.price * item.qty}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               <div className="payment-meta">
