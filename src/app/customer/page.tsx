@@ -842,6 +842,19 @@ export default function CustomerPage() {
           </div>
         )}
 
+        {isProcessingPayment && (
+          <div className="customer-processing-overlay" role="alert" aria-live="assertive">
+            <div className="customer-processing-modal">
+              <div className="customer-processing-spinner" aria-hidden="true" />
+              <strong>Payment in progress</strong>
+              <p>
+                Please wait while we connect you to the UPI payment page. Do not
+                close or refresh this screen.
+              </p>
+            </div>
+          </div>
+        )}
+
         {customerView === "history" && (
           <div className="card stack customer-panel">
             <h2>Order History</h2>
