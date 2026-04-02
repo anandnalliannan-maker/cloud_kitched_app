@@ -57,6 +57,7 @@ type CustomerOrder = {
 
 const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
+const pendingPaymentStorageKey = "msk_pending_payment";
 
 async function generateUniqueSixDigitOrderId() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -112,8 +113,20 @@ export default function CustomerPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historySearched, setHistorySearched] = useState(false);
+  const [pendingPaymentResume, setPendingPaymentResume] = useState<{
+    appOrderId: string;
+    displayOrderId: string;
+  } | null>(null);
+  const [isCheckingPendingPayment, setIsCheckingPendingPayment] = useState(false);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  function clearPendingPaymentResume() {
+    setPendingPaymentResume(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(pendingPaymentStorageKey);
+    }
+  }
 
   useEffect(() => {
     const q = query(
@@ -171,6 +184,24 @@ export default function CustomerPage() {
       return;
     }
 
+    const stored = window.localStorage.getItem(pendingPaymentStorageKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as {
+          appOrderId?: string;
+          displayOrderId?: string;
+        };
+        if (parsed?.appOrderId && parsed?.displayOrderId) {
+          setPendingPaymentResume({
+            appOrderId: parsed.appOrderId,
+            displayOrderId: parsed.displayOrderId,
+          });
+        }
+      } catch {
+        window.localStorage.removeItem(pendingPaymentStorageKey);
+      }
+    }
+
     const url = new URL(window.location.href);
     const paymentState = url.searchParams.get("payment");
     const orderId = url.searchParams.get("orderId");
@@ -196,6 +227,7 @@ export default function CustomerPage() {
     setPayError(paymentState === "failed" ? messages.failed : "");
     resetCheckoutState();
     setCustomerView("menu");
+    clearPendingPaymentResume();
 
     if (paymentState === "success") {
       window.alert(nextMessage);
@@ -205,6 +237,82 @@ export default function CustomerPage() {
     url.searchParams.delete("orderId");
     window.history.replaceState({}, "", url.toString());
   }, []);
+
+  async function checkPendingPaymentStatus(
+    pendingOrder = pendingPaymentResume,
+    opts?: { silent?: boolean }
+  ) {
+    if (!pendingOrder?.appOrderId || isCheckingPendingPayment) {
+      return;
+    }
+
+    setIsCheckingPendingPayment(true);
+    if (!opts?.silent) {
+      setPayError("");
+      setPaymentNotice("");
+    }
+
+    try {
+      const response = await fetch("/api/icici/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appOrderId: pendingOrder.appOrderId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to verify payment status.");
+      }
+
+      const messages: Record<string, string> = {
+        success: `Order placed successfully. Order ID: ${payload.orderId || pendingOrder.displayOrderId}`,
+        pending: `Payment is still pending for order ${payload.orderId || pendingOrder.displayOrderId}.`,
+        failed: `Payment failed for order ${payload.orderId || pendingOrder.displayOrderId}. Please try again.`,
+      };
+
+      const state = String(payload.state || "");
+      const nextMessage = messages[state] || "Payment status updated.";
+
+      setPaymentNotice(nextMessage);
+      setPayError(state === "failed" ? nextMessage : "");
+
+      if (state === "success") {
+        resetCheckoutState();
+        setCustomerView("menu");
+        clearPendingPaymentResume();
+        if (!opts?.silent) {
+          window.alert(nextMessage);
+        }
+      } else if (state === "failed") {
+        clearPendingPaymentResume();
+      }
+    } catch (error: any) {
+      if (!opts?.silent) {
+        setPayError(error?.message || "Failed to verify payment status.");
+      }
+    } finally {
+      setIsCheckingPendingPayment(false);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !pendingPaymentResume?.appOrderId) {
+      return;
+    }
+
+    const handleResume = () => {
+      if (document.visibilityState === "visible") {
+        void checkPendingPaymentStatus(pendingPaymentResume, { silent: true });
+      }
+    };
+
+    window.addEventListener("focus", handleResume);
+    document.addEventListener("visibilitychange", handleResume);
+
+    return () => {
+      window.removeEventListener("focus", handleResume);
+      document.removeEventListener("visibilitychange", handleResume);
+    };
+  }, [pendingPaymentResume, isCheckingPendingPayment]);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -567,6 +675,18 @@ export default function CustomerPage() {
 
     setIsProcessingPayment(true);
     try {
+      if (typeof window !== "undefined") {
+        const pendingOrder = {
+          appOrderId: paymentSummary.appOrderId,
+          displayOrderId: paymentSummary.displayOrderId,
+        };
+        window.localStorage.setItem(
+          pendingPaymentStorageKey,
+          JSON.stringify(pendingOrder)
+        );
+        setPendingPaymentResume(pendingOrder);
+      }
+
       const orderResponse = await fetch("/api/icici/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -790,6 +910,24 @@ export default function CustomerPage() {
           <div className="card stack customer-panel customer-menu-panel">
             {paymentNotice && <small className="customer-success-text">{paymentNotice}</small>}
             {payError && <small className="customer-error-text">{payError}</small>}
+            {pendingPaymentResume && (
+              <div className="payment-action-box">
+                <div className="payment-action-copy">
+                  <strong>Pending payment detected</strong>
+                  <p>
+                    If your UPI app did not switch back automatically, reopen this page
+                    and verify the payment for order {pendingPaymentResume.displayOrderId}.
+                  </p>
+                </div>
+                <button
+                  className="btn customer-primary-btn"
+                  onClick={() => checkPendingPaymentStatus()}
+                  disabled={isCheckingPendingPayment}
+                >
+                  {isCheckingPendingPayment ? "Checking..." : "Check Payment Status"}
+                </button>
+              </div>
+            )}
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h2>Menu</h2>
               <span className="customer-section-meta">
@@ -1123,6 +1261,10 @@ export default function CustomerPage() {
                 You will be redirected to ICICI to complete payment securely.
               </p>
             )}
+            <p className="payment-status-text">
+              If Google Pay does not return to the browser automatically, reopen this page
+              and use the payment status check.
+            </p>
           </div>
         )}
 
