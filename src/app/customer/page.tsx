@@ -83,6 +83,9 @@ export default function CustomerPage() {
   const [menuDateLabel, setMenuDateLabel] = useState("");
   const [menuMealLabel, setMenuMealLabel] = useState("");
   const [publishedMenuId, setPublishedMenuId] = useState<string | null>(null);
+  const [menuAvailability, setMenuAvailability] = useState<
+    "available" | "archived" | "sold_out" | "empty"
+  >("empty");
   const [step, setStep] = useState<"menu" | "details" | "payment">("menu");
   const [deliveryType, setDeliveryType] = useState<
     "delivery" | "pickup" | ""
@@ -206,29 +209,33 @@ export default function CustomerPage() {
         setMenuDateLabel("");
         setMenuMealLabel("");
         setPublishedMenuId(null);
+        setMenuAvailability("empty");
         return;
       }
-      let docSnap = snap.docs[0];
-      let data = docSnap.data() as any;
-      if (data.isArchived) {
-        const next = snap.docs.find((doc) => !(doc.data() as any).isArchived);
-        if (!next) {
-          setItems([]);
-          setMenuDateLabel("");
-          setMenuMealLabel("");
-          setPublishedMenuId(null);
-          return;
-        }
-        docSnap = next;
-        data = docSnap.data() as any;
-      }
+
+      const docSnap = snap.docs[0];
+      const data = docSnap.data() as any;
+
       setPublishedMenuId(docSnap.id);
       setMenuDateLabel(data.date || "");
       setMenuMealLabel(data.mealType || "");
+
+      if (data.isArchived) {
+        setItems([]);
+        setMenuAvailability("archived");
+        return;
+      }
+
+      if (data.ordersStopped) {
+        setItems([]);
+        setMenuAvailability("sold_out");
+        return;
+      }
+
       const remainingMap = new Map(
         (data.remaining || data.items || []).map((item: any) => [
           item.itemId,
-          data.ordersStopped ? 0 : item.qty ?? 0,
+          item.qty ?? 0,
         ])
       );
       const menuItems = (data.items || []).map((item: any) => ({
@@ -241,6 +248,7 @@ export default function CustomerPage() {
         remaining: remainingMap.get(item.itemId) ?? 0,
       }));
       setItems(menuItems);
+      setMenuAvailability("available");
     });
     return () => unsub();
   }, []);
@@ -653,7 +661,7 @@ export default function CustomerPage() {
     setPayError("");
     setPaymentNotice("");
     if (!publishedMenuId) {
-      setPayError("No menu is published yet.");
+      setPayError("No menu is available right now.");
       return;
     }
     const missingFields = getMissingOrderFields();
@@ -699,8 +707,11 @@ export default function CustomerPage() {
           throw new Error("Menu not found.");
         }
         const menuData = menuSnap.data() as any;
-        if (menuData.isArchived || menuData.ordersStopped) {
-          throw new Error("Orders are closed for this menu.");
+        if (menuData.isArchived) {
+          throw new Error("Stay tuned for the upcoming menu.");
+        }
+        if (menuData.ordersStopped) {
+          throw new Error("Sold out.");
         }
         const remaining = (menuData.remaining || menuData.items || []).map(
           (item: any) => ({ ...item })
@@ -1080,76 +1091,102 @@ export default function CustomerPage() {
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h2>Menu</h2>
               <span className="customer-section-meta">
-                {menuDateLabel
+                {menuAvailability === "available" && menuDateLabel
                   ? `${formatDateLabel(menuDateLabel)} ${
                       menuMealLabel ? `- ${menuMealLabel}` : ""
                     }`
+                  : menuAvailability === "archived"
+                  ? "Stay tuned for the upcoming menu"
+                  : menuAvailability === "sold_out"
+                  ? "Sold out"
                   : "No menu published"}
               </span>
             </div>
-            <div className="product-grid">
-              {items.map((item) => (
-                <div key={item.id} className="product-card customer-product-card">
-                  <div className="product-image-wrap">
-                    {item.remaining === 0 && (
-                      <span className="product-badge">Sold Out</span>
-                    )}
-                    {item.imageUrl ? (
-                      // Using plain img keeps setup simple while owner stores image URLs.
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        className="product-image"
-                      />
-                    ) : (
-                      <div className="product-image product-image-placeholder">
-                        No image
+            {menuAvailability === "available" ? (
+              <>
+                <div className="product-grid">
+                  {items.map((item) => (
+                    <div key={item.id} className="product-card customer-product-card">
+                      <div className="product-image-wrap">
+                        {item.remaining === 0 && (
+                          <span className="product-badge">Sold Out</span>
+                        )}
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="product-image"
+                          />
+                        ) : (
+                          <div className="product-image product-image-placeholder">
+                            No image
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  <div className="product-content">
-                    <div className="product-title">{item.name}</div>
-                    {item.description && (
-                      <div className="product-desc">{item.description}</div>
-                    )}
-                    <div className="product-price">INR {item.price}</div>
-                  </div>
+                      <div className="product-content">
+                        <div className="product-title">{item.name}</div>
+                        {item.description && (
+                          <div className="product-desc">{item.description}</div>
+                        )}
+                        <div className="product-price">INR {item.price}</div>
+                      </div>
 
-                  <div className="product-qty-row">
-                    <button
-                      className="btn secondary qty-btn customer-ghost-btn"
-                      onClick={() => updateQty(item.id, -1)}
-                      disabled={item.remaining === 0}
-                    >
-                      -
-                    </button>
-                    <div className="qty-value">{item.qty}</div>
-                    <button
-                      className="btn qty-btn customer-primary-btn"
-                      onClick={() => updateQty(item.id, 1)}
-                      disabled={item.remaining === 0}
-                    >
-                      +
-                    </button>
-                  </div>
+                      <div className="product-qty-row">
+                        <button
+                          className="btn secondary qty-btn customer-ghost-btn"
+                          onClick={() => updateQty(item.id, -1)}
+                          disabled={item.remaining === 0}
+                        >
+                          -
+                        </button>
+                        <div className="qty-value">{item.qty}</div>
+                        <button
+                          className="btn qty-btn customer-primary-btn"
+                          onClick={() => updateQty(item.id, 1)}
+                          disabled={item.remaining === 0}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="row">
-              <strong>Total: INR {total}</strong>
-              <button
-                className="btn customer-primary-btn"
-                disabled={!hasItems}
-                onClick={() => {
-                  setPayError("");
-                  setPaymentNotice("");
-                  setStep("details");
-                }}
-              >
-                Continue
-              </button>
-            </div>
+                <div className="row">
+                  <strong>Total: INR {total}</strong>
+                  <button
+                    className="btn customer-primary-btn"
+                    disabled={!hasItems}
+                    onClick={() => {
+                      setPayError("");
+                      setPaymentNotice("");
+                      setStep("details");
+                    }}
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="payment-action-box">
+                <div className="payment-action-copy">
+                  <strong>
+                    {menuAvailability === "archived"
+                      ? "Stay tuned for the upcoming menu"
+                      : menuAvailability === "sold_out"
+                      ? "Sold out"
+                      : "No menu published"}
+                  </strong>
+                  <p>
+                    {menuAvailability === "archived"
+                      ? "The current menu has been archived. Please check back for the next update."
+                      : menuAvailability === "sold_out"
+                      ? "Orders are currently closed for this menu."
+                      : "The next menu will be published here once it is ready."}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
