@@ -999,7 +999,22 @@ export default function OwnerPage() {
   }
 
   const activeOrders = useMemo(
-    () => orders.filter((order) => order.status !== "closed"),
+    () =>
+      orders.filter((order) => {
+        if (order.status === "closed") {
+          return false;
+        }
+
+        if (order.deliveryType === "pickup") {
+          return true;
+        }
+
+        if (order.orderSource === "owner") {
+          return true;
+        }
+
+        return order.paymentStatus === "paid";
+      }),
     [orders]
   );
   const closedOrders = useMemo(
@@ -1049,6 +1064,7 @@ export default function OwnerPage() {
         itemCounts: Record<string, number>;
         byArea: Record<string, number>;
         byDelivery: Record<string, number>;
+        byAgent: Record<string, number>;
       }
     > = {};
 
@@ -1067,6 +1083,7 @@ export default function OwnerPage() {
           itemCounts: {},
           byArea: {},
           byDelivery: {},
+          byAgent: {},
         };
       }
       const group = grouped[key];
@@ -1084,6 +1101,11 @@ export default function OwnerPage() {
       group.byArea[area] = (group.byArea[area] || 0) + 1;
       const delivery = order.deliveryType || "Unknown";
       group.byDelivery[delivery] = (group.byDelivery[delivery] || 0) + 1;
+      const agent =
+        order.deliveryType === "delivery"
+          ? order.assignedAgentName || "Unassigned"
+          : "Pickup";
+      group.byAgent[agent] = (group.byAgent[agent] || 0) + 1;
     });
 
     return Object.values(grouped).sort((a, b) => {
@@ -1162,6 +1184,34 @@ export default function OwnerPage() {
         activePublishedMenuKeys.has(group.key)
       ),
     [activeOrdersSummary, activePublishedMenuKeys]
+  );
+
+  const activeAreaRows = useMemo(
+    () =>
+      filteredActiveOrdersSummary.flatMap((group) =>
+        Object.entries(group.byArea).map(([area, count]) => ({
+          key: `${group.key}__${area}`,
+          date: group.date,
+          mealType: group.mealType,
+          area,
+          count,
+        }))
+      ),
+    [filteredActiveOrdersSummary]
+  );
+
+  const activeAgentRows = useMemo(
+    () =>
+      filteredActiveOrdersSummary.flatMap((group) =>
+        Object.entries(group.byAgent).map(([agent, count]) => ({
+          key: `${group.key}__${agent}`,
+          date: group.date,
+          mealType: group.mealType,
+          agent,
+          count,
+        }))
+      ),
+    [filteredActiveOrdersSummary]
   );
 
   const deliveredByAgent = useMemo(() => {
@@ -2486,63 +2536,101 @@ export default function OwnerPage() {
                   {filteredActiveOrdersSummary.length === 0 && (
                     <p>No active orders</p>
                   )}
-                  {filteredActiveOrdersSummary.map((group) => (
-                    <div key={group.key} className="card stack">
-                      <strong>
-                        {formatDateLabel(group.date)} - {group.mealType}
-                      </strong>
+                  {filteredActiveOrdersSummary.length > 0 && (
+                    <>
+                      <div className="table-scroll">
+                        <table className="payments-table">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Meal Type</th>
+                              <th>Orders</th>
+                              <th>Items</th>
+                              <th>Total Value</th>
+                              <th>Delivery</th>
+                              <th>Pickup</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredActiveOrdersSummary.map((group) => (
+                              <tr key={group.key}>
+                                <td>{formatDateLabel(group.date)}</td>
+                                <td>{group.mealType}</td>
+                                <td>{group.totalOrders}</td>
+                                <td>{group.totalItems}</td>
+                                <td>INR {group.totalValue}</td>
+                                <td>{group.byDelivery.delivery || 0}</td>
+                                <td>{group.byDelivery.pickup || 0}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
                       <div className="row">
                         <div className="card" style={{ flex: 1 }}>
-                          Orders Received: {group.totalOrders}
+                          <h3>Orders by Area</h3>
+                          <div className="table-scroll">
+                            <table className="payments-table">
+                              <thead>
+                                <tr>
+                                  <th>Date</th>
+                                  <th>Meal Type</th>
+                                  <th>Area</th>
+                                  <th>Orders</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {activeAreaRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4}>No area data</td>
+                                  </tr>
+                                )}
+                                {activeAreaRows.map((row) => (
+                                  <tr key={row.key}>
+                                    <td>{formatDateLabel(row.date)}</td>
+                                    <td>{row.mealType}</td>
+                                    <td>{row.area}</td>
+                                    <td>{row.count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                         <div className="card" style={{ flex: 1 }}>
-                          Total Value: INR {group.totalValue}
+                          <h3>Orders by Delivery Agent</h3>
+                          <div className="table-scroll">
+                            <table className="payments-table">
+                              <thead>
+                                <tr>
+                                  <th>Date</th>
+                                  <th>Meal Type</th>
+                                  <th>Delivery Agent</th>
+                                  <th>Orders</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {activeAgentRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4}>No delivery agent data</td>
+                                  </tr>
+                                )}
+                                {activeAgentRows.map((row) => (
+                                  <tr key={row.key}>
+                                    <td>{formatDateLabel(row.date)}</td>
+                                    <td>{row.mealType}</td>
+                                    <td>{row.agent}</td>
+                                    <td>{row.count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
-                      <div className="row">
-                        <div className="card" style={{ flex: 1 }}>
-                          <strong>Orders by Area</strong>
-                          {Object.keys(group.byArea).length === 0 && (
-                            <p>No orders</p>
-                          )}
-                          {Object.entries(group.byArea).map(([area, count]) => (
-                            <div key={area} className="row">
-                              <div style={{ flex: 1 }}>{area}</div>
-                              <div>{count}</div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="card" style={{ flex: 1 }}>
-                          <strong>Delivery Type</strong>
-                          {Object.keys(group.byDelivery).length === 0 && (
-                            <p>No orders</p>
-                          )}
-                          {Object.entries(group.byDelivery).map(
-                            ([delivery, count]) => (
-                              <div key={delivery} className="row">
-                                <div style={{ flex: 1 }}>{delivery}</div>
-                                <div>{count}</div>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      </div>
-                      <div className="card">
-                        <strong>Items Count</strong>
-                        {Object.keys(group.itemCounts).length === 0 && (
-                          <p>No items</p>
-                        )}
-                        {Object.entries(group.itemCounts).map(
-                          ([name, count]) => (
-                            <div key={name} className="row">
-                              <div style={{ flex: 1 }}>{name}</div>
-                              <div>{count}</div>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    </>
+                  )}
                 </div>
               )}
 
