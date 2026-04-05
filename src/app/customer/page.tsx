@@ -899,13 +899,12 @@ export default function CustomerPage() {
 
         {customerView === "menu" && (
           <section className="card customer-hero">
-            <div className="customer-hero-copy">
-              <span className="badge customer-premium-badge">Freshly plated</span>
-              <h2>Elegant home-style meals with a smoother checkout.</h2>
-              <p>
-                Browse today&apos;s menu, place your order in minutes, and pay
-                securely using UPI.
-              </p>
+            <div className="customer-hero-image-wrap">
+              <img
+                src="/ms-kitchen-hero.jpg"
+                alt="MS Kitchen"
+                className="customer-hero-image"
+              />
             </div>
             <div className="customer-hero-stats">
               <div className="customer-stat-card">
