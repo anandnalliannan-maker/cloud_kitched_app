@@ -113,11 +113,14 @@ export default function CustomerPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historySearched, setHistorySearched] = useState(false);
+  const [customerPrefillNotice, setCustomerPrefillNotice] = useState("");
+  const [isPrefillingCustomer, setIsPrefillingCustomer] = useState(false);
   const [pendingPaymentResume, setPendingPaymentResume] = useState<{
     appOrderId: string;
     displayOrderId: string;
   } | null>(null);
   const [isCheckingPendingPayment, setIsCheckingPendingPayment] = useState(false);
+  const lastPrefilledPhoneRef = useRef("");
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
@@ -126,6 +129,69 @@ export default function CustomerPage() {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(pendingPaymentStorageKey);
     }
+  }
+
+  function getPhoneVariants(rawPhone: string) {
+    const digits = rawPhone.replace(/\D/g, "");
+    return Array.from(
+      new Set(
+        [
+          rawPhone.trim(),
+          digits,
+          digits ? `+${digits}` : "",
+          digits.length === 10 ? `+91${digits}` : "",
+          digits.length === 10 ? `91${digits}` : "",
+        ].filter(Boolean)
+      )
+    );
+  }
+
+  async function findLatestOrderByPhone(rawPhone: string) {
+    const variants = getPhoneVariants(rawPhone);
+    const results = new Map<string, CustomerOrder & { location?: { lat: number; lng: number } | null }>();
+
+    for (const phoneVariant of variants) {
+      const snap = await getDocs(
+        query(collection(db, "orders"), where("phone", "==", phoneVariant))
+      );
+      snap.docs.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        results.set(docSnap.id, {
+          id: docSnap.id,
+          orderId: data.orderId || docSnap.id,
+          customerName: data.customerName || "",
+          phone: data.phone || "",
+          status: data.status || "",
+          deliveryType: data.deliveryType || "",
+          address: data.address || "",
+          area: data.area || "",
+          total: Number(data.total || 0),
+          publishedDate: data.publishedDate || "",
+          mealType: data.mealType || "",
+          createdAt: data.createdAt || null,
+          items: Array.isArray(data.items) ? data.items : [],
+          location: data.location || null,
+        });
+      });
+    }
+
+    return Array.from(results.values()).sort((a, b) => {
+      const aSec = a.createdAt?.seconds || 0;
+      const bSec = b.createdAt?.seconds || 0;
+      return bSec - aSec;
+    })[0] || null;
+  }
+
+  function splitSavedAddress(address: string) {
+    const [line1, ...rest] = String(address || "")
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    return {
+      addressLine1: line1 || "",
+      street: rest.join(", "),
+    };
   }
 
   useEffect(() => {
@@ -315,6 +381,80 @@ export default function CustomerPage() {
   }, [pendingPaymentResume, isCheckingPendingPayment]);
 
   useEffect(() => {
+    if (step !== "details") {
+      return;
+    }
+
+    const trimmedPhone = form.phone.trim();
+    const digits = trimmedPhone.replace(/\D/g, "");
+
+    if (digits.length < 10) {
+      setCustomerPrefillNotice("");
+      lastPrefilledPhoneRef.current = "";
+      return;
+    }
+
+    if (lastPrefilledPhoneRef.current === trimmedPhone) {
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setIsPrefillingCustomer(true);
+      try {
+        const latestOrder = await findLatestOrderByPhone(trimmedPhone);
+        lastPrefilledPhoneRef.current = trimmedPhone;
+
+        if (!latestOrder) {
+          setCustomerPrefillNotice("");
+          return;
+        }
+
+        const savedAddress = splitSavedAddress(latestOrder.address || "");
+        setForm((prev) => ({
+          ...prev,
+          name: prev.name.trim() || latestOrder.customerName || "",
+          addressLine1:
+            latestOrder.deliveryType === "delivery"
+              ? savedAddress.addressLine1 || prev.addressLine1
+              : prev.addressLine1,
+          street:
+            latestOrder.deliveryType === "delivery"
+              ? savedAddress.street || prev.street
+              : prev.street,
+          area:
+            latestOrder.deliveryType === "delivery"
+              ? latestOrder.area || prev.area
+              : prev.area,
+        }));
+
+        if (latestOrder.deliveryType === "delivery") {
+          setDeliveryType("delivery");
+          if (latestOrder.location?.lat && latestOrder.location?.lng) {
+            setLocation({
+              lat: Number(latestOrder.location.lat),
+              lng: Number(latestOrder.location.lng),
+            });
+            setLocLabel("Saved location loaded from your last order");
+            setLocError("");
+          }
+        } else if (latestOrder.deliveryType === "pickup" && !deliveryType) {
+          setDeliveryType("pickup");
+        }
+
+        setCustomerPrefillNotice(
+          "We found your previous order details. You can edit any field before placing this order."
+        );
+      } catch {
+        setCustomerPrefillNotice("");
+      } finally {
+        setIsPrefillingCustomer(false);
+      }
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [form.phone, step]);
+
+  useEffect(() => {
     const unsub = onSnapshot(
       query(collection(db, "service_areas"), orderBy("name", "asc")),
       (snap) => {
@@ -464,47 +604,44 @@ export default function CustomerPage() {
       setHistoryError("Enter phone number.");
       return;
     }
-    const digits = raw.replace(/\D/g, "");
-    const variants = Array.from(
-      new Set(
-        [raw, digits, digits ? `+${digits}` : "", digits.length === 10 ? `+91${digits}` : ""].filter(
-          Boolean
-        )
-      )
-    );
     setHistoryLoading(true);
     setHistorySearched(true);
     try {
-      const results = new Map<string, CustomerOrder>();
-      for (const phoneVariant of variants) {
-        const snap = await getDocs(
-          query(collection(db, "orders"), where("phone", "==", phoneVariant))
-        );
-        snap.docs.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          results.set(docSnap.id, {
-            id: docSnap.id,
-            orderId: data.orderId || docSnap.id,
-            customerName: data.customerName || "",
-            phone: data.phone || "",
-            status: data.status || "",
-            deliveryType: data.deliveryType || "",
-            address: data.address || "",
-            area: data.area || "",
-            total: Number(data.total || 0),
-            publishedDate: data.publishedDate || "",
-            mealType: data.mealType || "",
-            createdAt: data.createdAt || null,
-            items: Array.isArray(data.items) ? data.items : [],
+      const latestFirst = await Promise.all(
+        getPhoneVariants(raw).map(async (phoneVariant) => {
+          const snap = await getDocs(
+            query(collection(db, "orders"), where("phone", "==", phoneVariant))
+          );
+          return snap.docs.map((docSnap) => {
+            const data = docSnap.data() as any;
+            return {
+              id: docSnap.id,
+              orderId: data.orderId || docSnap.id,
+              customerName: data.customerName || "",
+              phone: data.phone || "",
+              status: data.status || "",
+              deliveryType: data.deliveryType || "",
+              address: data.address || "",
+              area: data.area || "",
+              total: Number(data.total || 0),
+              publishedDate: data.publishedDate || "",
+              mealType: data.mealType || "",
+              createdAt: data.createdAt || null,
+              items: Array.isArray(data.items) ? data.items : [],
+            } as CustomerOrder;
           });
-        });
-      }
-      const sorted = Array.from(results.values()).sort((a, b) => {
-        const aSec = a.createdAt?.seconds || 0;
-        const bSec = b.createdAt?.seconds || 0;
-        return bSec - aSec;
-      });
-      setHistoryOrders(sorted);
+        })
+      );
+
+      const merged = new Map<string, CustomerOrder>();
+      latestFirst.flat().forEach((order) => merged.set(order.id, order));
+      setHistoryOrders(
+        Array.from(merged.values()).sort((a, b) => {
+          const aSec = a.createdAt?.seconds || 0;
+          const bSec = b.createdAt?.seconds || 0;
+          return bSec - aSec;
+        })
+      );
     } catch (err: any) {
       setHistoryError(err?.message || "Failed to load order history.");
     } finally {
@@ -1020,6 +1157,14 @@ export default function CustomerPage() {
         {customerView === "menu" && step === "details" && (
           <div className="card stack customer-panel customer-details-panel">
             <h2>Customer Details</h2>
+            {isPrefillingCustomer && (
+              <small className="customer-success-text">
+                Checking your previous order details...
+              </small>
+            )}
+            {!isPrefillingCustomer && customerPrefillNotice && (
+              <small className="customer-success-text">{customerPrefillNotice}</small>
+            )}
             <div className="field">
               <label>Name</label>
               <input
