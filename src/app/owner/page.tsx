@@ -251,7 +251,7 @@ export default function OwnerPage() {
   const [areaForm, setAreaForm] = useState("");
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
-    "summary" | "active" | "delivery"
+    "summary" | "homeDelivery" | "selfPickup"
   >("summary");
   const [deliveryTab, setDeliveryTab] = useState<"agents" | "assignments">(
     "agents"
@@ -1213,6 +1213,67 @@ export default function OwnerPage() {
       ),
     [filteredActiveOrdersSummary]
   );
+
+  const activeDeliveryTypeRows = useMemo(
+    () =>
+      filteredActiveOrdersSummary.flatMap((group) =>
+        Object.entries(group.byDelivery).map(([deliveryType, count]) => ({
+          key: `${group.key}__${deliveryType}`,
+          date: group.date,
+          mealType: group.mealType,
+          deliveryType,
+          count,
+        }))
+      ),
+    [filteredActiveOrdersSummary]
+  );
+
+  const homeDeliveryOrders = useMemo(
+    () => activeOrders.filter((order) => order.deliveryType === "delivery"),
+    [activeOrders]
+  );
+
+  const selfPickupOrders = useMemo(
+    () => activeOrders.filter((order) => order.deliveryType === "pickup"),
+    [activeOrders]
+  );
+
+  const homeDeliveryByAgent = useMemo(() => {
+    const grouped: Record<
+      string,
+      {
+        agent: string;
+        totalOrders: number;
+        totalValue: number;
+        areas: Record<string, number>;
+        itemCounts: Record<string, number>;
+      }
+    > = {};
+
+    homeDeliveryOrders.forEach((order) => {
+      const agent = order.assignedAgentName || "Unassigned";
+      if (!grouped[agent]) {
+        grouped[agent] = {
+          agent,
+          totalOrders: 0,
+          totalValue: 0,
+          areas: {},
+          itemCounts: {},
+        };
+      }
+
+      grouped[agent].totalOrders += 1;
+      grouped[agent].totalValue += order.total || 0;
+      const area = order.area || "Unknown";
+      grouped[agent].areas[area] = (grouped[agent].areas[area] || 0) + 1;
+      (order.items || []).forEach((item) => {
+        grouped[agent].itemCounts[item.name] =
+          (grouped[agent].itemCounts[item.name] || 0) + item.qty;
+      });
+    });
+
+    return Object.values(grouped).sort((a, b) => a.agent.localeCompare(b.agent));
+  }, [homeDeliveryOrders]);
 
   const deliveredByAgent = useMemo(() => {
     const counts: Record<string, { total: number; byArea: Record<string, number> }> =
@@ -2518,16 +2579,16 @@ export default function OwnerPage() {
                   Summary
                 </button>
                 <button
-                  className={`btn ${historyTab === "active" ? "" : "secondary"}`}
-                  onClick={() => setHistoryTab("active")}
+                  className={`btn ${historyTab === "homeDelivery" ? "" : "secondary"}`}
+                  onClick={() => setHistoryTab("homeDelivery")}
                 >
-                  Active Orders
+                  Home Delivery
                 </button>
                 <button
-                  className={`btn ${historyTab === "delivery" ? "" : "secondary"}`}
-                  onClick={() => setHistoryTab("delivery")}
+                  className={`btn ${historyTab === "selfPickup" ? "" : "secondary"}`}
+                  onClick={() => setHistoryTab("selfPickup")}
                 >
-                  Delivery Status
+                  Self Pickup
                 </button>
               </div>
 
@@ -2629,97 +2690,124 @@ export default function OwnerPage() {
                           </div>
                         </div>
                       </div>
+                      <div className="card">
+                        <h3>Orders by Delivery Type</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table">
+                            <thead>
+                              <tr>
+                                <th>Date</th>
+                                <th>Meal Type</th>
+                                <th>Delivery Type</th>
+                                <th>Orders</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activeDeliveryTypeRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={4}>No delivery type data</td>
+                                </tr>
+                              )}
+                              {activeDeliveryTypeRows.map((row) => (
+                                <tr key={row.key}>
+                                  <td>{formatDateLabel(row.date)}</td>
+                                  <td>{row.mealType}</td>
+                                  <td>
+                                    {row.deliveryType === "pickup"
+                                      ? "Self Pickup"
+                                      : "Home Delivery"}
+                                  </td>
+                                  <td>{row.count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </>
                   )}
                 </div>
               )}
 
-              {historyTab === "active" && (
+              {historyTab === "homeDelivery" && (
                 <div className="stack">
-                  <div className="row">
-                    <input
-                      className="input"
-                      placeholder="Search by Order ID / Phone / Customer"
-                      value={activeOrderSearch}
-                      onChange={(e) => setActiveOrderSearch(e.target.value)}
-                    />
-                    <select
-                      className="select"
-                      value={activeOrderAreaFilter}
-                      onChange={(e) => setActiveOrderAreaFilter(e.target.value)}
-                    >
-                      <option value="All">All areas</option>
-                      {areaOptions.map((area) => (
-                        <option key={area} value={area}>
-                          {area}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {filteredActiveOrders.length === 0 && <p>No active orders</p>}
-                {filteredActiveOrders.map((order) => (
-                    <div key={order.id} className="card list-card">
-                      <div>Order: {order.orderId || order.id}</div>
-                      <div>
-                        {order.customerName || "Customer"} | {order.phone}
-                      </div>
-                      <div>
-                        Items:{" "}
-                        {order.items
-                          ?.map((item) => `${item.name} x${item.qty}`)
-                          .join(", ") || "Items"}
-                      </div>
-                      <div>Address: {order.address || ""}</div>
-                      <div>Area: {order.area || "Unknown"}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {historyTab === "delivery" && (
-                <div className="stack">
-                  {Object.keys(deliveryStatusByAgent).length === 0 && (
-                    <p>No active published orders</p>
-                  )}
-                  {Object.keys(deliveryStatusByAgent).length > 0 && (
+                  {homeDeliveryByAgent.length === 0 && <p>No home delivery orders</p>}
+                  {homeDeliveryByAgent.length > 0 && (
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
                           <tr>
-                            <th>Agent</th>
-                            <th>Area</th>
-                            <th>Delivered</th>
-                            <th>Pending</th>
-                            <th>Total</th>
+                            <th>Delivery Agent</th>
+                            <th>Orders</th>
+                            <th>Areas</th>
+                            <th>Items to Pick</th>
+                            <th>Total Value</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(deliveryStatusByAgent).flatMap(
-                            ([agent, data]) => {
-                              const areaEntries = Object.entries(data.byArea);
-                              return areaEntries.map(([area, counts], index) => (
-                                <tr key={`${agent}-${area}`}>
-                                  <td>
-                                    {index === 0 ? (
-                                      <>
-                                        <strong>{agent}</strong>
-                                        <small className="payments-subtext">
-                                          Total Delivered: {data.delivered} | Total Pending:{" "}
-                                          {data.pending}
-                                        </small>
-                                      </>
-                                    ) : (
-                                      ""
-                                    )}
-                                  </td>
-                                  <td>{area}</td>
-                                  <td>{counts.delivered}</td>
-                                  <td>{counts.pending}</td>
-                                  <td>{counts.delivered + counts.pending}</td>
-                                </tr>
-                              ));
-                            }
-                          )}
+                          {homeDeliveryByAgent.map((group) => (
+                            <tr key={group.agent}>
+                              <td>{group.agent}</td>
+                              <td>{group.totalOrders}</td>
+                              <td>
+                                {Object.keys(group.areas).length === 0
+                                  ? "No areas"
+                                  : Object.entries(group.areas)
+                                      .map(([area, count]) => `${area} (${count})`)
+                                      .join(", ")}
+                              </td>
+                              <td>
+                                {Object.keys(group.itemCounts).length === 0
+                                  ? "No items"
+                                  : Object.entries(group.itemCounts)
+                                      .map(([name, qty]) => `${name} x${qty}`)
+                                      .join(", ")}
+                              </td>
+                              <td>INR {group.totalValue}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {historyTab === "selfPickup" && (
+                <div className="stack">
+                  {selfPickupOrders.length === 0 && <p>No self pickup orders</p>}
+                  {selfPickupOrders.length > 0 && (
+                    <div className="table-scroll">
+                      <table className="payments-table">
+                        <thead>
+                          <tr>
+                            <th>Order ID</th>
+                            <th>Date</th>
+                            <th>Meal Type</th>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>Items</th>
+                            <th>Total Value</th>
+                            <th>Payment</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selfPickupOrders.map((order) => (
+                            <tr key={order.id}>
+                              <td>{order.orderId || order.id}</td>
+                              <td>{formatDateLabel(order.createdAt || order.publishedDate)}</td>
+                              <td>{order.mealType}</td>
+                              <td>{order.customerName || "Customer"}</td>
+                              <td>{order.phone || "-"}</td>
+                              <td>
+                                {(order.items || [])
+                                  .map((item) => `${item.name} x${item.qty}`)
+                                  .join(", ") || "No items"}
+                              </td>
+                              <td>INR {order.total || 0}</td>
+                              <td>{order.paymentStatus || "pending"}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
