@@ -2600,7 +2600,7 @@ export default function OwnerPage() {
                   {filteredActiveOrdersSummary.length > 0 && (
                     <>
                       <div className="table-scroll">
-                        <table className="payments-table">
+                        <table className="payments-table payments-table-compact">
                           <thead>
                             <tr>
                               <th>Date</th>
@@ -2628,11 +2628,11 @@ export default function OwnerPage() {
                         </table>
                       </div>
 
-                      <div className="row">
+                      <div className="row summary-tables-row">
                         <div className="card" style={{ flex: 1 }}>
                           <h3>Orders by Area</h3>
                           <div className="table-scroll">
-                            <table className="payments-table">
+                            <table className="payments-table payments-table-compact">
                               <thead>
                                 <tr>
                                   <th>Date</th>
@@ -2662,7 +2662,7 @@ export default function OwnerPage() {
                         <div className="card" style={{ flex: 1 }}>
                           <h3>Orders by Delivery Agent</h3>
                           <div className="table-scroll">
-                            <table className="payments-table">
+                            <table className="payments-table payments-table-compact">
                               <thead>
                                 <tr>
                                   <th>Date</th>
@@ -2693,7 +2693,7 @@ export default function OwnerPage() {
                       <div className="card">
                         <h3>Orders by Delivery Type</h3>
                         <div className="table-scroll">
-                          <table className="payments-table">
+                          <table className="payments-table payments-table-compact">
                             <thead>
                               <tr>
                                 <th>Date</th>

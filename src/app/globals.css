@@ -895,12 +895,35 @@ a {
   overflow-x: auto;
 }
 
+.summary-tables-row {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.summary-tables-row > .card {
+  min-width: min(100%, 320px);
+}
+
 .payments-table {
   width: 100%;
   min-width: 1120px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.95rem;
+}
+
+.payments-table-compact {
+  min-width: 0;
+  font-size: 0.88rem;
+}
+
+.payments-table-compact th,
+.payments-table-compact td {
+  padding: 0.7rem 0.75rem;
+}
+
+.payments-table-compact th {
+  font-size: 0.76rem;
 }
 
 .payments-table th,
