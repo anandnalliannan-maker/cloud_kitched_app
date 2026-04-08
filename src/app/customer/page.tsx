@@ -123,6 +123,10 @@ export default function CustomerPage() {
     displayOrderId: string;
   } | null>(null);
   const [isCheckingPendingPayment, setIsCheckingPendingPayment] = useState(false);
+  const [paymentSuccessPopup, setPaymentSuccessPopup] = useState<{
+    orderId: string;
+    message: string;
+  } | null>(null);
   const lastPrefilledPhoneRef = useRef("");
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
@@ -327,7 +331,10 @@ export default function CustomerPage() {
     }
 
     if (paymentState === "success") {
-      window.alert(nextMessage);
+      setPaymentSuccessPopup({
+        orderId: orderId || "",
+        message: nextMessage,
+      });
     }
 
     url.searchParams.delete("payment");
@@ -377,9 +384,10 @@ export default function CustomerPage() {
         resetCheckoutState();
         setCustomerView("menu");
         clearPendingPaymentResume();
-        if (!opts?.silent) {
-          window.alert(nextMessage);
-        }
+        setPaymentSuccessPopup({
+          orderId: String(payload.orderId || pendingOrder.displayOrderId || ""),
+          message: nextMessage,
+        });
       } else if (state === "failed") {
         clearPendingPaymentResume();
       }
@@ -1024,6 +1032,27 @@ export default function CustomerPage() {
                 Please wait while we connect you to the UPI payment page. Do not
                 close or refresh this screen.
               </p>
+            </div>
+          </div>
+        )}
+
+        {paymentSuccessPopup && (
+          <div className="customer-processing-overlay" role="dialog" aria-modal="true">
+            <div className="customer-processing-modal customer-success-modal">
+              <div className="customer-success-icon" aria-hidden="true">OK</div>
+              <strong>Order placed successfully</strong>
+              <p>{paymentSuccessPopup.message}</p>
+              {paymentSuccessPopup.orderId && (
+                <div className="customer-success-orderid">
+                  Order ID: <strong>{paymentSuccessPopup.orderId}</strong>
+                </div>
+              )}
+              <button
+                className="btn customer-primary-btn"
+                onClick={() => setPaymentSuccessPopup(null)}
+              >
+                OK
+              </button>
             </div>
           </div>
         )}
