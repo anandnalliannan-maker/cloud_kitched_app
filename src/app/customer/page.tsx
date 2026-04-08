@@ -43,6 +43,7 @@ type PaymentSummary = {
   total: number;
   deliveryType: "delivery" | "pickup" | "";
   location: { lat: number; lng: number } | null;
+  addressText?: string;
 };
 
 type CustomerOrder = {
@@ -726,6 +727,12 @@ export default function CustomerPage() {
       const menuRef = doc(db, "published_menus", publishedMenuId);
       const orderRef = doc(collection(db, "orders"));
       const generatedDisplayOrderId = await generateUniqueSixDigitOrderId();
+      const deliveryAddressText =
+        deliveryType === "delivery"
+          ? [form.addressLine1.trim(), form.street.trim(), form.area.trim()]
+              .filter(Boolean)
+              .join(", ")
+          : "";
       const summaryForPayment: PaymentSummary = {
         appOrderId: orderRef.id,
         displayOrderId: generatedDisplayOrderId,
@@ -739,6 +746,7 @@ export default function CustomerPage() {
         total,
         deliveryType,
         location,
+        addressText: deliveryAddressText,
       };
       await runTransaction(db, async (tx) => {
         const menuSnap = await tx.get(menuRef);
@@ -1501,12 +1509,12 @@ export default function CustomerPage() {
                   <span>Total</span>
                   <strong>INR {paymentSummary?.total ?? 0}</strong>
                 </div>
-                {paymentSummary?.location && (
+                {(paymentSummary?.addressText || paymentSummary?.location) && (
                   <div className="payment-location-box">
-                    <span className="payment-location-label">Exact Location</span>
+                    <span className="payment-location-label">Delivery Address</span>
                     <span className="payment-location-value">
-                      {paymentSummary.location.lat.toFixed(5)},{" "}
-                      {paymentSummary.location.lng.toFixed(5)}
+                      {paymentSummary?.addressText ||
+                        `${paymentSummary?.location?.lat.toFixed(5)}, ${paymentSummary?.location?.lng.toFixed(5)}`}
                     </span>
                   </div>
                 )}
