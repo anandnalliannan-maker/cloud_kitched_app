@@ -279,6 +279,7 @@ export default function CustomerPage() {
     const url = new URL(window.location.href);
     const paymentState = url.searchParams.get("payment");
     const orderId = url.searchParams.get("orderId");
+    const appOrderId = url.searchParams.get("appOrderId");
 
     if (!paymentState) {
       return;
@@ -291,6 +292,9 @@ export default function CustomerPage() {
       pending: orderId
         ? `Payment is pending for order ${orderId}. We will update the status after confirmation.`
         : "Payment is pending. We will update the status after confirmation.",
+      verifying: orderId
+        ? `Verifying payment for order ${orderId}.`
+        : "Verifying payment. Please wait...",
       failed: orderId
         ? `Payment failed for order ${orderId}. Please try again.`
         : "Payment failed. Please try again.",
@@ -299,9 +303,28 @@ export default function CustomerPage() {
     const nextMessage = messages[paymentState] || "Payment status updated.";
     setPaymentNotice(nextMessage);
     setPayError(paymentState === "failed" ? messages.failed : "");
-    resetCheckoutState();
     setCustomerView("menu");
-    clearPendingPaymentResume();
+
+    if (paymentState === "verifying" && appOrderId) {
+      resetCheckoutState();
+      const resumedOrder = {
+        appOrderId,
+        displayOrderId: orderId || appOrderId,
+      };
+      setPendingPaymentResume(resumedOrder);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          pendingPaymentStorageKey,
+          JSON.stringify(resumedOrder)
+        );
+      }
+      window.setTimeout(() => {
+        void checkPendingPaymentStatus(resumedOrder, { silent: true });
+      }, 150);
+    } else {
+      resetCheckoutState();
+      clearPendingPaymentResume();
+    }
 
     if (paymentState === "success") {
       window.alert(nextMessage);
@@ -309,6 +332,7 @@ export default function CustomerPage() {
 
     url.searchParams.delete("payment");
     url.searchParams.delete("orderId");
+    url.searchParams.delete("appOrderId");
     window.history.replaceState({}, "", url.toString());
   }, []);
 
@@ -838,7 +862,9 @@ export default function CustomerPage() {
       const orderResponse = await fetch("/api/icici/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appOrderId: paymentSummary.appOrderId }),
+        body: JSON.stringify({
+          appOrderId: paymentSummary.appOrderId,
+        }),
       });
       const orderPayload = await orderResponse.json();
       if (!orderResponse.ok) {
@@ -1423,7 +1449,6 @@ export default function CustomerPage() {
                 <p>Complete payment to confirm this order.</p>
               </div>
             </div>
-
             {paymentSummary?.deliveryType === "pickup" ? (
               <div className="row payment-button-row">
                 <button
