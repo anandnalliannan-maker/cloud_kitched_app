@@ -1,6 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Autocomplete,
+  GoogleMap,
+  LoadScript,
+  Marker,
+} from "@react-google-maps/api";
 import {
   addDoc,
   collection,
@@ -123,6 +129,8 @@ type AreaAssignment = {
 
 const mealTypes = ["Breakfast", "Lunch", "Snacks", "Dinner"];
 const fallbackAreas = ["Madipakkam", "Medavakkam", "Velachery"];
+const mapContainerStyle = { width: "100%", height: "320px" };
+const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 
 async function generateUniqueSixDigitOrderId() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -350,6 +358,12 @@ export default function OwnerPage() {
   const [ownerOrderError, setOwnerOrderError] = useState("");
   const [ownerOrderSuccess, setOwnerOrderSuccess] = useState("");
   const [ownerOrderSubmitting, setOwnerOrderSubmitting] = useState(false);
+  const [ownerOrderLocation, setOwnerOrderLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [ownerOrderLocLabel, setOwnerOrderLocLabel] = useState("");
+  const [ownerOrderLocError, setOwnerOrderLocError] = useState("");
   const [ownerOrderForm, setOwnerOrderForm] = useState({
     name: "",
     phone: "",
@@ -357,10 +371,11 @@ export default function OwnerPage() {
     addressLine1: "",
     street: "",
     area: "",
-    location: "",
     preferredAgentId: "",
   });
   const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
+  const ownerOrderAutocompleteRef =
+    useRef<google.maps.places.Autocomplete | null>(null);
 
   async function uploadMenuImage(file: File) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -398,6 +413,45 @@ export default function OwnerPage() {
     }
     if (value instanceof Date) return value.getTime();
     return 0;
+  }
+
+  function onOwnerOrderAutocompleteLoad(ac: google.maps.places.Autocomplete) {
+    ownerOrderAutocompleteRef.current = ac;
+  }
+
+  function onOwnerOrderPlaceChanged() {
+    const ac = ownerOrderAutocompleteRef.current;
+    if (!ac) return;
+    const place = ac.getPlace();
+    if (!place.geometry?.location) return;
+    const lat = place.geometry.location.lat();
+    const lng = place.geometry.location.lng();
+    setOwnerOrderLocError("");
+    setOwnerOrderLocation({ lat, lng });
+    setOwnerOrderLocLabel(place.formatted_address || place.name || "Location selected");
+  }
+
+  function useOwnerCurrentLocation() {
+    setOwnerOrderLocError("");
+    if (!navigator.geolocation) {
+      setOwnerOrderLocError("Geolocation is not supported on this device.");
+      return;
+    }
+    setOwnerOrderLocLabel("Fetching current location...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setOwnerOrderLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setOwnerOrderLocLabel("Current location selected");
+      },
+      () => {
+        setOwnerOrderLocError("Unable to fetch current location.");
+        setOwnerOrderLocLabel("");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
   }
 
   useEffect(() => {
@@ -977,9 +1031,10 @@ export default function OwnerPage() {
       ownerOrderForm.deliveryType === "delivery" &&
       (!ownerOrderForm.addressLine1.trim() ||
         !ownerOrderForm.street.trim() ||
-        !ownerOrderForm.area)
+        !ownerOrderForm.area ||
+        !ownerOrderLocation)
     ) {
-      setOwnerOrderError("Enter full delivery address and area.");
+      setOwnerOrderError("Enter full delivery address, area and exact location on map.");
       return;
     }
 
@@ -1094,7 +1149,7 @@ export default function OwnerPage() {
           area: ownerOrderForm.deliveryType === "delivery" ? ownerOrderForm.area : "",
           location:
             ownerOrderForm.deliveryType === "delivery"
-              ? ownerOrderForm.location.trim() || null
+              ? ownerOrderLocation || null
               : null,
           items: selectedItems.map((item) => ({
             name: item.name,
@@ -1122,9 +1177,11 @@ export default function OwnerPage() {
         addressLine1: "",
         street: "",
         area: "",
-        location: "",
         preferredAgentId: "",
       });
+      setOwnerOrderLocation(null);
+      setOwnerOrderLocLabel("");
+      setOwnerOrderLocError("");
       if (selectedOwnerMenu) {
         const resetQty: Record<string, number> = {};
         (selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).forEach((item) => {
@@ -2331,13 +2388,16 @@ export default function OwnerPage() {
                             ? ""
                             : "secondary"
                         }`}
-                        onClick={() =>
-                          setOwnerOrderForm({
-                            ...ownerOrderForm,
-                            deliveryType: "pickup",
-                            preferredAgentId: "",
-                          })
-                        }
+                          onClick={() => {
+                            setOwnerOrderForm({
+                              ...ownerOrderForm,
+                              deliveryType: "pickup",
+                              preferredAgentId: "",
+                            });
+                            setOwnerOrderLocation(null);
+                            setOwnerOrderLocLabel("");
+                            setOwnerOrderLocError("");
+                          }}
                       >
                         Self Pickup
                       </button>
@@ -2347,11 +2407,11 @@ export default function OwnerPage() {
                             ? ""
                             : "secondary"
                         }`}
-                        onClick={() =>
-                          setOwnerOrderForm({
-                            ...ownerOrderForm,
-                            deliveryType: "delivery",
-                          })
+                          onClick={() =>
+                            setOwnerOrderForm({
+                              ...ownerOrderForm,
+                              deliveryType: "delivery",
+                            })
                         }
                       >
                         Home Delivery
@@ -2422,21 +2482,72 @@ export default function OwnerPage() {
                               ))}
                           </select>
                         </div>
-                        <input
-                          className="input"
-                          placeholder="Exact location / Google Maps link / landmark"
-                          value={ownerOrderForm.location}
-                          onChange={(e) =>
-                            setOwnerOrderForm({
-                              ...ownerOrderForm,
-                              location: e.target.value,
-                            })
-                          }
-                        />
-                        <small className="payments-subtext">
-                          Paste a maps link, landmark, or exact pin note so the delivery
-                          agent can reach the customer quickly.
-                        </small>
+                        {ownerOrderLocLabel && (
+                          <small className="payments-subtext">{ownerOrderLocLabel}</small>
+                        )}
+                        {ownerOrderLocation && (
+                          <small className="payments-subtext">
+                            {ownerOrderLocation.lat.toFixed(5)},{" "}
+                            {ownerOrderLocation.lng.toFixed(5)}
+                          </small>
+                        )}
+                        {ownerOrderLocError && (
+                          <small style={{ color: "crimson" }}>{ownerOrderLocError}</small>
+                        )}
+                        {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
+                          <div className="card stack customer-map-card" style={{ marginTop: 12 }}>
+                            <div
+                              className="row"
+                              style={{ justifyContent: "space-between" }}
+                            >
+                              <strong>Select exact location on map</strong>
+                            </div>
+                            <LoadScript
+                              googleMapsApiKey={
+                                process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+                              }
+                              libraries={["places"]}
+                            >
+                              <Autocomplete
+                                onLoad={onOwnerOrderAutocompleteLoad}
+                                onPlaceChanged={onOwnerOrderPlaceChanged}
+                              >
+                                <div className="row" style={{ marginBottom: 12 }}>
+                                  <input
+                                    className="input"
+                                    placeholder="Search apartment / landmark"
+                                    style={{ flex: 1 }}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn secondary"
+                                    onClick={useOwnerCurrentLocation}
+                                  >
+                                    Use current location
+                                  </button>
+                                </div>
+                              </Autocomplete>
+                              <GoogleMap
+                                mapContainerStyle={mapContainerStyle}
+                                center={ownerOrderLocation ?? defaultCenter}
+                                zoom={ownerOrderLocation ? 16 : 13}
+                                onClick={(e) => {
+                                  if (!e.latLng) return;
+                                  setOwnerOrderLocation({
+                                    lat: e.latLng.lat(),
+                                    lng: e.latLng.lng(),
+                                  });
+                                  setOwnerOrderLocError("");
+                                  setOwnerOrderLocLabel("Location selected on map");
+                                }}
+                              >
+                                {ownerOrderLocation && (
+                                  <Marker position={ownerOrderLocation} />
+                                )}
+                              </GoogleMap>
+                            </LoadScript>
+                          </div>
+                        )}
                       </>
                     )}
 
