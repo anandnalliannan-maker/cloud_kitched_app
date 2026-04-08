@@ -727,30 +727,6 @@ a {
   animation: customer-spin 0.8s linear infinite;
 }
 
-.customer-success-modal {
-  gap: 16px;
-}
-
-.customer-success-icon {
-  width: 58px;
-  height: 58px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(186, 124, 58, 0.18));
-  color: #0f766e;
-  font-size: 1.8rem;
-  font-weight: 700;
-}
-
-.customer-success-orderid {
-  padding: 12px 16px;
-  border-radius: 16px;
-  background: rgba(15, 118, 110, 0.08);
-  color: #20413e;
-  font-size: 0.98rem;
-}
-
 @keyframes customer-spin {
   from {
     transform: rotate(0deg);
