@@ -36,7 +36,6 @@ type Tab =
   | "history"
   | "delivery"
   | "areas"
-  | "pickupPayments"
   | "createOrder";
 
 type MenuItem = {
@@ -88,6 +87,7 @@ type Order = {
   deliveryType?: string;
   address?: string;
   area?: string;
+  publishedMenuId?: string;
   createdAt?: any;
   mealType?: string;
   publishedDate?: string;
@@ -100,7 +100,7 @@ type Order = {
   pickupPaymentUpdatedAt?: any;
   pickupPaymentClosedAt?: any;
   orderSource?: string;
-  location?: string | null;
+  location?: any;
 };
 
 type DeliveryAgent = {
@@ -177,6 +177,43 @@ function formatDateLabel(value: any) {
   return `${day}-${monthLabel}-${year}`;
 }
 
+function splitAddress(address: string) {
+  const [addressLine1, ...rest] = String(address || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return {
+    addressLine1: addressLine1 || "",
+    street: rest.join(", "),
+  };
+}
+
+function formatLocationInput(location: any) {
+  if (!location) return "";
+  if (typeof location === "string") return location;
+  if (typeof location === "object" && "lat" in location && "lng" in location) {
+    return `${location.lat}, ${location.lng}`;
+  }
+  return String(location);
+}
+
+function getOrderStatusLabel(order: Order) {
+  if (order.status === "closed") {
+    return order.deliveryType === "pickup" ? "Picked Up" : "Delivered";
+  }
+  if (order.status === "undelivered") {
+    return "Undelivered";
+  }
+  if (order.status === "payment_pending") {
+    return "Payment Pending";
+  }
+  if (order.deliveryType === "pickup" && order.pickupPaymentStatus === "paid") {
+    return "Picked Up";
+  }
+  return "Active";
+}
+
 export default function OwnerPage() {
   const [mode, setMode] = useState<Mode>("loading");
   const [tab, setTab] = useState<Tab>("menu");
@@ -251,7 +288,7 @@ export default function OwnerPage() {
   const [areaForm, setAreaForm] = useState("");
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
-    "summary" | "homeDelivery" | "selfPickup"
+    "summary" | "activeOrders" | "pickupPayments"
   >("summary");
   const [deliveryTab, setDeliveryTab] = useState<"agents" | "assignments">(
     "agents"
@@ -270,6 +307,23 @@ export default function OwnerPage() {
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const [activeOrderSearch, setActiveOrderSearch] = useState("");
   const [activeOrderAreaFilter, setActiveOrderAreaFilter] = useState("All");
+  const [activeOrderDeliveryFilter, setActiveOrderDeliveryFilter] = useState("All");
+  const [activeOrderStatusFilter, setActiveOrderStatusFilter] = useState("All");
+  const [editingActiveOrderId, setEditingActiveOrderId] = useState<string | null>(
+    null
+  );
+  const [activeOrderEditError, setActiveOrderEditError] = useState("");
+  const [activeOrderEditForm, setActiveOrderEditForm] = useState({
+    customerName: "",
+    phone: "",
+    deliveryType: "pickup",
+    addressLine1: "",
+    street: "",
+    area: "",
+    location: "",
+    assignedAgentId: "",
+    status: "active",
+  });
   const [editingPublishedMenuId, setEditingPublishedMenuId] = useState<
     string | null
   >(null);
@@ -304,6 +358,7 @@ export default function OwnerPage() {
     street: "",
     area: "",
     location: "",
+    preferredAgentId: "",
   });
   const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
 
@@ -840,6 +895,73 @@ export default function OwnerPage() {
     setPickupPaymentForm({ amount: "", notes: "" });
   }
 
+  function openActiveOrderEditor(order: Order) {
+    const savedAddress = splitAddress(order.address || "");
+    setEditingActiveOrderId(order.id);
+    setActiveOrderEditError("");
+    setActiveOrderEditForm({
+      customerName: order.customerName || "",
+      phone: order.phone || "",
+      deliveryType: order.deliveryType || "pickup",
+      addressLine1: savedAddress.addressLine1,
+      street: savedAddress.street,
+      area: order.area || "",
+      location: formatLocationInput(order.location),
+      assignedAgentId: order.assignedAgentId || "",
+      status:
+        order.status === "undelivered" || order.status === "closed"
+          ? order.status
+          : "active",
+    });
+  }
+
+  async function saveActiveOrderEdits(order: Order) {
+    setActiveOrderEditError("");
+    if (!activeOrderEditForm.customerName.trim() || !activeOrderEditForm.phone.trim()) {
+      setActiveOrderEditError("Customer name and phone number are required.");
+      return;
+    }
+    if (
+      activeOrderEditForm.deliveryType === "delivery" &&
+      (!activeOrderEditForm.addressLine1.trim() ||
+        !activeOrderEditForm.street.trim() ||
+        !activeOrderEditForm.area)
+    ) {
+      setActiveOrderEditError("Delivery orders require address, street and area.");
+      return;
+    }
+
+    const nextAssignedAgentId =
+      activeOrderEditForm.deliveryType === "delivery"
+        ? activeOrderEditForm.assignedAgentId
+        : "";
+    await updateDoc(doc(db, "orders", order.id), {
+      customerName: activeOrderEditForm.customerName.trim(),
+      phone: activeOrderEditForm.phone.trim(),
+      deliveryType: activeOrderEditForm.deliveryType,
+      address:
+        activeOrderEditForm.deliveryType === "delivery"
+          ? `${activeOrderEditForm.addressLine1.trim()}, ${activeOrderEditForm.street.trim()}`
+          : "",
+      area:
+        activeOrderEditForm.deliveryType === "delivery"
+          ? activeOrderEditForm.area
+          : "",
+      location:
+        activeOrderEditForm.deliveryType === "delivery"
+          ? activeOrderEditForm.location.trim() || null
+          : null,
+      assignedAgentId: nextAssignedAgentId,
+      assignedAgentName: nextAssignedAgentId ? agentNameMap[nextAssignedAgentId] || "" : "",
+      status:
+        order.status === "payment_pending"
+          ? "payment_pending"
+          : activeOrderEditForm.status,
+    });
+    setEditingActiveOrderId(null);
+    setActiveOrderEditError("");
+  }
+
   async function createOwnerOrder() {
     setOwnerOrderError("");
     setOwnerOrderSuccess("");
@@ -910,25 +1032,43 @@ export default function OwnerPage() {
         let assignedAgentId = "";
         let assignedAgentName = "";
         if (ownerOrderForm.deliveryType === "delivery" && ownerOrderForm.area) {
-          const assignmentRef = doc(db, "area_assignments", ownerOrderForm.area);
-          const assignmentSnap = await tx.get(assignmentRef);
-          if (assignmentSnap.exists()) {
-            const assignmentData = assignmentSnap.data() as any;
-            const agentIds: string[] = assignmentData.agentIds || [];
-            if (agentIds.length > 0) {
-              const lastIndex =
-                typeof assignmentData.lastIndex === "number"
-                  ? assignmentData.lastIndex
-                  : -1;
-              const nextIndex = (lastIndex + 1) % agentIds.length;
-              const agentId = agentIds[nextIndex];
-              const agentSnap = await tx.get(doc(db, "delivery_agents", agentId));
-              if (agentSnap.exists()) {
-                const agentData = agentSnap.data() as any;
-                if (agentData.active !== false) {
-                  assignedAgentId = agentId;
-                  assignedAgentName = agentData.name || "";
-                  tx.update(assignmentRef, { lastIndex: nextIndex });
+          if (ownerOrderForm.preferredAgentId) {
+            const preferredAgentRef = doc(
+              db,
+              "delivery_agents",
+              ownerOrderForm.preferredAgentId
+            );
+            const preferredAgentSnap = await tx.get(preferredAgentRef);
+            if (preferredAgentSnap.exists()) {
+              const preferredAgentData = preferredAgentSnap.data() as any;
+              if (preferredAgentData.active !== false) {
+                assignedAgentId = ownerOrderForm.preferredAgentId;
+                assignedAgentName = preferredAgentData.name || "";
+              }
+            }
+          }
+
+          if (!assignedAgentId) {
+            const assignmentRef = doc(db, "area_assignments", ownerOrderForm.area);
+            const assignmentSnap = await tx.get(assignmentRef);
+            if (assignmentSnap.exists()) {
+              const assignmentData = assignmentSnap.data() as any;
+              const agentIds: string[] = assignmentData.agentIds || [];
+              if (agentIds.length > 0) {
+                const lastIndex =
+                  typeof assignmentData.lastIndex === "number"
+                    ? assignmentData.lastIndex
+                    : -1;
+                const nextIndex = (lastIndex + 1) % agentIds.length;
+                const agentId = agentIds[nextIndex];
+                const agentSnap = await tx.get(doc(db, "delivery_agents", agentId));
+                if (agentSnap.exists()) {
+                  const agentData = agentSnap.data() as any;
+                  if (agentData.active !== false) {
+                    assignedAgentId = agentId;
+                    assignedAgentName = agentData.name || "";
+                    tx.update(assignmentRef, { lastIndex: nextIndex });
+                  }
                 }
               }
             }
@@ -983,6 +1123,7 @@ export default function OwnerPage() {
         street: "",
         area: "",
         location: "",
+        preferredAgentId: "",
       });
       if (selectedOwnerMenu) {
         const resetQty: Record<string, number> = {};
@@ -998,25 +1139,6 @@ export default function OwnerPage() {
     }
   }
 
-  const activeOrders = useMemo(
-    () =>
-      orders.filter((order) => {
-        if (order.status === "closed") {
-          return false;
-        }
-
-        if (order.deliveryType === "pickup") {
-          return true;
-        }
-
-        if (order.orderSource === "owner") {
-          return true;
-        }
-
-        return order.paymentStatus === "paid";
-      }),
-    [orders]
-  );
   const closedOrders = useMemo(
     () => orders.filter((order) => order.status === "closed"),
     [orders]
@@ -1051,79 +1173,16 @@ export default function OwnerPage() {
     [filteredClosedOrders]
   );
 
-  const activeOrdersSummary = useMemo(() => {
-    const grouped: Record<
-      string,
-      {
-        key: string;
-        date: string;
-        mealType: string;
-        totalOrders: number;
-        totalItems: number;
-        totalValue: number;
-        itemCounts: Record<string, number>;
-        byArea: Record<string, number>;
-        byDelivery: Record<string, number>;
-        byAgent: Record<string, number>;
-      }
-    > = {};
+  const currentPublishedMenu = useMemo(() => publishedMenus[0] || null, [publishedMenus]);
 
-    activeOrders.forEach((order) => {
-      const date = formatDateKey(order.publishedDate);
-      const mealType = order.mealType || "Unknown";
-      const key = `${date}__${mealType}`;
-      if (!grouped[key]) {
-        grouped[key] = {
-          key,
-          date,
-          mealType,
-          totalOrders: 0,
-          totalItems: 0,
-          totalValue: 0,
-          itemCounts: {},
-          byArea: {},
-          byDelivery: {},
-          byAgent: {},
-        };
-      }
-      const group = grouped[key];
-      group.totalOrders += 1;
-      group.totalItems += (order.items || []).reduce(
-        (sum, item) => sum + item.qty,
-        0
-      );
-      group.totalValue += order.total || 0;
-      (order.items || []).forEach((item) => {
-        group.itemCounts[item.name] =
-          (group.itemCounts[item.name] || 0) + item.qty;
-      });
-      const area = order.area || "Unknown";
-      group.byArea[area] = (group.byArea[area] || 0) + 1;
-      const delivery = order.deliveryType || "Unknown";
-      group.byDelivery[delivery] = (group.byDelivery[delivery] || 0) + 1;
-      const agent =
-        order.deliveryType === "delivery"
-          ? order.assignedAgentName || "Unassigned"
-          : "Pickup";
-      group.byAgent[agent] = (group.byAgent[agent] || 0) + 1;
-    });
-
-    return Object.values(grouped).sort((a, b) => {
-      if (a.date === b.date) return a.mealType.localeCompare(b.mealType);
-      return a.date.localeCompare(b.date);
-    });
-  }, [activeOrders]);
-
-  const activePublishedMenuKeys = useMemo(() => {
-    const keys = new Set<string>();
-    publishedMenus.forEach((menu) => {
-      if (menu.isArchived) return;
-      const date = formatDateKey(menu.date);
-      const mealType = menu.mealType || "Unknown";
-      keys.add(`${date}__${mealType}`);
-    });
-    return keys;
-  }, [publishedMenus]);
+  const currentPublishedMenuKey = useMemo(() => {
+    if (!currentPublishedMenu) {
+      return "";
+    }
+    return `${formatDateKey(currentPublishedMenu.date)}__${
+      currentPublishedMenu.mealType || "Unknown"
+    }`;
+  }, [currentPublishedMenu]);
 
   const activePublishedMenusForOwnerOrder = useMemo(
     () =>
@@ -1150,8 +1209,73 @@ export default function OwnerPage() {
     setOwnerOrderQty(nextQty);
   }, [selectedOwnerMenu]);
 
+  const currentMenuOrders = useMemo(() => {
+    if (!currentPublishedMenu) {
+      return [];
+    }
+    return orders.filter((order) => {
+      if (order.publishedMenuId) {
+        return order.publishedMenuId === currentPublishedMenu.id;
+      }
+      return (
+        `${formatDateKey(order.publishedDate)}__${order.mealType || "Unknown"}` ===
+        currentPublishedMenuKey
+      );
+    });
+  }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
+
+  const currentOperationalOrders = useMemo(
+    () =>
+      currentMenuOrders.filter((order) => {
+        if (order.deliveryType === "pickup") {
+          return true;
+        }
+        if (order.orderSource === "owner") {
+          return true;
+        }
+        return order.paymentStatus === "paid";
+      }),
+    [currentMenuOrders]
+  );
+
+  const currentOrdersSummary = useMemo(() => {
+    const summary = {
+      totalOrders: 0,
+      totalItems: 0,
+      totalValue: 0,
+      itemCounts: {} as Record<string, number>,
+      byArea: {} as Record<string, number>,
+      byDelivery: {} as Record<string, number>,
+      byAgent: {} as Record<string, number>,
+    };
+
+    currentOperationalOrders.forEach((order) => {
+      summary.totalOrders += 1;
+      summary.totalItems += (order.items || []).reduce(
+        (sum, item) => sum + item.qty,
+        0
+      );
+      summary.totalValue += order.total || 0;
+      (order.items || []).forEach((item) => {
+        summary.itemCounts[item.name] = (summary.itemCounts[item.name] || 0) + item.qty;
+      });
+      const area = order.area || "Unknown";
+      summary.byArea[area] = (summary.byArea[area] || 0) + 1;
+      const deliveryType =
+        order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery";
+      summary.byDelivery[deliveryType] = (summary.byDelivery[deliveryType] || 0) + 1;
+      const agent =
+        order.deliveryType === "delivery"
+          ? order.assignedAgentName || "Unassigned"
+          : "Pickup";
+      summary.byAgent[agent] = (summary.byAgent[agent] || 0) + 1;
+    });
+
+    return summary;
+  }, [currentOperationalOrders]);
+
   const filteredPickupOrders = useMemo(() => {
-    return orders
+    return currentMenuOrders
       .filter((order) => order.deliveryType === "pickup")
       .filter((order) => {
         const dateKey = formatDateKey(order.createdAt || order.publishedDate);
@@ -1176,104 +1300,55 @@ export default function OwnerPage() {
         return haystack.includes(pickupPaymentFilters.search.toLowerCase());
       })
       .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
-  }, [orders, pickupPaymentFilters]);
-
-  const filteredActiveOrdersSummary = useMemo(
-    () =>
-      activeOrdersSummary.filter((group) =>
-        activePublishedMenuKeys.has(group.key)
-      ),
-    [activeOrdersSummary, activePublishedMenuKeys]
-  );
+  }, [currentMenuOrders, pickupPaymentFilters]);
 
   const activeAreaRows = useMemo(
     () =>
-      filteredActiveOrdersSummary.flatMap((group) =>
-        Object.entries(group.byArea).map(([area, count]) => ({
-          key: `${group.key}__${area}`,
-          date: group.date,
-          mealType: group.mealType,
+      Object.entries(currentOrdersSummary.byArea)
+        .map(([area, count]) => ({
+          key: area,
           area,
           count,
         }))
-      ),
-    [filteredActiveOrdersSummary]
+        .sort((a, b) => b.count - a.count || a.area.localeCompare(b.area)),
+    [currentOrdersSummary]
+  );
+
+  const activeItemRows = useMemo(
+    () =>
+      Object.entries(currentOrdersSummary.itemCounts)
+        .map(([itemName, count]) => ({
+          key: itemName,
+          itemName,
+          count,
+        }))
+        .sort((a, b) => b.count - a.count || a.itemName.localeCompare(b.itemName)),
+    [currentOrdersSummary]
   );
 
   const activeAgentRows = useMemo(
     () =>
-      filteredActiveOrdersSummary.flatMap((group) =>
-        Object.entries(group.byAgent).map(([agent, count]) => ({
-          key: `${group.key}__${agent}`,
-          date: group.date,
-          mealType: group.mealType,
+      Object.entries(currentOrdersSummary.byAgent)
+        .map(([agent, count]) => ({
+          key: agent,
           agent,
           count,
         }))
-      ),
-    [filteredActiveOrdersSummary]
+        .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
+    [currentOrdersSummary]
   );
 
   const activeDeliveryTypeRows = useMemo(
     () =>
-      filteredActiveOrdersSummary.flatMap((group) =>
-        Object.entries(group.byDelivery).map(([deliveryType, count]) => ({
-          key: `${group.key}__${deliveryType}`,
-          date: group.date,
-          mealType: group.mealType,
+      Object.entries(currentOrdersSummary.byDelivery)
+        .map(([deliveryType, count]) => ({
+          key: deliveryType,
           deliveryType,
           count,
         }))
-      ),
-    [filteredActiveOrdersSummary]
+        .sort((a, b) => b.count - a.count || a.deliveryType.localeCompare(b.deliveryType)),
+    [currentOrdersSummary]
   );
-
-  const homeDeliveryOrders = useMemo(
-    () => activeOrders.filter((order) => order.deliveryType === "delivery"),
-    [activeOrders]
-  );
-
-  const selfPickupOrders = useMemo(
-    () => activeOrders.filter((order) => order.deliveryType === "pickup"),
-    [activeOrders]
-  );
-
-  const homeDeliveryByAgent = useMemo(() => {
-    const grouped: Record<
-      string,
-      {
-        agent: string;
-        totalOrders: number;
-        totalValue: number;
-        areas: Record<string, number>;
-        itemCounts: Record<string, number>;
-      }
-    > = {};
-
-    homeDeliveryOrders.forEach((order) => {
-      const agent = order.assignedAgentName || "Unassigned";
-      if (!grouped[agent]) {
-        grouped[agent] = {
-          agent,
-          totalOrders: 0,
-          totalValue: 0,
-          areas: {},
-          itemCounts: {},
-        };
-      }
-
-      grouped[agent].totalOrders += 1;
-      grouped[agent].totalValue += order.total || 0;
-      const area = order.area || "Unknown";
-      grouped[agent].areas[area] = (grouped[agent].areas[area] || 0) + 1;
-      (order.items || []).forEach((item) => {
-        grouped[agent].itemCounts[item.name] =
-          (grouped[agent].itemCounts[item.name] || 0) + item.qty;
-      });
-    });
-
-    return Object.values(grouped).sort((a, b) => a.agent.localeCompare(b.agent));
-  }, [homeDeliveryOrders]);
 
   const deliveredByAgent = useMemo(() => {
     const counts: Record<string, { total: number; byArea: Record<string, number> }> =
@@ -1290,66 +1365,44 @@ export default function OwnerPage() {
     return counts;
   }, [filteredClosedOrders]);
 
-  const deliveryStatusByAgent = useMemo(() => {
-    const status: Record<
-      string,
-      {
-        total: number;
-        delivered: number;
-        pending: number;
-        byArea: Record<
-          string,
-          { delivered: number; pending: number }
-        >;
-      }
-    > = {};
-    const relevantOrders = orders.filter((order) =>
-      activePublishedMenuKeys.has(
-        `${formatDateKey(order.publishedDate)}__${order.mealType || "Unknown"}`
-      )
-    );
-    relevantOrders.forEach((order) => {
-      const agent = order.assignedAgentName || "Unassigned";
-      const area = order.area || "Unknown";
-      if (!status[agent]) {
-        status[agent] = {
-          total: 0,
-          delivered: 0,
-          pending: 0,
-          byArea: {},
-        };
-      }
-      if (!status[agent].byArea[area]) {
-        status[agent].byArea[area] = { delivered: 0, pending: 0 };
-      }
-      status[agent].total += 1;
-      if (order.status === "closed") {
-        status[agent].delivered += 1;
-        status[agent].byArea[area].delivered += 1;
-      } else {
-        status[agent].pending += 1;
-        status[agent].byArea[area].pending += 1;
-      }
-    });
-    return status;
-  }, [orders, activePublishedMenuKeys]);
-
   const filteredActiveOrders = useMemo(() => {
     const search = activeOrderSearch.toLowerCase();
-    return activeOrders.filter((order) => {
-      if (
-        activeOrderAreaFilter !== "All" &&
-        (order.area || "Unknown") !== activeOrderAreaFilter
-      ) {
-        return false;
-      }
-      if (!search) return true;
-      const haystack = `${order.orderId || ""} ${order.phone || ""} ${
-        order.customerName || ""
-      }`.toLowerCase();
-      return haystack.includes(search);
-    });
-  }, [activeOrders, activeOrderSearch, activeOrderAreaFilter]);
+    return currentOperationalOrders
+      .filter((order) => {
+        if (
+          activeOrderDeliveryFilter !== "All" &&
+          (order.deliveryType || "Unknown") !== activeOrderDeliveryFilter
+        ) {
+          return false;
+        }
+        if (
+          activeOrderAreaFilter !== "All" &&
+          (order.area || "Unknown") !== activeOrderAreaFilter
+        ) {
+          return false;
+        }
+        if (
+          activeOrderStatusFilter !== "All" &&
+          getOrderStatusLabel(order) !== activeOrderStatusFilter
+        ) {
+          return false;
+        }
+        if (!search) return true;
+        const haystack = `${order.orderId || ""} ${order.phone || ""} ${
+          order.customerName || ""
+        } ${order.address || ""} ${(order.items || [])
+          .map((item) => item.name)
+          .join(" ")}`.toLowerCase();
+        return haystack.includes(search);
+      })
+      .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
+  }, [
+    currentOperationalOrders,
+    activeOrderSearch,
+    activeOrderAreaFilter,
+    activeOrderDeliveryFilter,
+    activeOrderStatusFilter,
+  ]);
 
   return (
     <main className="container">
@@ -1473,7 +1526,6 @@ export default function OwnerPage() {
               { id: "menu", label: "Menu" },
               { id: "publish", label: "Publish Menu" },
               { id: "createOrder", label: "Create Order" },
-              { id: "pickupPayments", label: "Pickup Payments" },
               { id: "dashboard", label: "Report/Dashboard" },
               { id: "history", label: "Orders" },
               { id: "delivery", label: "Delivery Agents" },
@@ -1498,13 +1550,12 @@ export default function OwnerPage() {
                   <strong>Owner Menu</strong>
                 </div>
                 {[
-                  { id: "menu", label: "Menu" },
-                  { id: "publish", label: "Publish Menu" },
-                  { id: "createOrder", label: "Create Order" },
-                  { id: "pickupPayments", label: "Pickup Payments" },
-                  { id: "dashboard", label: "Report/Dashboard" },
-                  { id: "history", label: "Orders" },
-                  { id: "delivery", label: "Delivery Agents" },
+                { id: "menu", label: "Menu" },
+                { id: "publish", label: "Publish Menu" },
+                { id: "createOrder", label: "Create Order" },
+                { id: "dashboard", label: "Report/Dashboard" },
+                { id: "history", label: "Orders" },
+                { id: "delivery", label: "Delivery Agents" },
                   { id: "areas", label: "Manage Areas" },
                 ].map((item) => (
                   <button
@@ -2123,6 +2174,16 @@ export default function OwnerPage() {
           {tab === "createOrder" && (
             <div className="card stack">
               <h2>Create Order</h2>
+              <div className="card stack owner-create-order-shell">
+                <div className="owner-create-order-intro">
+                  <strong>Adhoc Order Booking</strong>
+                  <small>
+                    Use this section to add extra live-menu orders for any area. For home
+                    delivery, you can pin the order to a specific delivery agent or let the
+                    area assignment handle it.
+                  </small>
+                </div>
+              </div>
               <div className="field">
                 <label>Active published menu</label>
                 <select
@@ -2181,6 +2242,13 @@ export default function OwnerPage() {
                   </div>
 
                   <div className="card stack">
+                    <div className="owner-create-order-intro">
+                      <strong>Customer and delivery details</strong>
+                      <small>
+                        Owner-created delivery orders will be routed to the selected or
+                        assigned delivery agent.
+                      </small>
+                    </div>
                     <div className="row">
                       <input
                         className="input"
@@ -2216,6 +2284,7 @@ export default function OwnerPage() {
                           setOwnerOrderForm({
                             ...ownerOrderForm,
                             deliveryType: "pickup",
+                            preferredAgentId: "",
                           })
                         }
                       >
@@ -2280,9 +2349,31 @@ export default function OwnerPage() {
                             ))}
                           </select>
                         </div>
+                        <div className="field" style={{ marginBottom: 0 }}>
+                          <label>Preferred delivery agent (optional)</label>
+                          <select
+                            className="select"
+                            value={ownerOrderForm.preferredAgentId}
+                            onChange={(e) =>
+                              setOwnerOrderForm({
+                                ...ownerOrderForm,
+                                preferredAgentId: e.target.value,
+                              })
+                            }
+                          >
+                            <option value="">Auto assign by area</option>
+                            {deliveryAgents
+                              .filter((agent) => agent.active)
+                              .map((agent) => (
+                                <option key={agent.id} value={agent.id}>
+                                  {agent.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
                         <input
                           className="input"
-                          placeholder="Exact location / map pin / landmark (optional)"
+                          placeholder="Exact location / Google Maps link / landmark"
                           value={ownerOrderForm.location}
                           onChange={(e) =>
                             setOwnerOrderForm({
@@ -2291,6 +2382,10 @@ export default function OwnerPage() {
                             })
                           }
                         />
+                        <small className="payments-subtext">
+                          Paste a maps link, landmark, or exact pin note so the delivery
+                          agent can reach the customer quickly.
+                        </small>
                       </>
                     )}
 
@@ -2310,181 +2405,6 @@ export default function OwnerPage() {
                     </button>
                   </div>
                 </>
-              )}
-            </div>
-          )}
-
-          {tab === "pickupPayments" && (
-            <div className="card stack">
-              <h2>Pickup Payments</h2>
-              <div className="row">
-                <input
-                  className="input"
-                  placeholder="Search by Order ID / Phone / Name"
-                  value={pickupPaymentFilters.search}
-                  onChange={(e) =>
-                    setPickupPaymentFilters({
-                      ...pickupPaymentFilters,
-                      search: e.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="input"
-                  type="date"
-                  value={pickupPaymentFilters.startDate}
-                  onChange={(e) =>
-                    setPickupPaymentFilters({
-                      ...pickupPaymentFilters,
-                      startDate: e.target.value,
-                    })
-                  }
-                />
-                <input
-                  className="input"
-                  type="date"
-                  value={pickupPaymentFilters.endDate}
-                  onChange={(e) =>
-                    setPickupPaymentFilters({
-                      ...pickupPaymentFilters,
-                      endDate: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              {filteredPickupOrders.length === 0 && <p>No pickup orders found.</p>}
-
-              {filteredPickupOrders.length > 0 && (
-                <div className="table-scroll">
-                  <table className="payments-table">
-                    <thead>
-                      <tr>
-                        <th>Booking Date</th>
-                        <th>Order ID</th>
-                        <th>Customer</th>
-                        <th>Phone</th>
-                        <th>Items</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Balance</th>
-                        <th>Status</th>
-                        <th>Notes</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredPickupOrders.map((order) => (
-                        <Fragment key={order.id}>
-                          <tr>
-                            <td>
-                              {formatDateLabel(order.createdAt || order.publishedDate)}
-                              <small className="payments-subtext">
-                                {formatDateLabel(order.publishedDate)} -{" "}
-                                {order.mealType || "Unknown"}
-                              </small>
-                            </td>
-                            <td>#{order.orderId || order.id}</td>
-                            <td>{order.customerName || "Customer"}</td>
-                            <td>{order.phone || "-"}</td>
-                            <td>
-                              {(order.items || []).map((item) => (
-                                <div key={`${order.id}-${item.name}`}>
-                                  {item.name} x{item.qty}
-                                </div>
-                              ))}
-                            </td>
-                            <td>INR {order.total || 0}</td>
-                            <td>INR {order.pickupAmountPaid || 0}</td>
-                            <td>
-                              INR{" "}
-                              {typeof order.pickupBalance === "number"
-                                ? order.pickupBalance
-                                : order.total || 0}
-                            </td>
-                            <td>
-                              <span className="status-chip">
-                                {order.pickupPaymentStatus === "paid"
-                                  ? "Closed"
-                                  : order.pickupPaymentStatus || "unpaid"}
-                              </span>
-                            </td>
-                            <td>{order.pickupPaymentNotes || "-"}</td>
-                            <td>
-                              <button
-                                className="btn secondary btn-compact"
-                                onClick={() => {
-                                  setEditingPickupPaymentId(order.id);
-                                  setPickupPaymentForm({
-                                    amount: "",
-                                    notes: order.pickupPaymentNotes || "",
-                                  });
-                                }}
-                              >
-                                Update
-                              </button>
-                            </td>
-                          </tr>
-                          {editingPickupPaymentId === order.id && (
-                            <tr className="payments-edit-row">
-                              <td colSpan={11}>
-                                <div className="payments-edit-grid">
-                                  <input
-                                    className="input"
-                                    type="number"
-                                    min={0}
-                                    placeholder="Amount received"
-                                    value={pickupPaymentForm.amount}
-                                    onChange={(e) =>
-                                      setPickupPaymentForm({
-                                        ...pickupPaymentForm,
-                                        amount: e.target.value,
-                                      })
-                                    }
-                                  />
-                                  <input
-                                    className="input"
-                                    placeholder="Notes"
-                                    value={pickupPaymentForm.notes}
-                                    onChange={(e) =>
-                                      setPickupPaymentForm({
-                                        ...pickupPaymentForm,
-                                        notes: e.target.value,
-                                      })
-                                    }
-                                  />
-                                  <div className="payments-edit-actions">
-                                    <button
-                                      className="btn btn-compact"
-                                      onClick={() => savePickupPayment(order, false)}
-                                    >
-                                      Save Payment
-                                    </button>
-                                    <button
-                                      className="btn secondary btn-compact"
-                                      onClick={() => savePickupPayment(order, true)}
-                                    >
-                                      Mark Fully Paid
-                                    </button>
-                                    <button
-                                      className="btn secondary btn-compact"
-                                      onClick={() => {
-                                        setEditingPickupPaymentId(null);
-                                        setPickupPaymentForm({ amount: "", notes: "" });
-                                      }}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               )}
             </div>
           )}
@@ -2579,53 +2499,55 @@ export default function OwnerPage() {
                   Summary
                 </button>
                 <button
-                  className={`btn ${historyTab === "homeDelivery" ? "" : "secondary"}`}
-                  onClick={() => setHistoryTab("homeDelivery")}
+                  className={`btn ${historyTab === "activeOrders" ? "" : "secondary"}`}
+                  onClick={() => setHistoryTab("activeOrders")}
                 >
-                  Home Delivery
+                  Active Orders
                 </button>
                 <button
-                  className={`btn ${historyTab === "selfPickup" ? "" : "secondary"}`}
-                  onClick={() => setHistoryTab("selfPickup")}
+                  className={`btn ${historyTab === "pickupPayments" ? "" : "secondary"}`}
+                  onClick={() => setHistoryTab("pickupPayments")}
                 >
-                  Self Pickup
+                  Pickup Payments
                 </button>
               </div>
 
               {historyTab === "summary" && (
                 <div className="stack">
-                  {filteredActiveOrdersSummary.length === 0 && (
-                    <p>No active orders</p>
-                  )}
-                  {filteredActiveOrdersSummary.length > 0 && (
+                  {!currentPublishedMenu && <p>No published menu available.</p>}
+                  {currentPublishedMenu && (
                     <>
-                      <div className="table-scroll">
-                        <table className="payments-table payments-table-compact">
-                          <thead>
-                            <tr>
-                              <th>Date</th>
-                              <th>Meal Type</th>
-                              <th>Orders</th>
-                              <th>Items</th>
-                              <th>Total Value</th>
-                              <th>Delivery</th>
-                              <th>Pickup</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredActiveOrdersSummary.map((group) => (
-                              <tr key={group.key}>
-                                <td>{formatDateLabel(group.date)}</td>
-                                <td>{group.mealType}</td>
-                                <td>{group.totalOrders}</td>
-                                <td>{group.totalItems}</td>
-                                <td>INR {group.totalValue}</td>
-                                <td>{group.byDelivery.delivery || 0}</td>
-                                <td>{group.byDelivery.pickup || 0}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="card owner-summary-hero stack">
+                        <div className="owner-summary-header">
+                          <div>
+                            <small className="payments-subtext">Current live menu</small>
+                            <h3>
+                              {formatDateLabel(currentPublishedMenu.date)} -{" "}
+                              {currentPublishedMenu.mealType || "Unknown"}
+                            </h3>
+                          </div>
+                          <span className="status-chip">
+                            {currentPublishedMenu.isArchived
+                              ? "Archived"
+                              : currentPublishedMenu.ordersStopped
+                                ? "Sold Out"
+                                : "Live"}
+                          </span>
+                        </div>
+                        <div className="owner-summary-metrics">
+                          <div className="card">
+                            <small className="payments-subtext">Total orders</small>
+                            <strong>{currentOrdersSummary.totalOrders}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">Items count</small>
+                            <strong>{currentOrdersSummary.totalItems}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">Total value</small>
+                            <strong>INR {currentOrdersSummary.totalValue}</strong>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="row summary-tables-row">
@@ -2635,8 +2557,6 @@ export default function OwnerPage() {
                             <table className="payments-table payments-table-compact">
                               <thead>
                                 <tr>
-                                  <th>Date</th>
-                                  <th>Meal Type</th>
                                   <th>Area</th>
                                   <th>Orders</th>
                                 </tr>
@@ -2644,13 +2564,11 @@ export default function OwnerPage() {
                               <tbody>
                                 {activeAreaRows.length === 0 && (
                                   <tr>
-                                    <td colSpan={4}>No area data</td>
+                                    <td colSpan={2}>No area data</td>
                                   </tr>
                                 )}
                                 {activeAreaRows.map((row) => (
                                   <tr key={row.key}>
-                                    <td>{formatDateLabel(row.date)}</td>
-                                    <td>{row.mealType}</td>
                                     <td>{row.area}</td>
                                     <td>{row.count}</td>
                                   </tr>
@@ -2660,28 +2578,24 @@ export default function OwnerPage() {
                           </div>
                         </div>
                         <div className="card" style={{ flex: 1 }}>
-                          <h3>Orders by Delivery Agent</h3>
+                          <h3>Items Count</h3>
                           <div className="table-scroll">
                             <table className="payments-table payments-table-compact">
                               <thead>
                                 <tr>
-                                  <th>Date</th>
-                                  <th>Meal Type</th>
-                                  <th>Delivery Agent</th>
-                                  <th>Orders</th>
+                                  <th>Item</th>
+                                  <th>Qty</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {activeAgentRows.length === 0 && (
+                                {activeItemRows.length === 0 && (
                                   <tr>
-                                    <td colSpan={4}>No delivery agent data</td>
+                                    <td colSpan={2}>No item data</td>
                                   </tr>
                                 )}
-                                {activeAgentRows.map((row) => (
+                                {activeItemRows.map((row) => (
                                   <tr key={row.key}>
-                                    <td>{formatDateLabel(row.date)}</td>
-                                    <td>{row.mealType}</td>
-                                    <td>{row.agent}</td>
+                                    <td>{row.itemName}</td>
                                     <td>{row.count}</td>
                                   </tr>
                                 ))}
@@ -2696,8 +2610,6 @@ export default function OwnerPage() {
                           <table className="payments-table payments-table-compact">
                             <thead>
                               <tr>
-                                <th>Date</th>
-                                <th>Meal Type</th>
                                 <th>Delivery Type</th>
                                 <th>Orders</th>
                               </tr>
@@ -2705,18 +2617,38 @@ export default function OwnerPage() {
                             <tbody>
                               {activeDeliveryTypeRows.length === 0 && (
                                 <tr>
-                                  <td colSpan={4}>No delivery type data</td>
+                                  <td colSpan={2}>No delivery type data</td>
                                 </tr>
                               )}
                               {activeDeliveryTypeRows.map((row) => (
                                 <tr key={row.key}>
-                                  <td>{formatDateLabel(row.date)}</td>
-                                  <td>{row.mealType}</td>
-                                  <td>
-                                    {row.deliveryType === "pickup"
-                                      ? "Self Pickup"
-                                      : "Home Delivery"}
-                                  </td>
+                                  <td>{row.deliveryType}</td>
+                                  <td>{row.count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div className="card">
+                        <h3>Orders by Delivery Agent</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact">
+                            <thead>
+                              <tr>
+                                <th>Delivery Agent</th>
+                                <th>Orders</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activeAgentRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={2}>No delivery agent data</td>
+                                </tr>
+                              )}
+                              {activeAgentRows.map((row) => (
+                                <tr key={row.key}>
+                                  <td>{row.agent}</td>
                                   <td>{row.count}</td>
                                 </tr>
                               ))}
@@ -2729,42 +2661,270 @@ export default function OwnerPage() {
                 </div>
               )}
 
-              {historyTab === "homeDelivery" && (
+              {historyTab === "activeOrders" && (
                 <div className="stack">
-                  {homeDeliveryByAgent.length === 0 && <p>No home delivery orders</p>}
-                  {homeDeliveryByAgent.length > 0 && (
+                  <div className="owner-filters-grid">
+                    <input
+                      className="input"
+                      placeholder="Search by order ID / customer / phone / item"
+                      value={activeOrderSearch}
+                      onChange={(e) => setActiveOrderSearch(e.target.value)}
+                    />
+                    <select
+                      className="select"
+                      value={activeOrderDeliveryFilter}
+                      onChange={(e) => setActiveOrderDeliveryFilter(e.target.value)}
+                    >
+                      <option value="All">All delivery types</option>
+                      <option value="delivery">Home Delivery</option>
+                      <option value="pickup">Self Pickup</option>
+                    </select>
+                    <select
+                      className="select"
+                      value={activeOrderAreaFilter}
+                      onChange={(e) => setActiveOrderAreaFilter(e.target.value)}
+                    >
+                      <option value="All">All areas</option>
+                      {areaOptions.map((area) => (
+                        <option key={area} value={area}>
+                          {area}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={activeOrderStatusFilter}
+                      onChange={(e) => setActiveOrderStatusFilter(e.target.value)}
+                    >
+                      <option value="All">All statuses</option>
+                      <option value="Active">Active</option>
+                      <option value="Delivered">Delivered</option>
+                      <option value="Picked Up">Picked Up</option>
+                      <option value="Undelivered">Undelivered</option>
+                      <option value="Payment Pending">Payment Pending</option>
+                    </select>
+                  </div>
+                  {filteredActiveOrders.length === 0 && <p>No active orders for the live menu.</p>}
+                  {filteredActiveOrders.length > 0 && (
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
                           <tr>
+                            <th>Order ID</th>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>Delivery Type</th>
+                            <th>Area</th>
+                            <th>Address</th>
+                            <th>Items</th>
                             <th>Delivery Agent</th>
-                            <th>Orders</th>
-                            <th>Areas</th>
-                            <th>Items to Pick</th>
+                            <th>Status</th>
                             <th>Total Value</th>
+                            <th>Action</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {homeDeliveryByAgent.map((group) => (
-                            <tr key={group.agent}>
-                              <td>{group.agent}</td>
-                              <td>{group.totalOrders}</td>
-                              <td>
-                                {Object.keys(group.areas).length === 0
-                                  ? "No areas"
-                                  : Object.entries(group.areas)
-                                      .map(([area, count]) => `${area} (${count})`)
-                                      .join(", ")}
-                              </td>
-                              <td>
-                                {Object.keys(group.itemCounts).length === 0
-                                  ? "No items"
-                                  : Object.entries(group.itemCounts)
-                                      .map(([name, qty]) => `${name} x${qty}`)
-                                      .join(", ")}
-                              </td>
-                              <td>INR {group.totalValue}</td>
-                            </tr>
+                          {filteredActiveOrders.map((order) => (
+                            <Fragment key={order.id}>
+                              <tr>
+                                <td>#{order.orderId || order.id}</td>
+                                <td>{order.customerName || "Customer"}</td>
+                                <td>{order.phone || "-"}</td>
+                                <td>
+                                  {order.deliveryType === "pickup"
+                                    ? "Self Pickup"
+                                    : "Home Delivery"}
+                                </td>
+                                <td>{order.area || "-"}</td>
+                                <td>
+                                  {order.address || "-"}
+                                  {order.location && (
+                                    <small className="payments-subtext">
+                                      {formatLocationInput(order.location)}
+                                    </small>
+                                  )}
+                                </td>
+                                <td>
+                                  {(order.items || []).map((item) => (
+                                    <div key={`${order.id}-${item.name}`}>
+                                      {item.name} x{item.qty}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td>
+                                  {order.deliveryType === "delivery"
+                                    ? order.assignedAgentName || "Unassigned"
+                                    : "Pickup"}
+                                </td>
+                                <td>{getOrderStatusLabel(order)}</td>
+                                <td>INR {order.total || 0}</td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => openActiveOrderEditor(order)}
+                                  >
+                                    Edit
+                                  </button>
+                                </td>
+                              </tr>
+                              {editingActiveOrderId === order.id && (
+                                <tr className="payments-edit-row">
+                                  <td colSpan={11}>
+                                    <div className="order-edit-grid">
+                                      <input
+                                        className="input"
+                                        placeholder="Customer name"
+                                        value={activeOrderEditForm.customerName}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            customerName: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <input
+                                        className="input"
+                                        placeholder="Phone number"
+                                        value={activeOrderEditForm.phone}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            phone: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <select
+                                        className="select"
+                                        value={activeOrderEditForm.deliveryType}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            deliveryType: e.target.value,
+                                            assignedAgentId:
+                                              e.target.value === "delivery"
+                                                ? activeOrderEditForm.assignedAgentId
+                                                : "",
+                                          })
+                                        }
+                                      >
+                                        <option value="pickup">Self Pickup</option>
+                                        <option value="delivery">Home Delivery</option>
+                                      </select>
+                                      <select
+                                        className="select"
+                                        value={activeOrderEditForm.status}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            status: e.target.value,
+                                          })
+                                        }
+                                        disabled={order.status === "payment_pending"}
+                                      >
+                                        <option value="active">Active</option>
+                                        <option value="closed">Closed</option>
+                                        <option value="undelivered">Undelivered</option>
+                                      </select>
+                                      {activeOrderEditForm.deliveryType === "delivery" && (
+                                        <>
+                                          <input
+                                            className="input"
+                                            placeholder="Door no / Apartment / House name"
+                                            value={activeOrderEditForm.addressLine1}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                addressLine1: e.target.value,
+                                              })
+                                            }
+                                          />
+                                          <input
+                                            className="input"
+                                            placeholder="Street"
+                                            value={activeOrderEditForm.street}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                street: e.target.value,
+                                              })
+                                            }
+                                          />
+                                          <select
+                                            className="select"
+                                            value={activeOrderEditForm.area}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                area: e.target.value,
+                                              })
+                                            }
+                                          >
+                                            <option value="">Select area</option>
+                                            {areaOptions.map((area) => (
+                                              <option key={area} value={area}>
+                                                {area}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <select
+                                            className="select"
+                                            value={activeOrderEditForm.assignedAgentId}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                assignedAgentId: e.target.value,
+                                              })
+                                            }
+                                          >
+                                            <option value="">Unassigned</option>
+                                            {deliveryAgents
+                                              .filter((agent) => agent.active)
+                                              .map((agent) => (
+                                                <option key={agent.id} value={agent.id}>
+                                                  {agent.name}
+                                                </option>
+                                              ))}
+                                          </select>
+                                          <input
+                                            className="input"
+                                            placeholder="Exact location / map link / landmark"
+                                            value={activeOrderEditForm.location}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                location: e.target.value,
+                                              })
+                                            }
+                                          />
+                                        </>
+                                      )}
+                                      {activeOrderEditError && (
+                                        <small style={{ color: "crimson" }}>
+                                          {activeOrderEditError}
+                                        </small>
+                                      )}
+                                      <div className="payments-edit-actions">
+                                        <button
+                                          className="btn btn-compact"
+                                          onClick={() => saveActiveOrderEdits(order)}
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => {
+                                            setEditingActiveOrderId(null);
+                                            setActiveOrderEditError("");
+                                          }}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>
@@ -2773,40 +2933,172 @@ export default function OwnerPage() {
                 </div>
               )}
 
-              {historyTab === "selfPickup" && (
+              {historyTab === "pickupPayments" && (
                 <div className="stack">
-                  {selfPickupOrders.length === 0 && <p>No self pickup orders</p>}
-                  {selfPickupOrders.length > 0 && (
+                  <div className="row">
+                    <input
+                      className="input"
+                      placeholder="Search by Order ID / Phone / Name"
+                      value={pickupPaymentFilters.search}
+                      onChange={(e) =>
+                        setPickupPaymentFilters({
+                          ...pickupPaymentFilters,
+                          search: e.target.value,
+                        })
+                      }
+                    />
+                    <input
+                      className="input"
+                      type="date"
+                      value={pickupPaymentFilters.startDate}
+                      onChange={(e) =>
+                        setPickupPaymentFilters({
+                          ...pickupPaymentFilters,
+                          startDate: e.target.value,
+                        })
+                      }
+                    />
+                    <input
+                      className="input"
+                      type="date"
+                      value={pickupPaymentFilters.endDate}
+                      onChange={(e) =>
+                        setPickupPaymentFilters({
+                          ...pickupPaymentFilters,
+                          endDate: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  {filteredPickupOrders.length === 0 && <p>No pickup orders found.</p>}
+
+                  {filteredPickupOrders.length > 0 && (
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
                           <tr>
+                            <th>Booking Date</th>
                             <th>Order ID</th>
-                            <th>Date</th>
-                            <th>Meal Type</th>
                             <th>Customer</th>
                             <th>Phone</th>
                             <th>Items</th>
-                            <th>Total Value</th>
-                            <th>Payment</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Balance</th>
+                            <th>Status</th>
+                            <th>Notes</th>
+                            <th>Action</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {selfPickupOrders.map((order) => (
-                            <tr key={order.id}>
-                              <td>{order.orderId || order.id}</td>
-                              <td>{formatDateLabel(order.createdAt || order.publishedDate)}</td>
-                              <td>{order.mealType}</td>
-                              <td>{order.customerName || "Customer"}</td>
-                              <td>{order.phone || "-"}</td>
-                              <td>
-                                {(order.items || [])
-                                  .map((item) => `${item.name} x${item.qty}`)
-                                  .join(", ") || "No items"}
-                              </td>
-                              <td>INR {order.total || 0}</td>
-                              <td>{order.paymentStatus || "pending"}</td>
-                            </tr>
+                          {filteredPickupOrders.map((order) => (
+                            <Fragment key={order.id}>
+                              <tr>
+                                <td>
+                                  {formatDateLabel(order.createdAt || order.publishedDate)}
+                                  <small className="payments-subtext">
+                                    {formatDateLabel(order.publishedDate)} -{" "}
+                                    {order.mealType || "Unknown"}
+                                  </small>
+                                </td>
+                                <td>#{order.orderId || order.id}</td>
+                                <td>{order.customerName || "Customer"}</td>
+                                <td>{order.phone || "-"}</td>
+                                <td>
+                                  {(order.items || []).map((item) => (
+                                    <div key={`${order.id}-${item.name}`}>
+                                      {item.name} x{item.qty}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td>INR {order.total || 0}</td>
+                                <td>INR {order.pickupAmountPaid || 0}</td>
+                                <td>
+                                  INR{" "}
+                                  {typeof order.pickupBalance === "number"
+                                    ? order.pickupBalance
+                                    : order.total || 0}
+                                </td>
+                                <td>
+                                  <span className="status-chip">
+                                    {order.pickupPaymentStatus === "paid"
+                                      ? "Closed"
+                                      : order.pickupPaymentStatus || "unpaid"}
+                                  </span>
+                                </td>
+                                <td>{order.pickupPaymentNotes || "-"}</td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => {
+                                      setEditingPickupPaymentId(order.id);
+                                      setPickupPaymentForm({
+                                        amount: "",
+                                        notes: order.pickupPaymentNotes || "",
+                                      });
+                                    }}
+                                  >
+                                    Update
+                                  </button>
+                                </td>
+                              </tr>
+                              {editingPickupPaymentId === order.id && (
+                                <tr className="payments-edit-row">
+                                  <td colSpan={11}>
+                                    <div className="payments-edit-grid">
+                                      <input
+                                        className="input"
+                                        type="number"
+                                        min={0}
+                                        placeholder="Amount received"
+                                        value={pickupPaymentForm.amount}
+                                        onChange={(e) =>
+                                          setPickupPaymentForm({
+                                            ...pickupPaymentForm,
+                                            amount: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <input
+                                        className="input"
+                                        placeholder="Notes"
+                                        value={pickupPaymentForm.notes}
+                                        onChange={(e) =>
+                                          setPickupPaymentForm({
+                                            ...pickupPaymentForm,
+                                            notes: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <div className="payments-edit-actions">
+                                        <button
+                                          className="btn btn-compact"
+                                          onClick={() => savePickupPayment(order, false)}
+                                        >
+                                          Save Payment
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => savePickupPayment(order, true)}
+                                        >
+                                          Mark Fully Paid
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => {
+                                            setEditingPickupPaymentId(null);
+                                            setPickupPaymentForm({ amount: "", notes: "" });
+                                          }}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>

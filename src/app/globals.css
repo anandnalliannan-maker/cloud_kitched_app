@@ -904,6 +904,57 @@ a {
   min-width: min(100%, 320px);
 }
 
+.owner-summary-hero {
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.06), rgba(186, 124, 58, 0.08));
+}
+
+.owner-summary-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.owner-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.owner-summary-metrics > .card {
+  padding: 16px 18px;
+}
+
+.owner-filters-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.order-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.owner-create-order-shell {
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.owner-create-order-intro {
+  display: grid;
+  gap: 6px;
+}
+
+.owner-create-order-intro small {
+  color: #5b6474;
+  line-height: 1.5;
+}
+
 .payments-table {
   width: 100%;
   min-width: 1120px;
@@ -992,6 +1043,17 @@ a {
 }
 
 @media (max-width: 768px) {
+  .owner-summary-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .owner-summary-metrics,
+  .owner-filters-grid,
+  .order-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
   .payments-edit-grid {
     grid-template-columns: 1fr;
   }
