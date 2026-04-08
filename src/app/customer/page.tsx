@@ -33,7 +33,13 @@ type CartItem = {
 type PaymentSummary = {
   appOrderId: string;
   displayOrderId: string;
-  items: { id: string; name: string; price: number; qty: number }[];
+  items: {
+    id: string;
+    name: string;
+    price: number;
+    qty: number;
+    imageUrl?: string;
+  }[];
   total: number;
   deliveryType: "delivery" | "pickup" | "";
   location: { lat: number; lng: number } | null;
@@ -728,6 +734,7 @@ export default function CustomerPage() {
           name: item.name,
           price: item.price,
           qty: item.qty,
+          imageUrl: item.imageUrl || "",
         })),
         total,
         deliveryType,
@@ -1422,19 +1429,45 @@ export default function CustomerPage() {
 
             <div className="payment-summary-box">
               <div className="payment-summary-head">
-                <strong>Order Summary</strong>
-                <span>{(paymentSummary?.items || []).length} item(s)</span>
+                <div className="payment-summary-title-block">
+                  <strong>Order Summary</strong>
+                  <span>Review your items and pricing before payment</span>
+                </div>
+                <span className="payment-summary-count">
+                  {(paymentSummary?.items || []).length} item(s)
+                </span>
               </div>
 
               <div className="payment-items">
+                <div className="payment-items-head">
+                  <span>Item</span>
+                  <span>Pricing</span>
+                </div>
                 {(paymentSummary?.items || []).map((item) => (
                   <div key={item.id} className="payment-item-row">
                     <div className="payment-item-copy">
-                      <div className="payment-item-name">{item.name}</div>
-                      <div className="payment-item-qty">Qty {item.qty}</div>
+                      <div className="payment-item-visual">
+                        {item.imageUrl ? (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="payment-item-thumb"
+                          />
+                        ) : (
+                          <div className="payment-item-thumb payment-item-thumb-fallback">
+                            {item.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="payment-item-text">
+                          <div className="payment-item-name">{item.name}</div>
+                          <div className="payment-item-qty">Quantity: {item.qty}</div>
+                        </div>
+                      </div>
                     </div>
                     <div className="payment-item-pricing">
-                      <span className="payment-item-unit-price">INR {item.price}</span>
+                      <span className="payment-item-unit-price">
+                        INR {item.price} each
+                      </span>
                       <strong className="payment-item-price">
                         INR {item.price * item.qty}
                       </strong>
@@ -1445,8 +1478,12 @@ export default function CustomerPage() {
 
               <div className="payment-meta">
                 <div className="payment-meta-row">
-                  <span>Total</span>
+                  <span>Items Total</span>
                   <strong>INR {paymentSummary?.total ?? 0}</strong>
+                </div>
+                <div className="payment-meta-row">
+                  <span>Delivery Charge</span>
+                  <strong>Included</strong>
                 </div>
                 <div className="payment-meta-row">
                   <span>Delivery</span>
@@ -1459,6 +1496,10 @@ export default function CustomerPage() {
                         : ""
                     ) || "-"}
                   </strong>
+                </div>
+                <div className="payment-meta-row payment-total-row">
+                  <span>Total</span>
+                  <strong>INR {paymentSummary?.total ?? 0}</strong>
                 </div>
                 {paymentSummary?.location && (
                   <div className="payment-location-box">
