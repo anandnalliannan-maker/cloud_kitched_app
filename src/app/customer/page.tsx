@@ -109,6 +109,7 @@ export default function CustomerPage() {
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
     null
   );
+  const [upiId, setUpiId] = useState("");
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
   const [customerView, setCustomerView] = useState<"menu" | "history">("menu");
   const [historyPhone, setHistoryPhone] = useState("");
@@ -810,6 +811,7 @@ export default function CustomerPage() {
     setLocLabel("");
     setDeliveryType("");
     setPaymentSummary(null);
+    setUpiId("");
     setStep("menu");
   }
 
@@ -838,7 +840,10 @@ export default function CustomerPage() {
       const orderResponse = await fetch("/api/icici/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appOrderId: paymentSummary.appOrderId }),
+        body: JSON.stringify({
+          appOrderId: paymentSummary.appOrderId,
+          upiId: upiId.trim() || undefined,
+        }),
       });
       const orderPayload = await orderResponse.json();
       if (!orderResponse.ok) {
@@ -1421,6 +1426,24 @@ export default function CustomerPage() {
               <div className="payment-action-copy">
                 <strong>Proceed to payment</strong>
                 <p>Complete payment to confirm this order.</p>
+              </div>
+            </div>
+
+            <div className="card stack payment-upi-card">
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>UPI ID (Optional)</label>
+                <input
+                  className="input"
+                  placeholder="example@upi"
+                  value={upiId}
+                  onChange={(e) => setUpiId(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                />
+                <small className="payments-subtext">
+                  Enter a UPI ID to try app-based collect payment. Leave it blank to use
+                  the current QR flow.
+                </small>
               </div>
             </div>
 

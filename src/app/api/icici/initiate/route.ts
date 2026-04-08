@@ -58,7 +58,7 @@ function buildInitiatePayloadVariants(
 
 export async function POST(request: Request) {
   try {
-    const { appOrderId } = await request.json();
+    const { appOrderId, upiId } = await request.json();
 
     if (!appOrderId || typeof appOrderId !== "string") {
       return NextResponse.json(
@@ -120,11 +120,17 @@ export async function POST(request: Request) {
       addlParam2: String(orderData.orderId || appOrderId),
     };
 
+    const normalizedUpiId = String(upiId || "").trim().toLowerCase();
+
     if (paymentMode) {
       requestPayload.paymentMode = paymentMode;
     }
     if (requestType) {
       requestPayload.requestType = requestType;
+    }
+    if (normalizedUpiId) {
+      requestPayload.paymentMode = "UPI";
+      requestPayload.customerUPIAlias = normalizedUpiId;
     }
 
     const payloadVariants = buildInitiatePayloadVariants(
@@ -210,6 +216,7 @@ export async function POST(request: Request) {
         payload.txnRespDescription || payload.respDescription || ""
       ),
       iciciTranCtx: tranCtx,
+      iciciRequestedUpiId: normalizedUpiId || "",
       paymentGateway: "icici",
       updatedAt: new Date(),
     });
