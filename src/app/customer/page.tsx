@@ -109,7 +109,6 @@ export default function CustomerPage() {
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
     null
   );
-  const [upiId, setUpiId] = useState("");
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
   const [customerView, setCustomerView] = useState<"menu" | "history">("menu");
   const [historyPhone, setHistoryPhone] = useState("");
@@ -280,6 +279,7 @@ export default function CustomerPage() {
     const url = new URL(window.location.href);
     const paymentState = url.searchParams.get("payment");
     const orderId = url.searchParams.get("orderId");
+    const appOrderId = url.searchParams.get("appOrderId");
 
     if (!paymentState) {
       return;
@@ -292,6 +292,9 @@ export default function CustomerPage() {
       pending: orderId
         ? `Payment is pending for order ${orderId}. We will update the status after confirmation.`
         : "Payment is pending. We will update the status after confirmation.",
+      verifying: orderId
+        ? `Verifying payment for order ${orderId}.`
+        : "Verifying payment. Please wait...",
       failed: orderId
         ? `Payment failed for order ${orderId}. Please try again.`
         : "Payment failed. Please try again.",
@@ -300,9 +303,28 @@ export default function CustomerPage() {
     const nextMessage = messages[paymentState] || "Payment status updated.";
     setPaymentNotice(nextMessage);
     setPayError(paymentState === "failed" ? messages.failed : "");
-    resetCheckoutState();
     setCustomerView("menu");
-    clearPendingPaymentResume();
+
+    if (paymentState === "verifying" && appOrderId) {
+      resetCheckoutState();
+      const resumedOrder = {
+        appOrderId,
+        displayOrderId: orderId || appOrderId,
+      };
+      setPendingPaymentResume(resumedOrder);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          pendingPaymentStorageKey,
+          JSON.stringify(resumedOrder)
+        );
+      }
+      window.setTimeout(() => {
+        void checkPendingPaymentStatus(resumedOrder, { silent: true });
+      }, 150);
+    } else {
+      resetCheckoutState();
+      clearPendingPaymentResume();
+    }
 
     if (paymentState === "success") {
       window.alert(nextMessage);
@@ -310,6 +332,7 @@ export default function CustomerPage() {
 
     url.searchParams.delete("payment");
     url.searchParams.delete("orderId");
+    url.searchParams.delete("appOrderId");
     window.history.replaceState({}, "", url.toString());
   }, []);
 
@@ -811,7 +834,6 @@ export default function CustomerPage() {
     setLocLabel("");
     setDeliveryType("");
     setPaymentSummary(null);
-    setUpiId("");
     setStep("menu");
   }
 
@@ -842,7 +864,6 @@ export default function CustomerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           appOrderId: paymentSummary.appOrderId,
-          upiId: upiId.trim() || undefined,
         }),
       });
       const orderPayload = await orderResponse.json();
@@ -1428,25 +1449,6 @@ export default function CustomerPage() {
                 <p>Complete payment to confirm this order.</p>
               </div>
             </div>
-
-            <div className="card stack payment-upi-card">
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>UPI ID (Optional)</label>
-                <input
-                  className="input"
-                  placeholder="example@upi"
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                />
-                <small className="payments-subtext">
-                  Enter a UPI ID to try app-based collect payment. Leave it blank to use
-                  the current QR flow.
-                </small>
-              </div>
-            </div>
-
             {paymentSummary?.deliveryType === "pickup" ? (
               <div className="row payment-button-row">
                 <button
