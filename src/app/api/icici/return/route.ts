@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
 
+import { syncIciciOrderStatus } from "@/lib/icici-order";
+
 function buildCustomerRedirectUrl(
   request: Request,
   state: string,
-  orderId: string,
-  appOrderId: string
+  orderId: string
 ) {
   const base = new URL("/customer", request.url);
   base.searchParams.set("payment", state);
   if (orderId) {
     base.searchParams.set("orderId", orderId);
-  }
-  if (appOrderId) {
-    base.searchParams.set("appOrderId", appOrderId);
   }
   return base.toString();
 }
@@ -58,21 +56,22 @@ async function handleReturn(request: Request) {
     const appOrderId = String(
       payload.merchantTxnNo || payload.addlParam1 || payload.orderId || ""
     );
-    const displayOrderId = String(payload.addlParam2 || payload.orderId || "");
 
     if (!appOrderId) {
       return NextResponse.redirect(
-        buildCustomerRedirectUrl(request, "failed", "", ""),
+        buildCustomerRedirectUrl(request, "failed", ""),
         { status: 303 }
       );
     }
 
+    const result = await syncIciciOrderStatus(appOrderId);
+
     return NextResponse.redirect(
-      buildCustomerRedirectUrl(request, "verifying", displayOrderId, appOrderId),
+      buildCustomerRedirectUrl(request, result.state, result.displayOrderId),
       { status: 303 }
     );
   } catch {
-    return NextResponse.redirect(buildCustomerRedirectUrl(request, "failed", "", ""), {
+    return NextResponse.redirect(buildCustomerRedirectUrl(request, "failed", ""), {
       status: 303,
     });
   }
