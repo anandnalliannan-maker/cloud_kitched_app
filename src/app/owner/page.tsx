@@ -1338,6 +1338,57 @@ export default function OwnerPage() {
     [currentOrdersSummary]
   );
 
+  const activeAgentDetailRows = useMemo(() => {
+    const grouped: Record<
+      string,
+      {
+        key: string;
+        agent: string;
+        orders: number;
+        totalItems: number;
+        totalValue: number;
+        areas: Record<string, number>;
+        itemCounts: Record<string, number>;
+      }
+    > = {};
+
+    currentOperationalOrders.forEach((order) => {
+      const agent =
+        order.deliveryType === "delivery"
+          ? order.assignedAgentName || "Unassigned"
+          : "Pickup";
+
+      if (!grouped[agent]) {
+        grouped[agent] = {
+          key: agent,
+          agent,
+          orders: 0,
+          totalItems: 0,
+          totalValue: 0,
+          areas: {},
+          itemCounts: {},
+        };
+      }
+
+      grouped[agent].orders += 1;
+      grouped[agent].totalItems += (order.items || []).reduce(
+        (sum, item) => sum + item.qty,
+        0
+      );
+      grouped[agent].totalValue += order.total || 0;
+      const area = order.area || "Unknown";
+      grouped[agent].areas[area] = (grouped[agent].areas[area] || 0) + 1;
+      (order.items || []).forEach((item) => {
+        grouped[agent].itemCounts[item.name] =
+          (grouped[agent].itemCounts[item.name] || 0) + item.qty;
+      });
+    });
+
+    return Object.values(grouped).sort(
+      (a, b) => b.orders - a.orders || a.agent.localeCompare(b.agent)
+    );
+  }, [currentOperationalOrders]);
+
   const activeDeliveryTypeRows = useMemo(
     () =>
       Object.entries(currentOrdersSummary.byDelivery)
@@ -2638,18 +2689,38 @@ export default function OwnerPage() {
                               <tr>
                                 <th>Delivery Agent</th>
                                 <th>Orders</th>
+                                <th>Items Count</th>
+                                <th>Areas</th>
+                                <th>Items</th>
+                                <th>Total Value</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {activeAgentRows.length === 0 && (
+                              {activeAgentDetailRows.length === 0 && (
                                 <tr>
-                                  <td colSpan={2}>No delivery agent data</td>
+                                  <td colSpan={6}>No delivery agent data</td>
                                 </tr>
                               )}
-                              {activeAgentRows.map((row) => (
+                              {activeAgentDetailRows.map((row) => (
                                 <tr key={row.key}>
                                   <td>{row.agent}</td>
-                                  <td>{row.count}</td>
+                                  <td>{row.orders}</td>
+                                  <td>{row.totalItems}</td>
+                                  <td>
+                                    {Object.keys(row.areas).length === 0
+                                      ? "-"
+                                      : Object.entries(row.areas)
+                                          .map(([area, count]) => `${area} (${count})`)
+                                          .join(", ")}
+                                  </td>
+                                  <td>
+                                    {Object.keys(row.itemCounts).length === 0
+                                      ? "-"
+                                      : Object.entries(row.itemCounts)
+                                          .map(([itemName, count]) => `${itemName} x${count}`)
+                                          .join(", ")}
+                                  </td>
+                                  <td>INR {row.totalValue}</td>
                                 </tr>
                               ))}
                             </tbody>
