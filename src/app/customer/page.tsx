@@ -963,25 +963,27 @@ export default function CustomerPage() {
 
         {customerView === "menu" && (
           <section className="card customer-hero">
-            <div className="customer-hero-image-wrap">
-              <img
-                src="/ms-kitchen-hero.jpg"
-                alt="MS Kitchen"
-                className="customer-hero-image"
-              />
-            </div>
-            <div className="customer-hero-meta">
-              <p className="customer-brand-eyebrow">Curated Daily Kitchen</p>
-              <div className="customer-hero-meta-row">
-                <div className="customer-hero-chip">
-                  <span>Date</span>
-                  <strong>
-                    {menuDateLabel ? formatDateLabel(menuDateLabel) : "Today"}
-                  </strong>
-                </div>
-                <div className="customer-hero-chip">
-                  <span>Meal</span>
-                  <strong>{menuMealLabel || "Not published"}</strong>
+            <div className="customer-hero-main">
+              <div className="customer-hero-image-wrap">
+                <img
+                  src="/ms-kitchen-hero.jpg"
+                  alt="MS Kitchen"
+                  className="customer-hero-image"
+                />
+              </div>
+              <div className="customer-hero-meta">
+                <p className="customer-brand-eyebrow">Curated Daily Kitchen</p>
+                <div className="customer-hero-meta-row">
+                  <div className="customer-hero-chip">
+                    <span>Date</span>
+                    <strong>
+                      {menuDateLabel ? formatDateLabel(menuDateLabel) : "Today"}
+                    </strong>
+                  </div>
+                  <div className="customer-hero-chip">
+                    <span>Meal</span>
+                    <strong>{menuMealLabel || "Not published"}</strong>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1229,8 +1231,8 @@ export default function CustomerPage() {
                     </div>
                   ))}
                 </div>
-                <div className="row">
-                  <strong>Total: INR {total}</strong>
+                <div className="row customer-menu-footer">
+                  <strong className="customer-menu-total">Total: INR {total}</strong>
                   <button
                     className="btn customer-primary-btn"
                     disabled={!hasItems}
@@ -1492,25 +1494,27 @@ export default function CustomerPage() {
               </div>
 
               <div className="payment-meta">
-                <div className="payment-meta-row">
-                  <span>Items Total</span>
-                  <strong>INR {paymentSummary?.total ?? 0}</strong>
-                </div>
-                <div className="payment-meta-row">
-                  <span>Delivery Charge</span>
-                  <strong>Included</strong>
-                </div>
-                <div className="payment-meta-row">
-                  <span>Delivery</span>
-                  <strong>
-                    {(
-                      paymentSummary?.deliveryType === "delivery"
-                        ? "Home Delivery"
-                        : paymentSummary?.deliveryType === "pickup"
-                        ? "Self Pickup"
-                        : ""
-                    ) || "-"}
-                  </strong>
+                <div className="payment-meta-compact">
+                  <div className="payment-meta-compact-item">
+                    <span>Items Total</span>
+                    <strong>INR {paymentSummary?.total ?? 0}</strong>
+                  </div>
+                  <div className="payment-meta-compact-item">
+                    <span>Delivery Charge</span>
+                    <strong>Included</strong>
+                  </div>
+                  <div className="payment-meta-compact-item">
+                    <span>Delivery</span>
+                    <strong>
+                      {(
+                        paymentSummary?.deliveryType === "delivery"
+                          ? "Home Delivery"
+                          : paymentSummary?.deliveryType === "pickup"
+                          ? "Self Pickup"
+                          : ""
+                      ) || "-"}
+                    </strong>
+                  </div>
                 </div>
                 <div className="payment-meta-row payment-total-row">
                   <span>Total</span>
