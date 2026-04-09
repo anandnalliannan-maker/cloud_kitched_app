@@ -948,15 +948,21 @@ export default function CustomerPage() {
   return (
     <main className="container customer-shell">
       <div className="stack customer-shell-stack">
+        <div
+          className="row customer-header-row"
+          style={{ justifyContent: "space-between", alignItems: "center" }}
+        >
+          <button
+            className="btn secondary customer-nav-toggle customer-ghost-btn"
+            onClick={() => setCustomerDrawerOpen(true)}
+            aria-label="Open customer menu"
+          >
+            {"\u2630"}
+          </button>
+        </div>
+
         {customerView === "menu" && (
           <section className="card customer-hero">
-            <button
-              className="btn secondary customer-nav-toggle customer-hero-toggle customer-ghost-btn"
-              onClick={() => setCustomerDrawerOpen(true)}
-              aria-label="Open customer menu"
-            >
-              {"\u2630"}
-            </button>
             <div className="customer-hero-main">
               <div className="customer-hero-image-wrap">
                 <img

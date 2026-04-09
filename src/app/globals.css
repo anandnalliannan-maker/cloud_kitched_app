@@ -577,12 +577,16 @@ a {
 }
 
 .customer-shell {
-  padding-top: 8px;
+  padding-top: 20px;
   padding-bottom: 32px;
 }
 
 .customer-shell-stack {
   gap: 14px;
+}
+
+.customer-header-row {
+  margin-bottom: 0;
 }
 
 .customer-brand-eyebrow {
@@ -596,19 +600,13 @@ a {
 
 .customer-hero {
   display: block;
-  position: relative;
   padding: 12px;
-  padding-top: 8px;
   border-radius: 24px;
   border: 1px solid rgba(104, 82, 46, 0.12);
   background:
     linear-gradient(135deg, rgba(255, 248, 234, 0.96), rgba(247, 252, 249, 0.95)),
     radial-gradient(circle at top right, rgba(20, 125, 117, 0.12), transparent 24%);
   box-shadow: 0 24px 60px rgba(75, 60, 32, 0.12);
-}
-
-.customer-hero-toggle {
-  margin-bottom: 6px;
 }
 
 .customer-hero-main {
@@ -871,7 +869,7 @@ a {
   }
 
   .customer-shell {
-    padding-top: 6px;
+    padding-top: 14px;
     padding-bottom: 24px;
   }
 
