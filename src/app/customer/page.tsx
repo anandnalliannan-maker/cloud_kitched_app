@@ -428,6 +428,16 @@ export default function CustomerPage() {
   }, [pendingPaymentResume, isCheckingPendingPayment]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || customerView !== "menu") {
+      return;
+    }
+
+    if (step === "details" || step === "payment") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [step, customerView]);
+
+  useEffect(() => {
     if (step !== "details") {
       return;
     }
@@ -942,19 +952,13 @@ export default function CustomerPage() {
           className="row customer-header-row"
           style={{ justifyContent: "space-between", alignItems: "center" }}
         >
-          <div className="row" style={{ alignItems: "center" }}>
-            <button
-              className="btn secondary customer-nav-toggle customer-ghost-btn"
-              onClick={() => setCustomerDrawerOpen(true)}
-              aria-label="Open customer menu"
-            >
-              {"\u2630"}
-            </button>
-            <div className="customer-brand-block">
-              <p className="customer-brand-eyebrow">Curated Daily Kitchen</p>
-              <h1>MS Kitchen Menu</h1>
-            </div>
-          </div>
+          <button
+            className="btn secondary customer-nav-toggle customer-ghost-btn"
+            onClick={() => setCustomerDrawerOpen(true)}
+            aria-label="Open customer menu"
+          >
+            {"\u2630"}
+          </button>
         </div>
 
         {customerView === "menu" && (
@@ -966,16 +970,19 @@ export default function CustomerPage() {
                 className="customer-hero-image"
               />
             </div>
-            <div className="customer-hero-stats">
-              <div className="customer-stat-card">
-                <span>Date</span>
-                <strong>
-                  {menuDateLabel ? formatDateLabel(menuDateLabel) : "Today"}
-                </strong>
-              </div>
-              <div className="customer-stat-card">
-                <span>Meal Type</span>
-                <strong>{menuMealLabel || "Not published"}</strong>
+            <div className="customer-hero-meta">
+              <p className="customer-brand-eyebrow">Curated Daily Kitchen</p>
+              <div className="customer-hero-meta-row">
+                <div className="customer-hero-chip">
+                  <span>Date</span>
+                  <strong>
+                    {menuDateLabel ? formatDateLabel(menuDateLabel) : "Today"}
+                  </strong>
+                </div>
+                <div className="customer-hero-chip">
+                  <span>Meal</span>
+                  <strong>{menuMealLabel || "Not published"}</strong>
+                </div>
               </div>
             </div>
           </section>
