@@ -577,7 +577,7 @@ a {
 }
 
 .customer-shell {
-  padding-top: 0;
+  padding-top: 8px;
   padding-bottom: 32px;
 }
 
@@ -597,8 +597,8 @@ a {
 .customer-hero {
   display: block;
   position: relative;
-  padding: 10px;
-  padding-top: 10px;
+  padding: 12px;
+  padding-top: 8px;
   border-radius: 24px;
   border: 1px solid rgba(104, 82, 46, 0.12);
   background:
@@ -608,33 +608,29 @@ a {
 }
 
 .customer-hero-toggle {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 2;
-  margin: 0;
+  margin-bottom: 6px;
 }
 
 .customer-hero-main {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .customer-hero-image-wrap {
-  min-height: 148px;
+  min-height: 160px;
   border-radius: 20px;
   overflow: hidden;
   background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(247,250,247,0.92));
   border: 1px solid rgba(104, 82, 46, 0.08);
   display: grid;
   place-items: center;
-  padding: 6px 6px 4px;
+  padding: 8px;
 }
 
 .customer-hero-image {
   width: 100%;
   height: 100%;
-  max-height: 176px;
+  max-height: 190px;
   object-fit: contain;
   display: block;
 }
@@ -870,12 +866,12 @@ a {
 
 @media (max-width: 768px) {
   .container {
-    padding: 8px 12px 16px;
+    padding: 16px;
     width: 100%;
   }
 
   .customer-shell {
-    padding-top: 0;
+    padding-top: 6px;
     padding-bottom: 24px;
   }
 
@@ -899,21 +895,16 @@ a {
   }
 
   .customer-hero {
-    padding: 8px;
+    padding: 10px;
   }
 
   .customer-hero-image-wrap {
-    min-height: 126px;
-    padding: 4px;
+    min-height: 138px;
+    padding: 6px;
   }
 
   .customer-hero-image {
-    max-height: 138px;
-  }
-
-  .customer-hero-toggle {
-    top: 8px;
-    left: 8px;
+    max-height: 150px;
   }
 
   .customer-hero-meta {
