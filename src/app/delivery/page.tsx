@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  orderBy,
   query,
   updateDoc,
   where,
@@ -16,6 +17,15 @@ import { loginDelivery, normalizePhone } from "@/lib/auth";
 import { clearSession, getSession, saveSession } from "@/lib/session";
 
 type Mode = "loading" | "login" | "dashboard";
+type PublishedMenu = {
+  id: string;
+  date: string;
+  mealType?: string;
+  isArchived?: boolean;
+  ordersStopped?: boolean;
+  createdAt?: any;
+};
+
 type Order = {
   id: string;
   orderId?: string;
@@ -33,6 +43,7 @@ type Order = {
   total?: number;
   mealType?: string;
   publishedDate?: string;
+  publishedMenuId?: string;
   createdAt?: any;
   deliveredAt?: string;
   undeliveredAt?: string;
@@ -69,6 +80,7 @@ export default function DeliveryPage() {
     password: "",
   });
   const [orders, setOrders] = useState<Order[]>([]);
+  const [publishedMenus, setPublishedMenus] = useState<PublishedMenu[]>([]);
   const [openOrderActions, setOpenOrderActions] = useState<string | null>(null);
   const [agentInfo, setAgentInfo] = useState<{
     name: string;
@@ -124,6 +136,17 @@ export default function DeliveryPage() {
       collection(db, "orders"),
       where("assignedAgentId", "==", username)
     );
+    const unsubMenus = onSnapshot(
+      query(collection(db, "published_menus"), orderBy("createdAt", "desc")),
+      (snap) => {
+        setPublishedMenus(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+          }))
+        );
+      }
+    );
     const unsub = onSnapshot(q, (snap) => {
       setOrders(
         snap.docs.map((docSnap) => ({
@@ -134,6 +157,7 @@ export default function DeliveryPage() {
     });
     return () => {
       unsub();
+      unsubMenus();
       unsubAssignments();
     };
   }, [mode]);
@@ -175,9 +199,29 @@ export default function DeliveryPage() {
     setMode("login");
   }
 
+  const currentPublishedMenu = useMemo(
+    () => publishedMenus.find((menu) => !menu.isArchived && !menu.ordersStopped) || null,
+    [publishedMenus]
+  );
+
+  const currentPublishedMenuKey = useMemo(() => {
+    if (!currentPublishedMenu) return "";
+    return `${currentPublishedMenu.date}__${currentPublishedMenu.mealType || "Unknown"}`;
+  }, [currentPublishedMenu]);
+
+  const currentMenuOrders = useMemo(() => {
+    if (!currentPublishedMenu) return [];
+    return orders.filter((order) => {
+      if (order.publishedMenuId) {
+        return order.publishedMenuId === currentPublishedMenu.id;
+      }
+      return `${getOrderDateKey(order)}__${order.mealType || "Unknown"}` === currentPublishedMenuKey;
+    });
+  }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
+
   const activeOrders = useMemo(
-    () => orders.filter((order) => !order.status || order.status === "active"),
-    [orders]
+    () => currentMenuOrders.filter((order) => !order.status || order.status === "active"),
+    [currentMenuOrders]
   );
 
   const orderSummary = useMemo(() => {
@@ -410,6 +454,14 @@ export default function DeliveryPage() {
 
             {tab === "summary" && (
               <div className="stack">
+                <div className="card">
+                  Current Menu:{" "}
+                  {currentPublishedMenu
+                    ? `${formatOrderDate(currentPublishedMenu.date)} - ${
+                        currentPublishedMenu.mealType || "Unknown"
+                      }`
+                    : "No live published menu"}
+                </div>
                 <div className="card">Active Orders: {orderSummary.totalOrders}</div>
                 <div className="card">
                   <strong>Active Orders by Area</strong>
@@ -436,6 +488,14 @@ export default function DeliveryPage() {
 
             {tab === "orders" && (
               <div className="stack">
+                <div className="card">
+                  Current Menu:{" "}
+                  {currentPublishedMenu
+                    ? `${formatOrderDate(currentPublishedMenu.date)} - ${
+                        currentPublishedMenu.mealType || "Unknown"
+                      }`
+                    : "No live published menu"}
+                </div>
                 {sortedActiveOrders.length === 0 && <p>No active orders assigned.</p>}
                 {sortedActiveOrders.map((order) => {
                   const distance =
