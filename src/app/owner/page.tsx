@@ -119,6 +119,7 @@ type DeliveryAgent = {
 type ServiceArea = {
   id: string;
   name: string;
+  deliveryFee?: number;
 };
 
 type AreaAssignment = {
@@ -294,6 +295,8 @@ export default function OwnerPage() {
   });
   const [publishError, setPublishError] = useState("");
   const [areaForm, setAreaForm] = useState("");
+  const [areaFeeForm, setAreaFeeForm] = useState("");
+  const [areaSearch, setAreaSearch] = useState("");
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
     "summary" | "activeOrders" | "pickupPayments"
@@ -388,6 +391,12 @@ export default function OwnerPage() {
   const areaOptions = serviceAreas.length
     ? serviceAreas.map((area) => area.name)
     : fallbackAreas;
+
+  const filteredServiceAreas = useMemo(() => {
+    const search = areaSearch.trim().toLowerCase();
+    if (!search) return serviceAreas;
+    return serviceAreas.filter((area) => area.name.toLowerCase().includes(search));
+  }, [serviceAreas, areaSearch]);
 
   const agentNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -760,15 +769,23 @@ export default function OwnerPage() {
     if (!areaForm.trim()) return;
     await addDoc(collection(db, "service_areas"), {
       name: areaForm.trim(),
+      deliveryFee: Number(areaFeeForm || 0),
       createdAt: serverTimestamp(),
     });
     setAreaForm("");
+    setAreaFeeForm("");
   }
 
   async function deleteServiceArea(id: string) {
     const confirmed = window.confirm("Delete this area?");
     if (!confirmed) return;
     await deleteDoc(doc(db, "service_areas", id));
+  }
+
+  async function updateServiceAreaFee(id: string, deliveryFee: number) {
+    await updateDoc(doc(db, "service_areas", id), {
+      deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
+    });
   }
 
   function runReport() {
@@ -3570,14 +3587,47 @@ export default function OwnerPage() {
                   value={areaForm}
                   onChange={(e) => setAreaForm(e.target.value)}
                 />
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="Delivery fee"
+                  value={areaFeeForm}
+                  onChange={(e) => setAreaFeeForm(e.target.value)}
+                  style={{ maxWidth: 150 }}
+                />
                 <button className="btn" onClick={addServiceArea}>
                   Add Area
                 </button>
               </div>
-              {serviceAreas.length === 0 && <p>No areas yet</p>}
-              {serviceAreas.map((area) => (
-                <div key={area.id} className="row list-card">
-                  <div style={{ flex: 1 }}>{area.name}</div>
+              <input
+                className="input"
+                placeholder="Search area"
+                value={areaSearch}
+                onChange={(e) => setAreaSearch(e.target.value)}
+              />
+              {filteredServiceAreas.length === 0 && <p>No areas found</p>}
+              {filteredServiceAreas.map((area) => (
+                <div
+                  key={area.id}
+                  className="row list-card"
+                  style={{ alignItems: "center", gap: 10 }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{area.name}</div>
+                  </div>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    defaultValue={String(Number(area.deliveryFee || 0))}
+                    onBlur={(e) =>
+                      updateServiceAreaFee(area.id, Number(e.target.value || 0))
+                    }
+                    style={{ width: 130 }}
+                  />
                   <button
                     className="btn secondary"
                     onClick={() => deleteServiceArea(area.id)}

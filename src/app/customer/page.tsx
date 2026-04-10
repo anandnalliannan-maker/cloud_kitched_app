@@ -40,10 +40,18 @@ type PaymentSummary = {
     qty: number;
     imageUrl?: string;
   }[];
+  itemsTotal: number;
+  deliveryFee: number;
   total: number;
   deliveryType: "delivery" | "pickup" | "";
   location: { lat: number; lng: number } | null;
   addressText?: string;
+};
+
+type ServiceAreaOption = {
+  id: string;
+  name: string;
+  deliveryFee?: number;
 };
 
 type CustomerOrder = {
@@ -86,7 +94,7 @@ export default function CustomerPage() {
   const [items, setItems] = useState<
     (CartItem & { description: string; remaining: number })[]
   >([]);
-  const [serviceAreas, setServiceAreas] = useState<string[]>([]);
+  const [serviceAreas, setServiceAreas] = useState<ServiceAreaOption[]>([]);
   const [menuDateLabel, setMenuDateLabel] = useState("");
   const [menuMealLabel, setMenuMealLabel] = useState("");
   const [publishedMenuId, setPublishedMenuId] = useState<string | null>(null);
@@ -532,16 +540,35 @@ export default function CustomerPage() {
     const unsub = onSnapshot(
       query(collection(db, "service_areas"), orderBy("name", "asc")),
       (snap) => {
-        setServiceAreas(snap.docs.map((docSnap) => docSnap.data().name as string));
+        setServiceAreas(
+          snap.docs.map((docSnap) => {
+            const data = docSnap.data() as any;
+            return {
+              id: docSnap.id,
+              name: data.name || "",
+              deliveryFee: Number(data.deliveryFee || 0),
+            };
+          })
+        );
       }
     );
     return () => unsub();
   }, []);
 
-  const total = useMemo(
+  const itemsTotal = useMemo(
     () => items.reduce((sum, item) => sum + item.price * item.qty, 0),
     [items]
   );
+
+  const selectedAreaConfig = useMemo(
+    () => serviceAreas.find((area) => area.name === form.area) || null,
+    [serviceAreas, form.area]
+  );
+
+  const selectedDeliveryFee =
+    deliveryType === "delivery" ? Number(selectedAreaConfig?.deliveryFee || 0) : 0;
+
+  const total = itemsTotal + selectedDeliveryFee;
 
   const hasItems = total > 0;
 
@@ -770,6 +797,8 @@ export default function CustomerPage() {
           qty: item.qty,
           imageUrl: item.imageUrl || "",
         })),
+        itemsTotal,
+        deliveryFee: selectedDeliveryFee,
         total,
         deliveryType,
         location,
@@ -855,6 +884,8 @@ export default function CustomerPage() {
             qty: item.qty,
             price: item.price,
           })),
+          itemsTotal,
+          deliveryFee: selectedDeliveryFee,
           total,
           assignedAgentId,
           assignedAgentName,
@@ -1369,8 +1400,8 @@ export default function CustomerPage() {
                   >
                     <option value="">Select area</option>
                     {serviceAreas.map((area) => (
-                      <option key={area} value={area}>
-                        {area}
+                      <option key={area.id} value={area.name}>
+                        {area.name}
                       </option>
                     ))}
                   </select>
@@ -1517,11 +1548,15 @@ export default function CustomerPage() {
                 <div className="payment-meta-compact">
                   <div className="payment-meta-compact-item">
                     <span>Items Total</span>
-                    <strong>INR {paymentSummary?.total ?? 0}</strong>
+                    <strong>INR {paymentSummary?.itemsTotal ?? 0}</strong>
                   </div>
                   <div className="payment-meta-compact-item">
                     <span>Delivery Charge</span>
-                    <strong>Included</strong>
+                    <strong>
+                      {paymentSummary?.deliveryFee
+                        ? `INR ${paymentSummary.deliveryFee}`
+                        : "Included"}
+                    </strong>
                   </div>
                   <div className="payment-meta-compact-item">
                     <span>Delivery</span>
