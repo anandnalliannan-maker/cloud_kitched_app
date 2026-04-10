@@ -27,13 +27,42 @@ type Order = {
   deliveryType?: string;
   location?: { lat: number; lng: number };
   assignedAgentId?: string;
+  assignedAgentName?: string;
   status?: string;
   undeliveredReason?: string;
+  total?: number;
+  mealType?: string;
+  publishedDate?: string;
+  createdAt?: any;
+  deliveredAt?: string;
+  undeliveredAt?: string;
 };
+
+function formatOrderDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getOrderDateKey(order: Order) {
+  if (order.publishedDate) return order.publishedDate;
+  if (order.createdAt?.seconds) {
+    return new Date(order.createdAt.seconds * 1000).toISOString().slice(0, 10);
+  }
+  if (typeof order.createdAt === "string") {
+    return order.createdAt.slice(0, 10);
+  }
+  return "";
+}
 
 export default function DeliveryPage() {
   const [mode, setMode] = useState<Mode>("loading");
-  const [tab, setTab] = useState<"summary" | "orders" | "history">("summary");
+  const [tab, setTab] = useState<"summary" | "orders" | "dashboard">("summary");
   const [error, setError] = useState("");
   const [form, setForm] = useState({
     username: "",
@@ -50,6 +79,10 @@ export default function DeliveryPage() {
     lng: number;
   } | null>(null);
   const [locError, setLocError] = useState("");
+  const [historyFilters, setHistoryFilters] = useState({
+    date: "",
+    area: "",
+  });
 
   useEffect(() => {
     const session = getSession();
@@ -142,32 +175,93 @@ export default function DeliveryPage() {
     setMode("login");
   }
 
-  const orderSummary = useMemo(() => {
-    const activeOrders = orders.filter((order) => order.status !== "closed");
-    const totalOrders = activeOrders.length;
-    const itemCounts: Record<string, number> = {};
-    activeOrders.forEach((order) => {
-      (order.items || []).forEach((item) => {
-        itemCounts[item.name] = (itemCounts[item.name] || 0) + item.qty;
-      });
-    });
-    return { totalOrders, itemCounts };
-  }, [orders]);
-
   const activeOrders = useMemo(
     () => orders.filter((order) => !order.status || order.status === "active"),
     [orders]
   );
 
-  const deliveredOrders = useMemo(
-    () => orders.filter((order) => order.status === "closed"),
+  const orderSummary = useMemo(() => {
+    const totalOrders = activeOrders.length;
+    const itemCounts: Record<string, number> = {};
+    const areaCounts: Record<string, number> = {};
+    activeOrders.forEach((order) => {
+      const area = order.area || "Unknown";
+      areaCounts[area] = (areaCounts[area] || 0) + 1;
+      (order.items || []).forEach((item) => {
+        itemCounts[item.name] = (itemCounts[item.name] || 0) + item.qty;
+      });
+    });
+    return { totalOrders, itemCounts, areaCounts };
+  }, [activeOrders]);
+
+  const historicalOrders = useMemo(
+    () =>
+      orders.filter(
+        (order) => order.status === "closed" || order.status === "undelivered"
+      ),
     [orders]
   );
 
-  const undeliveredOrders = useMemo(
-    () => orders.filter((order) => order.status === "undelivered"),
-    [orders]
+  const historyDateOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(historicalOrders.map((order) => getOrderDateKey(order)).filter(Boolean))
+      ).sort((a, b) => b.localeCompare(a)),
+    [historicalOrders]
   );
+
+  const historyAreaOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(historicalOrders.map((order) => order.area || "Unknown"))
+      ).sort((a, b) => a.localeCompare(b)),
+    [historicalOrders]
+  );
+
+  const filteredHistoryOrders = useMemo(
+    () =>
+      historicalOrders.filter((order) => {
+        const matchesDate =
+          !historyFilters.date || getOrderDateKey(order) === historyFilters.date;
+        const matchesArea =
+          !historyFilters.area || (order.area || "Unknown") === historyFilters.area;
+        return matchesDate && matchesArea;
+      }),
+    [historicalOrders, historyFilters]
+  );
+
+  const historySummary = useMemo(() => {
+    const byDate: Record<string, { delivered: number; undelivered: number }> = {};
+    const byArea: Record<string, { delivered: number; undelivered: number }> = {};
+
+    filteredHistoryOrders.forEach((order) => {
+      const dateKey = getOrderDateKey(order) || "Unknown";
+      const areaKey = order.area || "Unknown";
+      const isDelivered = order.status === "closed";
+
+      byDate[dateKey] ||= { delivered: 0, undelivered: 0 };
+      byArea[areaKey] ||= { delivered: 0, undelivered: 0 };
+
+      if (isDelivered) {
+        byDate[dateKey].delivered += 1;
+        byArea[areaKey].delivered += 1;
+      } else {
+        byDate[dateKey].undelivered += 1;
+        byArea[areaKey].undelivered += 1;
+      }
+    });
+
+    return {
+      total: filteredHistoryOrders.length,
+      delivered: filteredHistoryOrders.filter((order) => order.status === "closed")
+        .length,
+      undelivered: filteredHistoryOrders.filter(
+        (order) => order.status === "undelivered"
+      ).length,
+      byDate: Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])),
+      byArea: Object.entries(byArea).sort((a, b) => a[0].localeCompare(b[0])),
+    };
+  }, [filteredHistoryOrders]);
 
   function haversineKm(
     lat1: number,
@@ -301,13 +395,13 @@ export default function DeliveryPage() {
                 className={`btn ${tab === "orders" ? "" : "secondary"}`}
                 onClick={() => setTab("orders")}
               >
-                Orders Assigned
+                Active Orders
               </button>
               <button
-                className={`btn ${tab === "history" ? "" : "secondary"}`}
-                onClick={() => setTab("history")}
+                className={`btn ${tab === "dashboard" ? "" : "secondary"}`}
+                onClick={() => setTab("dashboard")}
               >
-                Delivery History
+                Dashboard
               </button>
               <button className="btn secondary" onClick={handleLogout}>
                 Logout
@@ -316,27 +410,33 @@ export default function DeliveryPage() {
 
             {tab === "summary" && (
               <div className="stack">
-                <div className="card">Orders Assigned: {orderSummary.totalOrders}</div>
+                <div className="card">Active Orders: {orderSummary.totalOrders}</div>
                 <div className="card">
-                  <strong>Items Count</strong>
-                  {Object.keys(orderSummary.itemCounts).length === 0 && (
-                    <p>No items</p>
-                  )}
-                  {Object.entries(orderSummary.itemCounts).map(
-                    ([name, count]) => (
-                      <div key={name} className="row">
-                        <div style={{ flex: 1 }}>{name}</div>
-                        <div>{count}</div>
-                      </div>
-                    )
-                  )}
+                  <strong>Active Orders by Area</strong>
+                  {Object.keys(orderSummary.areaCounts).length === 0 && <p>No active orders.</p>}
+                  {Object.entries(orderSummary.areaCounts).map(([name, count]) => (
+                    <div key={name} className="row">
+                      <div style={{ flex: 1 }}>{name}</div>
+                      <div>{count}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="card">
+                  <strong>Active Items Count</strong>
+                  {Object.keys(orderSummary.itemCounts).length === 0 && <p>No items</p>}
+                  {Object.entries(orderSummary.itemCounts).map(([name, count]) => (
+                    <div key={name} className="row">
+                      <div style={{ flex: 1 }}>{name}</div>
+                      <div>{count}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
             {tab === "orders" && (
               <div className="stack">
-                {sortedActiveOrders.length === 0 && <p>No orders assigned.</p>}
+                {sortedActiveOrders.length === 0 && <p>No active orders assigned.</p>}
                 {sortedActiveOrders.map((order) => {
                   const distance =
                     currentLocation && order.location
@@ -430,49 +530,159 @@ export default function DeliveryPage() {
               </div>
             )}
 
-            {tab === "history" && (
+            {tab === "dashboard" && (
               <div className="stack">
-                {deliveredOrders.length === 0 && <p>No delivered orders.</p>}
-                {deliveredOrders.map((order) => (
-                  <div key={order.id} className="card">
-                    <div className="row" style={{ justifyContent: "space-between" }}>
-                      <div>
-                        {order.customerName || "Customer"} | {order.phone || ""}
-                      </div>
-                      <span className="badge">Delivered</span>
-                    </div>
-                    <div>
-                      Items:{" "}
-                      {order.items
-                        ?.map((item) => `${item.name} x${item.qty}`)
-                        .join(", ") || "Items"}
-                    </div>
-                    <div>Address: {order.address || ""}</div>
-                    <div>Area: {order.area || "Unknown"}</div>
-                  </div>
-                ))}
-                {undeliveredOrders.length > 0 && (
-                  <div className="stack">
-                    <h3>Undelivered</h3>
-                    {undeliveredOrders.map((order) => (
-                      <div key={order.id} className="card">
-                        <div className="row" style={{ justifyContent: "space-between" }}>
-                          <div>
-                            {order.customerName || "Customer"} | {order.phone || ""}
-                          </div>
-                          <span className="badge">Undelivered</span>
-                        </div>
-                        <div>
-                          Items:{" "}
-                          {order.items
-                            ?.map((item) => `${item.name} x${item.qty}`)
-                            .join(", ") || "Items"}
-                        </div>
-                        <div>Address: {order.address || ""}</div>
-                        <div>Area: {order.area || "Unknown"}</div>
-                        <div>Reason: {order.undeliveredReason || "-"}</div>
-                      </div>
+                <div className="row">
+                  <input
+                    className="input"
+                    type="date"
+                    value={historyFilters.date}
+                    onChange={(e) =>
+                      setHistoryFilters((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                    style={{ maxWidth: 220 }}
+                  />
+                  <select
+                    className="input"
+                    value={historyFilters.area}
+                    onChange={(e) =>
+                      setHistoryFilters((prev) => ({ ...prev, area: e.target.value }))
+                    }
+                    style={{ maxWidth: 220 }}
+                  >
+                    <option value="">All areas</option>
+                    {historyAreaOptions.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
                     ))}
+                  </select>
+                  <button
+                    className="btn secondary"
+                    onClick={() => setHistoryFilters({ date: "", area: "" })}
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+
+                <div className="row">
+                  <div className="card" style={{ minWidth: 160 }}>
+                    Total History Orders: {historySummary.total}
+                  </div>
+                  <div className="card" style={{ minWidth: 160 }}>
+                    Delivered: {historySummary.delivered}
+                  </div>
+                  <div className="card" style={{ minWidth: 160 }}>
+                    Undelivered: {historySummary.undelivered}
+                  </div>
+                </div>
+
+                <div className="card stack">
+                  <strong>History by Date</strong>
+                  {historySummary.byDate.length === 0 && <p>No history found.</p>}
+                  {historySummary.byDate.length > 0 && (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Date</th>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Delivered</th>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Undelivered</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historySummary.byDate.map(([date, counts]) => (
+                            <tr key={date}>
+                              <td style={{ padding: "8px 0" }}>
+                                {date ? formatOrderDate(date) : "Unknown"}
+                              </td>
+                              <td style={{ padding: "8px 0" }}>{counts.delivered}</td>
+                              <td style={{ padding: "8px 0" }}>{counts.undelivered}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="card stack">
+                  <strong>History by Area</strong>
+                  {historySummary.byArea.length === 0 && <p>No history found.</p>}
+                  {historySummary.byArea.length > 0 && (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Area</th>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Delivered</th>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Undelivered</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historySummary.byArea.map(([area, counts]) => (
+                            <tr key={area}>
+                              <td style={{ padding: "8px 0" }}>{area}</td>
+                              <td style={{ padding: "8px 0" }}>{counts.delivered}</td>
+                              <td style={{ padding: "8px 0" }}>{counts.undelivered}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="card stack">
+                  <strong>History Orders</strong>
+                  {filteredHistoryOrders.length === 0 && <p>No history orders found.</p>}
+                  {filteredHistoryOrders.length > 0 && (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Date</th>
+                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Customer</th>
+                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Area</th>
+                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Items</th>
+                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Status</th>
+                            <th style={{ textAlign: "left", padding: "8px 0" }}>Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredHistoryOrders.map((order) => (
+                            <tr key={order.id}>
+                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
+                                {formatOrderDate(getOrderDateKey(order))}
+                              </td>
+                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
+                                <div>{order.customerName || "Customer"}</div>
+                                <small>{order.phone || ""}</small>
+                              </td>
+                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
+                                {order.area || "Unknown"}
+                              </td>
+                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
+                                {order.items?.map((item) => `${item.name} x${item.qty}`).join(", ") ||
+                                  "Items"}
+                              </td>
+                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
+                                {order.status === "closed" ? "Delivered" : "Undelivered"}
+                              </td>
+                              <td style={{ padding: "8px 0", verticalAlign: "top" }}>
+                                {order.undeliveredReason || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+                {historyDateOptions.length === 0 && filteredHistoryOrders.length === 0 && (
+                  <div className="card">
+                    History will appear here once this agent completes or marks orders as
+                    undelivered.
                   </div>
                 )}
               </div>
