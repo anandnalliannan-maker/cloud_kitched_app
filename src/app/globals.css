@@ -853,6 +853,21 @@ a {
   font-size: 0.98rem;
 }
 
+.customer-prefill-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.94);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.18);
+}
+
 @keyframes customer-spin {
   from {
     transform: rotate(0deg);
@@ -866,6 +881,12 @@ a {
   .container {
     padding: 16px;
     width: 100%;
+  }
+
+  .customer-prefill-toast {
+    top: 12px;
+    max-width: calc(100vw - 28px);
+    text-align: center;
   }
 
   .customer-shell {

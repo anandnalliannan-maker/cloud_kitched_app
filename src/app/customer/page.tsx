@@ -124,6 +124,7 @@ export default function CustomerPage() {
   const [historyError, setHistoryError] = useState("");
   const [historySearched, setHistorySearched] = useState(false);
   const [customerPrefillNotice, setCustomerPrefillNotice] = useState("");
+  const [customerPrefillPopup, setCustomerPrefillPopup] = useState("");
   const [isPrefillingCustomer, setIsPrefillingCustomer] = useState(false);
   const [pendingPaymentResume, setPendingPaymentResume] = useState<{
     appOrderId: string;
@@ -438,6 +439,18 @@ export default function CustomerPage() {
   }, [step, customerView]);
 
   useEffect(() => {
+    if (!customerPrefillPopup) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setCustomerPrefillPopup("");
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [customerPrefillPopup]);
+
+  useEffect(() => {
     if (step !== "details") {
       return;
     }
@@ -447,6 +460,7 @@ export default function CustomerPage() {
 
     if (digits.length < 10) {
       setCustomerPrefillNotice("");
+      setCustomerPrefillPopup("");
       lastPrefilledPhoneRef.current = "";
       return;
     }
@@ -463,6 +477,7 @@ export default function CustomerPage() {
 
         if (!latestOrder) {
           setCustomerPrefillNotice("");
+          setCustomerPrefillPopup("");
           return;
         }
 
@@ -499,10 +514,12 @@ export default function CustomerPage() {
         }
 
         setCustomerPrefillNotice(
-          "We found your previous order details. You can edit any field before placing this order."
+          "Address loaded"
         );
+        setCustomerPrefillPopup("Address loaded");
       } catch {
         setCustomerPrefillNotice("");
+        setCustomerPrefillPopup("");
       } finally {
         setIsPrefillingCustomer(false);
       }
@@ -1081,6 +1098,12 @@ export default function CustomerPage() {
           </div>
         )}
 
+        {!isPrefillingCustomer && customerPrefillPopup && (
+          <div className="customer-prefill-toast" role="status" aria-live="polite">
+            {customerPrefillPopup}
+          </div>
+        )}
+
         {customerView === "history" && (
           <div className="card stack customer-panel">
             <h2>Order History</h2>
@@ -1276,9 +1299,6 @@ export default function CustomerPage() {
               <small className="customer-success-text">
                 Checking your previous order details...
               </small>
-            )}
-            {!isPrefillingCustomer && customerPrefillNotice && (
-              <small className="customer-success-text">{customerPrefillNotice}</small>
             )}
             <div className="field">
               <label>Name</label>
