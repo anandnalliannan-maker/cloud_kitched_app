@@ -1000,13 +1000,16 @@ export default function CustomerPage() {
           className="row customer-header-row"
           style={{ justifyContent: "space-between", alignItems: "center" }}
         >
-          <button
-            className="btn secondary customer-nav-toggle customer-ghost-btn"
-            onClick={() => setCustomerDrawerOpen(true)}
-            aria-label="Open customer menu"
-          >
-            {"\u2630"}
-          </button>
+          <div className="row customer-header-brand">
+            <button
+              className="btn secondary customer-nav-toggle customer-ghost-btn"
+              onClick={() => setCustomerDrawerOpen(true)}
+              aria-label="Open customer menu"
+            >
+              {"\u2630"}
+            </button>
+            <strong className="customer-header-title">MS KITCHEN</strong>
+          </div>
         </div>
 
         {customerView === "menu" && (

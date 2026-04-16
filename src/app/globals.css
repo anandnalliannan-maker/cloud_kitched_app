@@ -589,6 +589,18 @@ a {
   margin-bottom: 0;
 }
 
+.customer-header-brand {
+  align-items: center;
+  gap: 10px;
+}
+
+.customer-header-title {
+  color: #2f261d;
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  font-weight: 800;
+}
+
 .customer-brand-eyebrow {
   margin-bottom: 4px;
   color: #8a5b2f;
