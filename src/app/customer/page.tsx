@@ -28,6 +28,7 @@ type CartItem = {
   price: number;
   qty: number;
   imageUrl?: string;
+  active?: boolean;
 };
 
 type PaymentSummary = {
@@ -253,20 +254,22 @@ export default function CustomerPage() {
       }
 
       const remainingMap = new Map(
-        (data.remaining || data.items || []).map((item: any) => [
-          item.itemId,
-          item.qty ?? 0,
-        ])
+        (data.remaining || data.items || [])
+          .filter((item: any) => item.active !== false)
+          .map((item: any) => [item.itemId, item.qty ?? 0])
       );
-      const menuItems = (data.items || []).map((item: any) => ({
-        id: item.itemId,
-        name: item.name,
-        price: item.price,
-        qty: 0,
-        description: item.description || "",
-        imageUrl: item.imageUrl || "",
-        remaining: remainingMap.get(item.itemId) ?? 0,
-      }));
+      const menuItems = (data.items || [])
+        .filter((item: any) => item.active !== false)
+        .map((item: any) => ({
+          id: item.itemId,
+          name: item.name,
+          price: item.price,
+          qty: 0,
+          description: item.description || "",
+          imageUrl: item.imageUrl || "",
+          remaining: remainingMap.get(item.itemId) ?? 0,
+          active: item.active !== false,
+        }));
       setItems(menuItems);
       setMenuAvailability("available");
     });
@@ -823,7 +826,7 @@ export default function CustomerPage() {
           const remainingItem = remaining.find(
             (rem: any) => rem.itemId === item.id
           );
-          if (!remainingItem) {
+          if (!remainingItem || remainingItem.active === false) {
             throw new Error(`${item.name} is not available.`);
           }
           if ((remainingItem.qty || 0) < item.qty) {

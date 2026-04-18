@@ -65,6 +65,7 @@ type PublishedMenu = {
     price: number;
     description?: string;
     imageUrl?: string;
+    active?: boolean;
   }[];
   remaining?: {
     itemId: string;
@@ -73,6 +74,7 @@ type PublishedMenu = {
     price: number;
     description?: string;
     imageUrl?: string;
+    active?: boolean;
   }[];
   createdAt?: any;
   isArchived?: boolean;
@@ -668,6 +670,7 @@ export default function OwnerPage() {
         description: item.description || "",
         imageUrl: item.imageUrl || "",
         qty: publishQty[item.id] || 0,
+        active: true,
       }))
       .filter((item) => item.qty > 0);
     if (!items.length) {
@@ -686,28 +689,6 @@ export default function OwnerPage() {
     setPublishQty({});
     setSelectedMenuIds([]);
     setShowPublishForm(false);
-  }
-
-  async function archivePublishedMenu(menu: PublishedMenu) {
-    const confirmed = window.confirm(
-      "Archive this published menu? It will be hidden from customers."
-    );
-    if (!confirmed) return;
-    await updateDoc(doc(db, "published_menus", menu.id), {
-      isArchived: true,
-      archivedAt: serverTimestamp(),
-    });
-  }
-
-  async function stopOrdersForMenu(menu: PublishedMenu) {
-    const confirmed = window.confirm(
-      "Stop orders for this menu? Customers will see it as sold out."
-    );
-    if (!confirmed) return;
-    await updateDoc(doc(db, "published_menus", menu.id), {
-      ordersStopped: true,
-      stoppedAt: serverTimestamp(),
-    });
   }
 
   async function addDeliveryAgent() {
@@ -792,38 +773,49 @@ export default function OwnerPage() {
     setAppliedReportFilters({ ...reportFilters });
   }
 
-  function startEditPublishedMenu(menu: PublishedMenu) {
-    setEditingPublishedMenuId(menu.id);
-    setEditPublishForm({
-      date: formatDateKey(menu.date),
-      mealType: menu.mealType,
+  async function updatePublishedMenuItem(
+    menu: PublishedMenu,
+    itemId: string,
+    updates: { active?: boolean; qty?: number }
+  ) {
+    const items = (menu.items || []).map((item) => {
+      if (item.itemId !== itemId) return { ...item, active: item.active !== false };
+      const nextQty =
+        typeof updates.qty === "number" && Number.isFinite(updates.qty)
+          ? Math.max(0, updates.qty)
+          : item.qty;
+      return {
+        ...item,
+        qty: nextQty,
+        active:
+          typeof updates.active === "boolean" ? updates.active : item.active !== false,
+      };
     });
-    const qty: Record<string, number> = {};
-    (menu.items || []).forEach((item) => {
-      qty[item.itemId] = item.qty;
-    });
-    setEditPublishQty(qty);
-  }
 
-  async function savePublishedMenu() {
-    if (!editingPublishedMenuId) return;
-    const menu = publishedMenus.find((m) => m.id === editingPublishedMenuId);
-    if (!menu) return;
-    const items = (menu.items || []).map((item) => ({
-      ...item,
-      qty: editPublishQty[item.itemId] ?? item.qty,
-    }));
-    await updateDoc(doc(db, "published_menus", editingPublishedMenuId), {
-      date: editPublishForm.date,
-      mealType: editPublishForm.mealType,
+    const remaining = (menu.remaining || menu.items || []).map((item) => {
+      const sourceItem = (menu.items || []).find((menuItem) => menuItem.itemId === item.itemId);
+      const sourceQty = sourceItem?.qty ?? item.qty;
+      const soldQty = Math.max(0, sourceQty - (item.qty || 0));
+      if (item.itemId !== itemId) {
+        return { ...item, active: item.active !== false };
+      }
+      const nextQty =
+        typeof updates.qty === "number" && Number.isFinite(updates.qty)
+          ? Math.max(0, updates.qty)
+          : sourceQty;
+      return {
+        ...item,
+        qty: Math.max(0, nextQty - soldQty),
+        active:
+          typeof updates.active === "boolean" ? updates.active : item.active !== false,
+      };
+    });
+
+    await updateDoc(doc(db, "published_menus", menu.id), {
       items,
-      remaining: items,
+      remaining,
+      updatedAt: serverTimestamp(),
     });
-    setEditingPublishedMenuId(null);
-  }
-
-  function cancelEditPublishedMenu() {
-    setEditingPublishedMenuId(null);
   }
 
   async function saveAreaAssignment(areaName: string, agentIds: string[]) {
@@ -1056,6 +1048,7 @@ export default function OwnerPage() {
     }
 
     const selectedItems = (selectedOwnerMenu.remaining || selectedOwnerMenu.items || [])
+      .filter((item) => item.active !== false)
       .map((item) => ({
         ...item,
         qty: ownerOrderQty[item.itemId] || 0,
@@ -1095,7 +1088,11 @@ export default function OwnerPage() {
           const remainingItem = remaining.find(
             (rem: any) => rem.itemId === item.itemId
           );
-          if (!remainingItem || (remainingItem.qty || 0) < item.qty) {
+          if (
+            !remainingItem ||
+            remainingItem.active === false ||
+            (remainingItem.qty || 0) < item.qty
+          ) {
             throw new Error(`${item.name} is sold out or insufficient.`);
           }
           remainingItem.qty = (remainingItem.qty || 0) - item.qty;
@@ -1201,9 +1198,11 @@ export default function OwnerPage() {
       setOwnerOrderLocError("");
       if (selectedOwnerMenu) {
         const resetQty: Record<string, number> = {};
-        (selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).forEach((item) => {
+        (selectedOwnerMenu.remaining || selectedOwnerMenu.items || [])
+          .filter((item) => item.active !== false)
+          .forEach((item) => {
           resetQty[item.itemId] = 0;
-        });
+          });
         setOwnerOrderQty(resetQty);
       }
     } catch (error: any) {
@@ -1277,9 +1276,11 @@ export default function OwnerPage() {
       return;
     }
     const nextQty: Record<string, number> = {};
-    (selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).forEach((item) => {
+    (selectedOwnerMenu.remaining || selectedOwnerMenu.items || [])
+      .filter((item) => item.active !== false)
+      .forEach((item) => {
       nextQty[item.itemId] = 0;
-    });
+      });
     setOwnerOrderQty(nextQty);
   }, [selectedOwnerMenu]);
 
@@ -2158,67 +2159,48 @@ export default function OwnerPage() {
                     <div className="menu-card-body">
                       <div>
                         {formatDateLabel(menu.date)} - {menu.mealType} (
-                        {menu.items?.length ?? 0} items)
-                      </div>
-                      {menu.ordersStopped && (
-                        <small style={{ color: "crimson", fontWeight: 600 }}>
-                          Orders Stopped (Sold Out)
-                        </small>
-                      )}
-                      <div>
-                        {menu.items?.length ? (
-                          menu.items.map((item) => (
-                            <small key={item.itemId} style={{ display: "block" }}>
-                              {item.name} x{item.qty}
-                            </small>
-                          ))
-                        ) : (
-                          <small>No items</small>
-                        )}
-                      </div>
-                    </div>
-                    <div className="menu-card-actions">
-                      <button
-                        className="btn secondary"
-                        onClick={() => startEditPublishedMenu(menu)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn secondary"
-                        onClick={() => stopOrdersForMenu(menu)}
-                        disabled={menu.ordersStopped}
-                      >
-                        {menu.ordersStopped ? "Orders Stopped" : "Stop Orders"}
-                      </button>
-                      <button
-                        className="btn secondary"
-                        onClick={() => archivePublishedMenu(menu)}
-                      >
-                        Archive
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              <h3>Archived Menus</h3>
-              {publishedMenus.filter((menu) => menu.isArchived).length === 0 && (
-                <p>No archived menus</p>
-              )}
-              {publishedMenus
-                .filter((menu) => menu.isArchived)
-                .map((menu) => (
-                  <div key={menu.id} className="row list-card">
-                    <div style={{ flex: 1 }}>
-                      <div>
-                        {formatDateLabel(menu.date)} - {menu.mealType} (
-                        {menu.items?.length ?? 0} items)
+                        {(menu.items || []).filter((item) => item.active !== false).length} active
+                        )
                       </div>
                       <div>
                         {menu.items?.length ? (
                           menu.items.map((item) => (
-                            <small key={item.itemId} style={{ display: "block" }}>
-                              {item.name} x{item.qty}
-                            </small>
+                            <div
+                              key={item.itemId}
+                              className="row"
+                              style={{ alignItems: "center", gap: 10, marginTop: 8 }}
+                            >
+                              <div style={{ flex: 1 }}>
+                                <small style={{ display: "block", fontWeight: 600 }}>
+                                  {item.name}
+                                </small>
+                                <small style={{ color: item.active === false ? "crimson" : undefined }}>
+                                  {item.active === false ? "Disabled" : "Enabled"} • Qty {item.qty}
+                                </small>
+                              </div>
+                              <input
+                                className="input"
+                                type="number"
+                                min={0}
+                                defaultValue={String(item.qty)}
+                                onBlur={(e) =>
+                                  updatePublishedMenuItem(menu, item.itemId, {
+                                    qty: Number(e.target.value || 0),
+                                  })
+                                }
+                                style={{ width: 92 }}
+                              />
+                              <button
+                                className="btn secondary"
+                                onClick={() =>
+                                  updatePublishedMenuItem(menu, item.itemId, {
+                                    active: item.active === false,
+                                  })
+                                }
+                              >
+                                {item.active === false ? "Enable" : "Disable"}
+                              </button>
+                            </div>
                           ))
                         ) : (
                           <small>No items</small>
@@ -2227,72 +2209,6 @@ export default function OwnerPage() {
                     </div>
                   </div>
                 ))}
-              {editingPublishedMenuId && (
-                <div className="card stack">
-                  <h3>Edit Published Menu</h3>
-                  <div className="row">
-                    <input
-                      className="input"
-                      type="date"
-                      value={editPublishForm.date}
-                      onChange={(e) =>
-                        setEditPublishForm({
-                          ...editPublishForm,
-                          date: e.target.value,
-                        })
-                      }
-                    />
-                    <select
-                      className="select"
-                      value={editPublishForm.mealType}
-                      onChange={(e) =>
-                        setEditPublishForm({
-                          ...editPublishForm,
-                          mealType: e.target.value,
-                        })
-                      }
-                    >
-                      {mealTypes.map((meal) => (
-                        <option key={meal} value={meal}>
-                          {meal}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {publishedMenus
-                    .find((menu) => menu.id === editingPublishedMenuId)
-                    ?.items?.map((item) => (
-                      <div key={item.itemId} className="row">
-                        <div style={{ flex: 1 }}>
-                          {item.name} - INR {item.price}
-                        </div>
-                        <input
-                          className="input"
-                          type="number"
-                          min={0}
-                          value={editPublishQty[item.itemId] ?? item.qty}
-                          onChange={(e) =>
-                            setEditPublishQty({
-                              ...editPublishQty,
-                              [item.itemId]: Number(e.target.value),
-                            })
-                          }
-                        />
-                      </div>
-                    ))}
-                  <div className="row">
-                    <button className="btn" onClick={savePublishedMenu}>
-                      Save
-                    </button>
-                    <button
-                      className="btn secondary"
-                      onClick={cancelEditPublishedMenu}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -2336,7 +2252,9 @@ export default function OwnerPage() {
                       {formatDateLabel(selectedOwnerMenu.date)} -{" "}
                       {selectedOwnerMenu.mealType}
                     </strong>
-                    {(selectedOwnerMenu.remaining || selectedOwnerMenu.items || []).map(
+                    {(selectedOwnerMenu.remaining || selectedOwnerMenu.items || [])
+                      .filter((item) => item.active !== false)
+                      .map(
                       (item) => (
                         <div key={item.itemId} className="row">
                           <div style={{ flex: 1 }}>
