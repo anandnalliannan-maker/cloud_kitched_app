@@ -300,6 +300,7 @@ export default function OwnerPage() {
     password: "",
   });
   const [publishError, setPublishError] = useState("");
+  const [publishedMenuNotice, setPublishedMenuNotice] = useState("");
   const [areaForm, setAreaForm] = useState("");
   const [areaFeeForm, setAreaFeeForm] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
@@ -378,6 +379,15 @@ export default function OwnerPage() {
   const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
   const ownerOrderAutocompleteRef =
     useRef<google.maps.places.Autocomplete | null>(null);
+
+  function showPublishedMenuNotice(message: string) {
+    setPublishedMenuNotice(message);
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        setPublishedMenuNotice((current) => (current === message ? "" : current));
+      }, 1800);
+    }
+  }
 
   async function uploadMenuImage(file: File) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -830,6 +840,7 @@ export default function OwnerPage() {
       delete next[draftKey];
       return next;
     });
+    showPublishedMenuNotice("Quantity updated");
   }
 
   async function saveAreaAssignment(areaName: string, agentIds: string[]) {
@@ -2163,6 +2174,11 @@ export default function OwnerPage() {
           {tab === "publish" && (
             <div className="card stack">
               <h2>Published Menu</h2>
+              {publishedMenuNotice && (
+                <small style={{ color: "green", fontWeight: 600 }}>
+                  {publishedMenuNotice}
+                </small>
+              )}
               {publishedMenus.filter((menu) => !menu.isArchived).length === 0 && (
                 <p>No menus published</p>
               )}
