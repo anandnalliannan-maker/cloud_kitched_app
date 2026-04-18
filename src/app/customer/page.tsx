@@ -1595,21 +1595,22 @@ export default function CustomerPage() {
 
             <div className="payment-action-box">
               <div className="payment-action-copy">
-                <strong>Proceed to payment</strong>
-                <p>Complete payment to confirm this order.</p>
+                <strong>
+                  {paymentSummary?.deliveryType === "pickup"
+                    ? "Store payment"
+                    : "Proceed to payment"}
+                </strong>
+                <p>
+                  {paymentSummary?.deliveryType === "pickup"
+                    ? "Self pickup orders must be collected and paid for at the store."
+                    : "Complete payment to confirm this order."}
+                </p>
               </div>
             </div>
             {paymentSummary?.deliveryType === "pickup" ? (
               <div className="row payment-button-row">
                 <button
                   className="btn customer-primary-btn"
-                  onClick={startOnlinePayment}
-                  disabled={isProcessingPayment}
-                >
-                  Pay using UPI
-                </button>
-                <button
-                  className="btn secondary customer-ghost-btn"
                   onClick={confirmPayAtOutlet}
                   disabled={isProcessingPayment}
                 >
@@ -1628,15 +1629,17 @@ export default function CustomerPage() {
             {isProcessingPayment && (
               <p className="payment-status-text">Redirecting to ICICI payment gateway...</p>
             )}
-            {!isProcessingPayment && (
+            {!isProcessingPayment && paymentSummary?.deliveryType !== "pickup" && (
               <p className="payment-status-text">
                 You will be redirected to ICICI to complete payment securely.
               </p>
             )}
-            <p className="payment-status-text">
-              If Google Pay does not return to the browser automatically, reopen this page
-              and use the payment status check.
-            </p>
+            {paymentSummary?.deliveryType !== "pickup" && (
+              <p className="payment-status-text">
+                If Google Pay does not return to the browser automatically, reopen this page
+                and use the payment status check.
+              </p>
+            )}
           </div>
         )}
 
