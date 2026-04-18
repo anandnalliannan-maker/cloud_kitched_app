@@ -1344,6 +1344,7 @@ export default function OwnerPage() {
       totalItems: 0,
       totalValue: 0,
       itemCounts: {} as Record<string, number>,
+      itemPairCounts: {} as Record<string, number>,
       byArea: {} as Record<string, number>,
       byDelivery: {} as Record<string, number>,
       byAgent: {} as Record<string, number>,
@@ -1358,6 +1359,8 @@ export default function OwnerPage() {
       summary.totalValue += order.total || 0;
       (order.items || []).forEach((item) => {
         summary.itemCounts[item.name] = (summary.itemCounts[item.name] || 0) + item.qty;
+        const pairKey = `${item.name}__${item.qty}`;
+        summary.itemPairCounts[pairKey] = (summary.itemPairCounts[pairKey] || 0) + 1;
       });
       const area = order.area || "Unknown";
       summary.byArea[area] = (summary.byArea[area] || 0) + 1;
@@ -1423,6 +1426,27 @@ export default function OwnerPage() {
           count,
         }))
         .sort((a, b) => b.count - a.count || a.itemName.localeCompare(b.itemName)),
+    [currentOrdersSummary]
+  );
+
+  const activeItemPairRows = useMemo(
+    () =>
+      Object.entries(currentOrdersSummary.itemPairCounts)
+        .map(([pairKey, count]) => {
+          const [itemName, packQtyRaw] = pairKey.split("__");
+          return {
+            key: pairKey,
+            itemName,
+            packQty: Number(packQtyRaw || 0),
+            count,
+          };
+        })
+        .sort(
+          (a, b) =>
+            a.itemName.localeCompare(b.itemName) ||
+            a.packQty - b.packQty ||
+            b.count - a.count
+        ),
     [currentOrdersSummary]
   );
 
@@ -2744,6 +2768,34 @@ export default function OwnerPage() {
                               </tbody>
                             </table>
                           </div>
+                        </div>
+                      </div>
+                      <div className="card">
+                        <h3>Item Packing Pairs</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact">
+                            <thead>
+                              <tr>
+                                <th>Item</th>
+                                <th>Pack Qty</th>
+                                <th>Orders</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activeItemPairRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={3}>No packing data</td>
+                                </tr>
+                              )}
+                              {activeItemPairRows.map((row) => (
+                                <tr key={row.key}>
+                                  <td>{row.itemName}</td>
+                                  <td>{row.packQty}</td>
+                                  <td>{row.count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                       <div className="card">
