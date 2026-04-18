@@ -213,6 +213,14 @@ function getPublishedItemDraftKey(menuId: string, itemId: string) {
   return `${menuId}__${itemId}`;
 }
 
+function getWhatsAppPhone(rawPhone?: string) {
+  const normalized = normalizePhone(String(rawPhone || ""));
+  const digits = normalized.replace(/\D/g, "");
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.startsWith("91")) return digits;
+  return digits;
+}
+
 function getOrderStatusLabel(order: Order) {
   if (order.status === "closed") {
     return order.deliveryType === "pickup" ? "Picked Up" : "Delivered";
@@ -327,6 +335,7 @@ export default function OwnerPage() {
   const [activeOrderAreaFilter, setActiveOrderAreaFilter] = useState("All");
   const [activeOrderDeliveryFilter, setActiveOrderDeliveryFilter] = useState("All");
   const [activeOrderStatusFilter, setActiveOrderStatusFilter] = useState("All");
+  const [placedNotificationSentIds, setPlacedNotificationSentIds] = useState<string[]>([]);
   const [editingActiveOrderId, setEditingActiveOrderId] = useState<string | null>(
     null
   );
@@ -1003,6 +1012,29 @@ export default function OwnerPage() {
     });
   }
 
+  function buildPlacedNotificationMessage(order: Order) {
+    const itemText =
+      (order.items || []).length > 0
+        ? (order.items || [])
+            .map((item) => `${item.name} x${item.qty}`)
+            .join(", ")
+        : "your items";
+    return `Thanks for your order. Your order ID ${order.orderId || order.id} containing ${itemText} is placed and getting packed. - MS Kitchen`;
+  }
+
+  function openPlacedNotification(order: Order) {
+    const phone = getWhatsAppPhone(order.phone);
+    if (!phone) {
+      window.alert("Customer phone number is missing or invalid.");
+      return;
+    }
+    const text = encodeURIComponent(buildPlacedNotificationMessage(order));
+    window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener,noreferrer");
+    setPlacedNotificationSentIds((prev) =>
+      prev.includes(order.id) ? prev : [...prev, order.id]
+    );
+  }
+
   async function saveActiveOrderEdits(order: Order) {
     setActiveOrderEditError("");
     if (!activeOrderEditForm.customerName.trim() || !activeOrderEditForm.phone.trim()) {
@@ -1578,6 +1610,16 @@ export default function OwnerPage() {
     activeOrderDeliveryFilter,
     activeOrderStatusFilter,
   ]);
+
+  const pendingPlacedNotificationOrders = useMemo(
+    () =>
+      filteredActiveOrders.filter(
+        (order) =>
+          Boolean(getWhatsAppPhone(order.phone)) &&
+          !placedNotificationSentIds.includes(order.id)
+      ),
+    [filteredActiveOrders, placedNotificationSentIds]
+  );
 
   return (
     <main className="container">
@@ -2877,6 +2919,32 @@ export default function OwnerPage() {
 
               {historyTab === "activeOrders" && (
                 <div className="stack">
+                  <div className="card stack">
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                      <div>
+                        <strong>Order Placed WhatsApp</strong>
+                        <small className="payments-subtext" style={{ display: "block" }}>
+                          Open one prefilled WhatsApp message per order and send it from your
+                          WhatsApp Web/app.
+                        </small>
+                      </div>
+                      <button
+                        className="btn secondary"
+                        onClick={() => {
+                          if (!pendingPlacedNotificationOrders.length) {
+                            window.alert("No pending WhatsApp notifications in the current list.");
+                            return;
+                          }
+                          openPlacedNotification(pendingPlacedNotificationOrders[0]);
+                        }}
+                      >
+                        Open Next
+                      </button>
+                    </div>
+                    <small className="payments-subtext">
+                      Pending notifications: {pendingPlacedNotificationOrders.length}
+                    </small>
+                  </div>
                   <div className="owner-filters-grid">
                     <input
                       className="input"
@@ -2923,19 +2991,20 @@ export default function OwnerPage() {
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
-                          <tr>
-                            <th>Order ID</th>
-                            <th>Customer</th>
+                            <tr>
+                              <th>Order ID</th>
+                              <th>Customer</th>
                             <th>Phone</th>
                             <th>Delivery Type</th>
                             <th>Area</th>
                             <th>Address</th>
                             <th>Items</th>
                             <th>Delivery Agent</th>
-                            <th>Status</th>
-                            <th>Total Value</th>
-                            <th>Action</th>
-                          </tr>
+                              <th>Status</th>
+                              <th>Total Value</th>
+                              <th>WhatsApp</th>
+                              <th>Action</th>
+                            </tr>
                         </thead>
                         <tbody>
                           {filteredActiveOrders.map((order) => (
@@ -2973,6 +3042,20 @@ export default function OwnerPage() {
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>INR {order.total || 0}</td>
                                 <td>
+                                  <div className="stack" style={{ gap: 6 }}>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() => openPlacedNotification(order)}
+                                      disabled={!getWhatsAppPhone(order.phone)}
+                                    >
+                                      WhatsApp
+                                    </button>
+                                    {placedNotificationSentIds.includes(order.id) && (
+                                      <small className="payments-subtext">Opened</small>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
                                   <button
                                     className="btn secondary btn-compact"
                                     onClick={() => openActiveOrderEditor(order)}
@@ -2983,7 +3066,7 @@ export default function OwnerPage() {
                               </tr>
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={11}>
+                                  <td colSpan={12}>
                                     <div className="order-edit-grid">
                                       <input
                                         className="input"
