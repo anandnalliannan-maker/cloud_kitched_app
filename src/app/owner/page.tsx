@@ -209,6 +209,10 @@ function formatLocationInput(location: any) {
   return String(location);
 }
 
+function getPublishedItemDraftKey(menuId: string, itemId: string) {
+  return `${menuId}__${itemId}`;
+}
+
 function getOrderStatusLabel(order: Order) {
   if (order.status === "closed") {
     return order.deliveryType === "pickup" ? "Picked Up" : "Delivered";
@@ -336,13 +340,6 @@ export default function OwnerPage() {
     location: "",
     assignedAgentId: "",
     status: "active",
-  });
-  const [editingPublishedMenuId, setEditingPublishedMenuId] = useState<
-    string | null
-  >(null);
-  const [editPublishForm, setEditPublishForm] = useState({
-    date: "",
-    mealType: "Lunch",
   });
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>(
     {}
@@ -815,6 +812,23 @@ export default function OwnerPage() {
       items,
       remaining,
       updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function savePublishedMenuItemQty(
+    menu: PublishedMenu,
+    item: PublishedMenu["items"][number]
+  ) {
+    const draftKey = getPublishedItemDraftKey(menu.id, item.itemId);
+    const draftQty = editPublishQty[draftKey];
+    if (typeof draftQty !== "number" || draftQty === item.qty) {
+      return;
+    }
+    await updatePublishedMenuItem(menu, item.itemId, { qty: draftQty });
+    setEditPublishQty((prev) => {
+      const next = { ...prev };
+      delete next[draftKey];
+      return next;
     });
   }
 
@@ -2165,41 +2179,60 @@ export default function OwnerPage() {
                       <div>
                         {menu.items?.length ? (
                           menu.items.map((item) => (
-                            <div
-                              key={item.itemId}
-                              className="row"
-                              style={{ alignItems: "center", gap: 10, marginTop: 8 }}
-                            >
-                              <div style={{ flex: 1 }}>
-                                <small style={{ display: "block", fontWeight: 600 }}>
-                                  {item.name}
-                                </small>
-                                <small style={{ color: item.active === false ? "crimson" : undefined }}>
-                                  {item.active === false ? "Disabled" : "Enabled"} • Qty {item.qty}
+                            <div key={item.itemId} className="published-menu-item-row">
+                              <div className="published-menu-item-copy">
+                                <small className="published-menu-item-name">{item.name}</small>
+                                <small
+                                  style={{
+                                    color: item.active === false ? "crimson" : undefined,
+                                  }}
+                                >
+                                  {item.active === false ? "Disabled" : "Enabled"} | Qty {item.qty}
                                 </small>
                               </div>
-                              <input
-                                className="input"
-                                type="number"
-                                min={0}
-                                defaultValue={String(item.qty)}
-                                onBlur={(e) =>
-                                  updatePublishedMenuItem(menu, item.itemId, {
-                                    qty: Number(e.target.value || 0),
-                                  })
-                                }
-                                style={{ width: 92 }}
-                              />
-                              <button
-                                className="btn secondary"
-                                onClick={() =>
-                                  updatePublishedMenuItem(menu, item.itemId, {
-                                    active: item.active === false,
-                                  })
-                                }
-                              >
-                                {item.active === false ? "Enable" : "Disable"}
-                              </button>
+                              <label className="published-menu-switch">
+                                <input
+                                  type="checkbox"
+                                  checked={item.active !== false}
+                                  onChange={() =>
+                                    updatePublishedMenuItem(menu, item.itemId, {
+                                      active: item.active === false,
+                                    })
+                                  }
+                                />
+                                <span className="published-menu-switch-slider" />
+                              </label>
+                              <div className="published-menu-qty-edit">
+                                <input
+                                  className="input"
+                                  type="number"
+                                  min={0}
+                                  value={String(
+                                    editPublishQty[
+                                      getPublishedItemDraftKey(menu.id, item.itemId)
+                                    ] ?? item.qty
+                                  )}
+                                  onChange={(e) =>
+                                    setEditPublishQty((prev) => ({
+                                      ...prev,
+                                      [getPublishedItemDraftKey(menu.id, item.itemId)]: Number(
+                                        e.target.value || 0
+                                      ),
+                                    }))
+                                  }
+                                />
+                                <button
+                                  className="btn secondary"
+                                  disabled={
+                                    (editPublishQty[
+                                      getPublishedItemDraftKey(menu.id, item.itemId)
+                                    ] ?? item.qty) === item.qty
+                                  }
+                                  onClick={() => savePublishedMenuItemQty(menu, item)}
+                                >
+                                  Update
+                                </button>
+                              </div>
                             </div>
                           ))
                         ) : (
