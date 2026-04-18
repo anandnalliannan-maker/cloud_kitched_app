@@ -2207,6 +2207,7 @@ export default function OwnerPage() {
                                   className="input"
                                   type="number"
                                   min={0}
+                                  step={1}
                                   value={String(
                                     editPublishQty[
                                       getPublishedItemDraftKey(menu.id, item.itemId)
@@ -2223,11 +2224,6 @@ export default function OwnerPage() {
                                 />
                                 <button
                                   className="btn secondary"
-                                  disabled={
-                                    (editPublishQty[
-                                      getPublishedItemDraftKey(menu.id, item.itemId)
-                                    ] ?? item.qty) === item.qty
-                                  }
                                   onClick={() => savePublishedMenuItemQty(menu, item)}
                                 >
                                   Update
