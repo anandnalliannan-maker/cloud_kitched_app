@@ -122,6 +122,7 @@ export default function CustomerPage() {
   const [paymentNotice, setPaymentNotice] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isConfirmingOutletOrder, setIsConfirmingOutletOrder] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(
     null
   );
@@ -978,7 +979,7 @@ export default function CustomerPage() {
       setPayError("Order summary is missing.");
       return;
     }
-    setIsProcessingPayment(true);
+    setIsConfirmingOutletOrder(true);
     try {
       const response = await fetch("/api/razorpay/verify", {
         method: "POST",
@@ -993,11 +994,14 @@ export default function CustomerPage() {
         throw new Error(payload.error || "Failed to confirm order.");
       }
       resetCheckoutState();
-      alert(`Order placed. Order ID: ${paymentSummary.displayOrderId}`);
+      setPaymentSuccessPopup({
+        orderId: paymentSummary.displayOrderId,
+        message: "Order is placed. Please collect from outlet.",
+      });
     } catch (error: any) {
       setPayError(error?.message || "Failed to confirm order.");
     } finally {
-      setIsProcessingPayment(false);
+      setIsConfirmingOutletOrder(false);
     }
   }
 
@@ -1617,9 +1621,9 @@ export default function CustomerPage() {
                 <button
                   className="btn customer-primary-btn"
                   onClick={confirmPayAtOutlet}
-                  disabled={isProcessingPayment}
+                  disabled={isConfirmingOutletOrder}
                 >
-                  Pay at Outlet
+                  {isConfirmingOutletOrder ? "Placing order..." : "Pay at Outlet"}
                 </button>
               </div>
             ) : (
