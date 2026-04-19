@@ -66,7 +66,6 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
     active?: boolean;
-    disabledAt?: string;
   }[];
   remaining?: {
     itemId: string;
@@ -76,7 +75,6 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
     active?: boolean;
-    disabledAt?: string;
   }[];
   createdAt?: any;
   isArchived?: boolean;
@@ -221,16 +219,6 @@ function getWhatsAppPhone(rawPhone?: string) {
   if (digits.length === 10) return `91${digits}`;
   if (digits.startsWith("91")) return digits;
   return digits;
-}
-
-const REENABLE_WINDOW_MS = 6 * 60 * 60 * 1000;
-
-function canReenablePublishedItem(item: { active?: boolean; disabledAt?: string }) {
-  if (item.active !== false) return true;
-  if (!item.disabledAt) return true;
-  const disabledAtMs = new Date(item.disabledAt).getTime();
-  if (Number.isNaN(disabledAtMs)) return true;
-  return Date.now() - disabledAtMs <= REENABLE_WINDOW_MS;
 }
 
 function getOrderStatusLabel(order: Order) {
@@ -809,17 +797,6 @@ export default function OwnerPage() {
     itemId: string,
     updates: { active?: boolean; qty?: number }
   ) {
-    const targetItem = (menu.items || []).find((item) => item.itemId === itemId);
-    if (
-      targetItem &&
-      targetItem.active === false &&
-      updates.active === true &&
-      !canReenablePublishedItem(targetItem)
-    ) {
-      window.alert("This item can only be re-enabled within 6 hours of disabling.");
-      return;
-    }
-
     const items = (menu.items || []).map((item) => {
       if (item.itemId !== itemId) return { ...item, active: item.active !== false };
       const nextQty =
@@ -832,7 +809,6 @@ export default function OwnerPage() {
         ...item,
         qty: nextQty,
         active: nextActive,
-        disabledAt: nextActive ? undefined : item.disabledAt || new Date().toISOString(),
       };
     });
 
@@ -853,7 +829,6 @@ export default function OwnerPage() {
         ...item,
         qty: Math.max(0, nextQty - soldQty),
         active: nextActive,
-        disabledAt: nextActive ? undefined : item.disabledAt || new Date().toISOString(),
       };
     });
 
@@ -2352,112 +2327,112 @@ export default function OwnerPage() {
                                 >
                                   {item.active === false ? "Disabled" : "Enabled"} | Qty {item.qty}
                                 </small>
-                                {item.active === false && !canReenablePublishedItem(item) && (
-                                  <small style={{ color: "#7a4d28" }}>
-                                    Re-enable window expired
-                                  </small>
-                                )}
                               </div>
-                              <label className="published-menu-switch">
-                                <input
-                                  type="checkbox"
-                                  checked={item.active !== false}
-                                  disabled={
-                                    item.active === false && !canReenablePublishedItem(item)
-                                  }
-                                  onChange={() =>
-                                    updatePublishedMenuItem(menu, item.itemId, {
-                                      active: item.active === false,
-                                    })
-                                  }
-                                />
-                                <span className="published-menu-switch-slider" />
-                              </label>
-                              <div className="published-menu-qty-edit">
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={String(
-                                    editPublishQty[
-                                      getPublishedItemDraftKey(menu.id, item.itemId)
-                                    ] ?? item.qty
-                                  )}
-                                  onChange={(e) =>
-                                    setEditPublishQty((prev) => ({
-                                      ...prev,
-                                      [getPublishedItemDraftKey(menu.id, item.itemId)]: Number(
-                                        e.target.value || 0
-                                      ),
-                                    }))
-                                  }
-                                />
-                                <button
-                                  className="btn secondary"
-                                  onClick={() => savePublishedMenuItemQty(menu, item)}
-                                >
-                                  Update
-                                </button>
-                              </div>
+                              {currentPublishedMenu?.id === menu.id ? (
+                                <>
+                                  <label className="published-menu-switch">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.active !== false}
+                                      onChange={() =>
+                                        updatePublishedMenuItem(menu, item.itemId, {
+                                          active: item.active === false,
+                                        })
+                                      }
+                                    />
+                                    <span className="published-menu-switch-slider" />
+                                  </label>
+                                  <div className="published-menu-qty-edit">
+                                    <input
+                                      className="input"
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      value={String(
+                                        editPublishQty[
+                                          getPublishedItemDraftKey(menu.id, item.itemId)
+                                        ] ?? item.qty
+                                      )}
+                                      onChange={(e) =>
+                                        setEditPublishQty((prev) => ({
+                                          ...prev,
+                                          [getPublishedItemDraftKey(menu.id, item.itemId)]: Number(
+                                            e.target.value || 0
+                                          ),
+                                        }))
+                                      }
+                                    />
+                                    <button
+                                      className="btn secondary"
+                                      onClick={() => savePublishedMenuItemQty(menu, item)}
+                                    >
+                                      Update
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <small className="payments-subtext">Locked after newer menu</small>
+                              )}
                             </div>
                           ))
                         ) : (
                           <small>No items</small>
                         )}
                       </div>
-                      <div className="published-menu-add-row">
-                        <select
-                          className="select"
-                          value={publishedMenuAddItem[menu.id]?.itemId || ""}
-                          onChange={(e) =>
-                            setPublishedMenuAddItem((prev) => ({
-                              ...prev,
-                              [menu.id]: {
-                                itemId: e.target.value,
-                                qty: prev[menu.id]?.qty || "",
-                              },
-                            }))
-                          }
-                        >
-                          <option value="">Add existing menu item</option>
-                          {menuItems
-                            .filter((item) => item.active !== false)
-                            .sort(
-                              (a, b) =>
-                                a.mealType.localeCompare(b.mealType) ||
-                                a.name.localeCompare(b.name)
-                            )
-                            .map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name} - {item.mealType} - INR {item.price}
-                              </option>
-                            ))}
-                        </select>
-                        <input
-                          className="input"
-                          type="number"
-                          min={1}
-                          step={1}
-                          placeholder="Qty"
-                          value={publishedMenuAddItem[menu.id]?.qty || ""}
-                          onChange={(e) =>
-                            setPublishedMenuAddItem((prev) => ({
-                              ...prev,
-                              [menu.id]: {
-                                itemId: prev[menu.id]?.itemId || "",
-                                qty: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                        <button
-                          className="btn secondary"
-                          onClick={() => addItemToPublishedMenu(menu)}
-                        >
-                          Add Item
-                        </button>
-                      </div>
+                      {currentPublishedMenu?.id === menu.id && (
+                        <div className="published-menu-add-row">
+                          <select
+                            className="select"
+                            value={publishedMenuAddItem[menu.id]?.itemId || ""}
+                            onChange={(e) =>
+                              setPublishedMenuAddItem((prev) => ({
+                                ...prev,
+                                [menu.id]: {
+                                  itemId: e.target.value,
+                                  qty: prev[menu.id]?.qty || "",
+                                },
+                              }))
+                            }
+                          >
+                            <option value="">Add existing menu item</option>
+                            {menuItems
+                              .filter((item) => item.active !== false)
+                              .sort(
+                                (a, b) =>
+                                  a.mealType.localeCompare(b.mealType) ||
+                                  a.name.localeCompare(b.name)
+                              )
+                              .map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name} - {item.mealType} - INR {item.price}
+                                </option>
+                              ))}
+                          </select>
+                          <input
+                            className="input"
+                            type="number"
+                            min={1}
+                            step={1}
+                            placeholder="Qty"
+                            value={publishedMenuAddItem[menu.id]?.qty || ""}
+                            onChange={(e) =>
+                              setPublishedMenuAddItem((prev) => ({
+                                ...prev,
+                                [menu.id]: {
+                                  itemId: prev[menu.id]?.itemId || "",
+                                  qty: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <button
+                            className="btn secondary"
+                            onClick={() => addItemToPublishedMenu(menu)}
+                          >
+                            Add Item
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
