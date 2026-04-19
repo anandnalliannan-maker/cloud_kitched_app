@@ -1678,7 +1678,7 @@ export default function OwnerPage() {
   );
 
   return (
-    <main className="container">
+    <main className="container owner-shell">
       {mode === "loading" && <div className="card">Loading...</div>}
       {mode === "setup" && (
         <div className="card stack">
