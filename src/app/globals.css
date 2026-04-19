@@ -102,6 +102,16 @@ a {
   width: 88px;
 }
 
+.published-menu-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(17, 24, 39, 0.08);
+}
+
 .published-menu-switch {
   position: relative;
   display: inline-flex;

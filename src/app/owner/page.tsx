@@ -309,6 +309,9 @@ export default function OwnerPage() {
   });
   const [publishError, setPublishError] = useState("");
   const [publishedMenuNotice, setPublishedMenuNotice] = useState("");
+  const [publishedMenuAddItem, setPublishedMenuAddItem] = useState<
+    Record<string, { itemId: string; qty: string }>
+  >({});
   const [areaForm, setAreaForm] = useState("");
   const [areaFeeForm, setAreaFeeForm] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
@@ -850,6 +853,57 @@ export default function OwnerPage() {
       return next;
     });
     showPublishedMenuNotice("Quantity updated");
+  }
+
+  async function addItemToPublishedMenu(menu: PublishedMenu) {
+    const draft = publishedMenuAddItem[menu.id] || { itemId: "", qty: "" };
+    const itemId = draft.itemId;
+    const qty = Math.max(0, Number(draft.qty || 0));
+
+    if (!itemId) {
+      window.alert("Select an item to add.");
+      return;
+    }
+    if (!qty) {
+      window.alert("Enter quantity greater than 0.");
+      return;
+    }
+
+    const sourceItem = menuItems.find((item) => item.id === itemId);
+    if (!sourceItem) {
+      window.alert("Selected item not found.");
+      return;
+    }
+
+    const existingItem = (menu.items || []).find((item) => item.itemId === itemId);
+    if (existingItem) {
+      await updatePublishedMenuItem(menu, itemId, {
+        active: true,
+        qty: existingItem.qty + qty,
+      });
+      showPublishedMenuNotice("Item quantity increased");
+    } else {
+      const nextItem = {
+        itemId: sourceItem.id,
+        name: sourceItem.name,
+        qty,
+        price: sourceItem.price,
+        description: sourceItem.description || "",
+        imageUrl: sourceItem.imageUrl || "",
+        active: true,
+      };
+      await updateDoc(doc(db, "published_menus", menu.id), {
+        items: [...(menu.items || []), nextItem],
+        remaining: [...(menu.remaining || menu.items || []), nextItem],
+        updatedAt: serverTimestamp(),
+      });
+      showPublishedMenuNotice("Item added to menu");
+    }
+
+    setPublishedMenuAddItem((prev) => ({
+      ...prev,
+      [menu.id]: { itemId: "", qty: "" },
+    }));
   }
 
   async function saveAreaAssignment(areaName: string, agentIds: string[]) {
@@ -2316,6 +2370,60 @@ export default function OwnerPage() {
                         ) : (
                           <small>No items</small>
                         )}
+                      </div>
+                      <div className="published-menu-add-row">
+                        <select
+                          className="select"
+                          value={publishedMenuAddItem[menu.id]?.itemId || ""}
+                          onChange={(e) =>
+                            setPublishedMenuAddItem((prev) => ({
+                              ...prev,
+                              [menu.id]: {
+                                itemId: e.target.value,
+                                qty: prev[menu.id]?.qty || "",
+                              },
+                            }))
+                          }
+                        >
+                          <option value="">Add existing menu item</option>
+                          {menuItems
+                            .filter((item) => item.active !== false)
+                            .filter((item) => item.mealType === menu.mealType)
+                            .filter(
+                              (item) =>
+                                !(menu.items || []).some(
+                                  (publishedItem) => publishedItem.itemId === item.id
+                                )
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name} - INR {item.price}
+                              </option>
+                            ))}
+                        </select>
+                        <input
+                          className="input"
+                          type="number"
+                          min={1}
+                          step={1}
+                          placeholder="Qty"
+                          value={publishedMenuAddItem[menu.id]?.qty || ""}
+                          onChange={(e) =>
+                            setPublishedMenuAddItem((prev) => ({
+                              ...prev,
+                              [menu.id]: {
+                                itemId: prev[menu.id]?.itemId || "",
+                                qty: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                        <button
+                          className="btn secondary"
+                          onClick={() => addItemToPublishedMenu(menu)}
+                        >
+                          Add Item
+                        </button>
                       </div>
                     </div>
                   </div>
