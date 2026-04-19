@@ -234,7 +234,12 @@ export default function CustomerPage() {
         return;
       }
 
-      const docSnap = snap.docs[0];
+      const docSnap =
+        snap.docs.find((candidate) => {
+          const candidateData = candidate.data() as any;
+          if (candidateData.isArchived || candidateData.ordersStopped) return false;
+          return (candidateData.items || []).some((item: any) => item.active !== false);
+        }) || snap.docs[0];
       const data = docSnap.data() as any;
 
       setPublishedMenuId(docSnap.id);

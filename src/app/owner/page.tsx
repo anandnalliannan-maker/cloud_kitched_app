@@ -66,6 +66,7 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
     active?: boolean;
+    disabledAt?: string;
   }[];
   remaining?: {
     itemId: string;
@@ -75,6 +76,7 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
     active?: boolean;
+    disabledAt?: string;
   }[];
   createdAt?: any;
   isArchived?: boolean;
@@ -219,6 +221,16 @@ function getWhatsAppPhone(rawPhone?: string) {
   if (digits.length === 10) return `91${digits}`;
   if (digits.startsWith("91")) return digits;
   return digits;
+}
+
+const REENABLE_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+function canReenablePublishedItem(item: { active?: boolean; disabledAt?: string }) {
+  if (item.active !== false) return true;
+  if (!item.disabledAt) return true;
+  const disabledAtMs = new Date(item.disabledAt).getTime();
+  if (Number.isNaN(disabledAtMs)) return true;
+  return Date.now() - disabledAtMs <= REENABLE_WINDOW_MS;
 }
 
 function getOrderStatusLabel(order: Order) {
@@ -797,17 +809,30 @@ export default function OwnerPage() {
     itemId: string,
     updates: { active?: boolean; qty?: number }
   ) {
+    const targetItem = (menu.items || []).find((item) => item.itemId === itemId);
+    if (
+      targetItem &&
+      targetItem.active === false &&
+      updates.active === true &&
+      !canReenablePublishedItem(targetItem)
+    ) {
+      window.alert("This item can only be re-enabled within 6 hours of disabling.");
+      return;
+    }
+
     const items = (menu.items || []).map((item) => {
       if (item.itemId !== itemId) return { ...item, active: item.active !== false };
       const nextQty =
         typeof updates.qty === "number" && Number.isFinite(updates.qty)
           ? Math.max(0, updates.qty)
           : item.qty;
+      const nextActive =
+        typeof updates.active === "boolean" ? updates.active : item.active !== false;
       return {
         ...item,
         qty: nextQty,
-        active:
-          typeof updates.active === "boolean" ? updates.active : item.active !== false,
+        active: nextActive,
+        disabledAt: nextActive ? undefined : item.disabledAt || new Date().toISOString(),
       };
     });
 
@@ -822,11 +847,13 @@ export default function OwnerPage() {
         typeof updates.qty === "number" && Number.isFinite(updates.qty)
           ? Math.max(0, updates.qty)
           : sourceQty;
+      const nextActive =
+        typeof updates.active === "boolean" ? updates.active : item.active !== false;
       return {
         ...item,
         qty: Math.max(0, nextQty - soldQty),
-        active:
-          typeof updates.active === "boolean" ? updates.active : item.active !== false,
+        active: nextActive,
+        disabledAt: nextActive ? undefined : item.disabledAt || new Date().toISOString(),
       };
     });
 
@@ -2325,11 +2352,19 @@ export default function OwnerPage() {
                                 >
                                   {item.active === false ? "Disabled" : "Enabled"} | Qty {item.qty}
                                 </small>
+                                {item.active === false && !canReenablePublishedItem(item) && (
+                                  <small style={{ color: "#7a4d28" }}>
+                                    Re-enable window expired
+                                  </small>
+                                )}
                               </div>
                               <label className="published-menu-switch">
                                 <input
                                   type="checkbox"
                                   checked={item.active !== false}
+                                  disabled={
+                                    item.active === false && !canReenablePublishedItem(item)
+                                  }
                                   onChange={() =>
                                     updatePublishedMenuItem(menu, item.itemId, {
                                       active: item.active === false,
