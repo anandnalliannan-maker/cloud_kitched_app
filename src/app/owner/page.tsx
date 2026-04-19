@@ -1612,26 +1612,36 @@ export default function OwnerPage() {
     [currentOrdersSummary]
   );
 
-  const activeItemPairRows = useMemo(
-    () =>
-      Object.entries(currentOrdersSummary.itemPairCounts)
-        .map(([pairKey, count]) => {
-          const [itemName, packQtyRaw] = pairKey.split("__");
-          return {
-            key: pairKey,
-            itemName,
-            packQty: Number(packQtyRaw || 0),
-            count,
-          };
-        })
-        .sort(
-          (a, b) =>
-            a.itemName.localeCompare(b.itemName) ||
-            a.packQty - b.packQty ||
-            b.count - a.count
-        ),
-    [currentOrdersSummary]
-  );
+  const activeItemPackingMatrix = useMemo(() => {
+    const packQtySet = new Set<number>();
+    const grouped: Record<string, Record<number, number>> = {};
+
+    Object.entries(currentOrdersSummary.itemPairCounts).forEach(([pairKey, count]) => {
+      const [itemName, packQtyRaw] = pairKey.split("__");
+      const packQty = Number(packQtyRaw || 0);
+      if (!itemName || !packQty) return;
+
+      packQtySet.add(packQty);
+      if (!grouped[itemName]) {
+        grouped[itemName] = {};
+      }
+      grouped[itemName][packQty] = count;
+    });
+
+    const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
+    const rows = Object.entries(grouped)
+      .map(([itemName, buckets]) => ({
+        key: itemName,
+        itemName,
+        buckets,
+      }))
+      .sort((a, b) => a.itemName.localeCompare(b.itemName));
+
+    return {
+      packQtyColumns,
+      rows,
+    };
+  }, [currentOrdersSummary]);
 
   const activeAgentRows = useMemo(
     () =>
@@ -3210,21 +3220,31 @@ export default function OwnerPage() {
                             <thead>
                               <tr>
                                 <th>Item</th>
-                                <th>Pack Qty</th>
-                                <th>Orders</th>
+                                {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                  <th key={packQty}>{packQty} Pack</th>
+                                ))}
                               </tr>
                             </thead>
                             <tbody>
-                              {activeItemPairRows.length === 0 && (
+                              {activeItemPackingMatrix.rows.length === 0 && (
                                 <tr>
-                                  <td colSpan={3}>No packing data</td>
+                                  <td
+                                    colSpan={
+                                      Math.max(activeItemPackingMatrix.packQtyColumns.length + 1, 2)
+                                    }
+                                  >
+                                    No packing data
+                                  </td>
                                 </tr>
                               )}
-                              {activeItemPairRows.map((row) => (
+                              {activeItemPackingMatrix.rows.map((row) => (
                                 <tr key={row.key}>
                                   <td>{row.itemName}</td>
-                                  <td>{row.packQty}</td>
-                                  <td>{row.count}</td>
+                                  {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                    <td key={`${row.key}-${packQty}`}>
+                                      {row.buckets[packQty] || "-"}
+                                    </td>
+                                  ))}
                                 </tr>
                               ))}
                             </tbody>
