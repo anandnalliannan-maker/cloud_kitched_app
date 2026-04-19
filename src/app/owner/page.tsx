@@ -2388,16 +2388,14 @@ export default function OwnerPage() {
                           <option value="">Add existing menu item</option>
                           {menuItems
                             .filter((item) => item.active !== false)
-                            .filter((item) => item.mealType === menu.mealType)
-                            .filter(
-                              (item) =>
-                                !(menu.items || []).some(
-                                  (publishedItem) => publishedItem.itemId === item.id
-                                )
+                            .sort(
+                              (a, b) =>
+                                a.mealType.localeCompare(b.mealType) ||
+                                a.name.localeCompare(b.name)
                             )
                             .map((item) => (
                               <option key={item.id} value={item.id}>
-                                {item.name} - INR {item.price}
+                                {item.name} - {item.mealType} - INR {item.price}
                               </option>
                             ))}
                         </select>
