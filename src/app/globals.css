@@ -1384,6 +1384,42 @@ a {
   line-height: 1.5;
 }
 
+.sales-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.sales-trend-card {
+  display: grid;
+  gap: 8px;
+  align-items: end;
+  justify-items: stretch;
+}
+
+.sales-trend-bar {
+  width: 100%;
+  min-height: 18px;
+  border-radius: 16px 16px 6px 6px;
+  background: linear-gradient(180deg, #1e88e5 0%, #0f766e 100%);
+  box-shadow: 0 10px 24px rgba(30, 136, 229, 0.18);
+}
+
+.sales-trend-card strong {
+  font-size: 0.95rem;
+}
+
+.sales-trend-card small,
+.sales-trend-card span {
+  color: #6b7280;
+}
+
+.sales-trend-card span {
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .payments-table {
   width: 100%;
   min-width: 1120px;

@@ -284,11 +284,17 @@ export default function OwnerPage() {
     search: "",
     startDate: "",
     endDate: "",
+    area: "All",
+    deliveryType: "All",
+    trend: "weekly",
   });
   const [appliedReportFilters, setAppliedReportFilters] = useState({
     search: "",
     startDate: "",
     endDate: "",
+    area: "All",
+    deliveryType: "All",
+    trend: "weekly",
   });
 
   const [agentForm, setAgentForm] = useState({
@@ -1333,7 +1339,7 @@ export default function OwnerPage() {
   );
 
   const filteredClosedOrders = useMemo(() => {
-    const { search, startDate, endDate } = appliedReportFilters;
+    const { search, startDate, endDate, area, deliveryType } = appliedReportFilters;
     return closedOrders.filter((order) => {
       const haystack = `${order.orderId || ""} ${order.phone || ""} ${
         order.customerName || ""
@@ -1342,6 +1348,10 @@ export default function OwnerPage() {
       const publishedDate = formatDateKey(order.publishedDate);
       if (startDate && publishedDate < startDate) return false;
       if (endDate && publishedDate > endDate) return false;
+      if (area !== "All" && (order.area || "Unknown") !== area) return false;
+      if (deliveryType !== "All" && (order.deliveryType || "Unknown") !== deliveryType) {
+        return false;
+      }
       return true;
     });
   }, [closedOrders, appliedReportFilters]);
@@ -1359,6 +1369,89 @@ export default function OwnerPage() {
     () =>
       filteredClosedOrders.reduce((sum, order) => sum + (order.total || 0), 0),
     [filteredClosedOrders]
+  );
+
+  const reportKpis = useMemo(() => {
+    const deliveryOrders = filteredClosedOrders.filter(
+      (order) => order.deliveryType === "delivery"
+    );
+    const pickupOrders = filteredClosedOrders.filter(
+      (order) => order.deliveryType === "pickup"
+    );
+    const uniqueCustomers = new Set(
+      filteredClosedOrders.map((order) => normalizePhone(order.phone || "")).filter(Boolean)
+    ).size;
+    const totalItems = filteredClosedOrders.reduce(
+      (sum, order) =>
+        sum + (order.items || []).reduce((itemSum, item) => itemSum + item.qty, 0),
+      0
+    );
+
+    return {
+      completedOrders: filteredClosedOrders.length,
+      totalSales: completedOrdersTotal,
+      avgOrderValue:
+        filteredClosedOrders.length > 0
+          ? Math.round((completedOrdersTotal / filteredClosedOrders.length) * 100) / 100
+          : 0,
+      avgItemsPerOrder:
+        filteredClosedOrders.length > 0
+          ? Math.round((totalItems / filteredClosedOrders.length) * 100) / 100
+          : 0,
+      deliveryOrders: deliveryOrders.length,
+      pickupOrders: pickupOrders.length,
+      uniqueCustomers,
+      topArea:
+        Object.entries(closedOrdersByArea).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
+    };
+  }, [filteredClosedOrders, completedOrdersTotal, closedOrdersByArea]);
+
+  const salesTrendRows = useMemo(() => {
+    const buckets: Record<string, { label: string; sales: number; orders: number }> = {};
+    const trendType = appliedReportFilters.trend;
+
+    filteredClosedOrders.forEach((order) => {
+      const dateKey = formatDateKey(order.createdAt || order.publishedDate);
+      if (!dateKey) return;
+      const date = new Date(dateKey);
+      if (Number.isNaN(date.getTime())) return;
+
+      let key = dateKey;
+      let label = formatDateLabel(dateKey);
+
+      if (trendType === "monthly") {
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        key = monthKey;
+        label = date.toLocaleDateString("en-US", {
+          month: "short",
+          year: "numeric",
+        });
+      } else {
+        const start = new Date(date);
+        const day = start.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        start.setDate(start.getDate() + diff);
+        const mondayKey = start.toISOString().slice(0, 10);
+        key = mondayKey;
+        label = `Week of ${formatDateLabel(mondayKey)}`;
+      }
+
+      if (!buckets[key]) {
+        buckets[key] = { label, sales: 0, orders: 0 };
+      }
+      buckets[key].sales += order.total || 0;
+      buckets[key].orders += 1;
+    });
+
+    return Object.entries(buckets)
+      .map(([key, value]) => ({ key, ...value }))
+      .sort((a, b) => a.key.localeCompare(b.key))
+      .slice(-8);
+  }, [filteredClosedOrders, appliedReportFilters.trend]);
+
+  const maxTrendSales = useMemo(
+    () => Math.max(...salesTrendRows.map((row) => row.sales), 0),
+    [salesTrendRows]
   );
 
   const currentPublishedMenu = useMemo(() => publishedMenus[0] || null, [publishedMenus]);
@@ -2738,7 +2831,7 @@ export default function OwnerPage() {
           {tab === "dashboard" && (
             <div className="card stack">
               <h2>Report/Dashboard</h2>
-              <div className="row">
+              <div className="owner-filters-grid">
                 <input
                   className="input"
                   placeholder="Search by Order ID / Phone / Customer"
@@ -2750,8 +2843,6 @@ export default function OwnerPage() {
                     })
                   }
                 />
-              </div>
-              <div className="row">
                 <input
                   className="input"
                   type="date"
@@ -2774,43 +2865,225 @@ export default function OwnerPage() {
                     })
                   }
                 />
+                <select
+                  className="select"
+                  value={reportFilters.area}
+                  onChange={(e) =>
+                    setReportFilters({
+                      ...reportFilters,
+                      area: e.target.value,
+                    })
+                  }
+                >
+                  <option value="All">All areas</option>
+                  {areaOptions.map((area) => (
+                    <option key={area} value={area}>
+                      {area}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="select"
+                  value={reportFilters.deliveryType}
+                  onChange={(e) =>
+                    setReportFilters({
+                      ...reportFilters,
+                      deliveryType: e.target.value,
+                    })
+                  }
+                >
+                  <option value="All">All delivery types</option>
+                  <option value="delivery">Home Delivery</option>
+                  <option value="pickup">Self Pickup</option>
+                </select>
+                <select
+                  className="select"
+                  value={reportFilters.trend}
+                  onChange={(e) =>
+                    setReportFilters({
+                      ...reportFilters,
+                      trend: e.target.value,
+                    })
+                  }
+                >
+                  <option value="weekly">Weekly trend</option>
+                  <option value="monthly">Monthly trend</option>
+                </select>
                 <button className="btn" onClick={runReport}>
                   Run
                 </button>
               </div>
-              <div className="row">
-                <div className="card" style={{ flex: 1 }}>
-                  Completed Orders: {filteredClosedOrders.length}
+
+              <div className="owner-summary-metrics">
+                <div className="card">
+                  <small className="payments-subtext">Completed Orders</small>
+                  <strong>{reportKpis.completedOrders}</strong>
                 </div>
-                <div className="card" style={{ flex: 1 }}>
-                  Total Value: INR {completedOrdersTotal}
+                <div className="card">
+                  <small className="payments-subtext">Total Sales</small>
+                  <strong>INR {reportKpis.totalSales}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Average Order Value</small>
+                  <strong>INR {reportKpis.avgOrderValue}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Avg Items / Order</small>
+                  <strong>{reportKpis.avgItemsPerOrder}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Home Delivery Orders</small>
+                  <strong>{reportKpis.deliveryOrders}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Self Pickup Orders</small>
+                  <strong>{reportKpis.pickupOrders}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Unique Customers</small>
+                  <strong>{reportKpis.uniqueCustomers}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Top Area</small>
+                  <strong>{reportKpis.topArea}</strong>
                 </div>
               </div>
-              <h3>Completed Orders by Area</h3>
-              {Object.keys(closedOrdersByArea).length === 0 && (
-                <p>No orders</p>
-              )}
-              {Object.entries(closedOrdersByArea).map(([area, count]) => (
-                <div key={area} className="row">
-                  <div style={{ flex: 1 }}>{area}</div>
-                  <div>{count}</div>
+
+              <div className="card stack">
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <h3>
+                    {appliedReportFilters.trend === "monthly"
+                      ? "Monthly Sales Trend"
+                      : "Weekly Sales Trend"}
+                  </h3>
+                  <small className="payments-subtext">Last 8 periods</small>
                 </div>
-              ))}
-              <h3>Delivered by Agent</h3>
-              {Object.keys(deliveredByAgent).length === 0 && <p>No deliveries</p>}
-              {Object.entries(deliveredByAgent).map(([agent, data]) => (
-                <div key={agent} className="card stack">
-                  <strong>
-                    {agent} - {data.total} orders
-                  </strong>
-                  {Object.entries(data.byArea).map(([area, count]) => (
-                    <div key={area} className="row">
-                      <div style={{ flex: 1 }}>{area}</div>
-                      <div>{count}</div>
-                    </div>
-                  ))}
+                {salesTrendRows.length === 0 && <p>No sales trend data.</p>}
+                {salesTrendRows.length > 0 && (
+                  <div className="sales-trend-grid">
+                    {salesTrendRows.map((row) => (
+                      <div key={row.key} className="sales-trend-card">
+                        <div
+                          className="sales-trend-bar"
+                          style={{
+                            height: `${maxTrendSales ? Math.max((row.sales / maxTrendSales) * 180, 18) : 18}px`,
+                          }}
+                        />
+                        <strong>INR {row.sales}</strong>
+                        <small>{row.orders} orders</small>
+                        <span>{row.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="row summary-tables-row">
+                <div className="card" style={{ flex: 1 }}>
+                  <h3>Completed Orders by Area</h3>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact">
+                      <thead>
+                        <tr>
+                          <th>Area</th>
+                          <th>Orders</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(closedOrdersByArea).length === 0 && (
+                          <tr>
+                            <td colSpan={2}>No orders</td>
+                          </tr>
+                        )}
+                        {Object.entries(closedOrdersByArea).map(([area, count]) => (
+                          <tr key={area}>
+                            <td>{area}</td>
+                            <td>{count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              ))}
+
+                <div className="card" style={{ flex: 1 }}>
+                  <h3>Delivered by Agent</h3>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact">
+                      <thead>
+                        <tr>
+                          <th>Agent</th>
+                          <th>Orders</th>
+                          <th>Areas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(deliveredByAgent).length === 0 && (
+                          <tr>
+                            <td colSpan={3}>No deliveries</td>
+                          </tr>
+                        )}
+                        {Object.entries(deliveredByAgent).map(([agent, data]) => (
+                          <tr key={agent}>
+                            <td>{agent}</td>
+                            <td>{data.total}</td>
+                            <td>
+                              {Object.entries(data.byArea)
+                                .map(([area, count]) => `${area} (${count})`)
+                                .join(", ")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3>Completed Orders</h3>
+                <div className="table-scroll">
+                  <table className="payments-table payments-table-compact">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Area</th>
+                        <th>Delivery Type</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredClosedOrders.length === 0 && (
+                        <tr>
+                          <td colSpan={7}>No completed orders</td>
+                        </tr>
+                      )}
+                      {filteredClosedOrders.map((order) => (
+                        <tr key={order.id}>
+                          <td>{formatDateLabel(order.createdAt || order.publishedDate)}</td>
+                          <td>#{order.orderId || order.id}</td>
+                          <td>{order.customerName || "-"}</td>
+                          <td>{order.area || "-"}</td>
+                          <td>
+                            {order.deliveryType === "pickup"
+                              ? "Self Pickup"
+                              : "Home Delivery"}
+                          </td>
+                          <td>
+                            {(order.items || [])
+                              .map((item) => `${item.name} x${item.qty}`)
+                              .join(", ")}
+                          </td>
+                          <td>INR {order.total || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 
