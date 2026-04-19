@@ -1069,13 +1069,15 @@ export default function OwnerPage() {
   }
 
   function buildPlacedNotificationMessage(order: Order) {
-    const itemText =
+    const itemLines =
       (order.items || []).length > 0
         ? (order.items || [])
-            .map((item) => `${item.name} x${item.qty}`)
-            .join(", ")
-        : "your items";
-    return `Thanks for your order. Your order ID ${order.orderId || order.id} containing ${itemText} is placed and getting packed. - MS Kitchen`;
+            .map((item) => `${item.name}---${item.qty}`)
+            .join("\n")
+        : "Items---0";
+    const deliveryLabel =
+      order.deliveryType === "pickup" ? "Self Pickup" : "Delivery";
+    return `Thanks for your order.\n\nOrder ID: ${order.orderId || order.id}\n${itemLines}\nTotal Amount is INR ${order.total || 0}/-\n\nYou have opted for ---${deliveryLabel}\n\n-MS Kitchen`;
   }
 
   function openPlacedNotification(order: Order) {
