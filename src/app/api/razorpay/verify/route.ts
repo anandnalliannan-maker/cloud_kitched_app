@@ -23,10 +23,23 @@ export async function POST(request: Request) {
     }
 
     if (body?.offline === true) {
+      const paymentMethod =
+        body?.paymentMethod === "cash_on_delivery"
+          ? "cash_on_delivery"
+          : "pay_at_outlet";
       await updateDoc(orderRef, {
         status: "active",
-        paymentStatus: "pay_at_outlet",
-        paymentMethod: "pay_at_outlet",
+        paymentStatus: paymentMethod === "cash_on_delivery" ? "cash_on_delivery" : "pay_at_outlet",
+        paymentMethod,
+        ...(paymentMethod === "cash_on_delivery"
+          ? {
+              codAmountCollected: 0,
+              codBalance: (orderSnap.data() as any).total || 0,
+              codPaymentStatus: "unpaid",
+              codPaymentNotes: "",
+              codPaymentUpdatedAt: serverTimestamp(),
+            }
+          : {}),
         updatedAt: serverTimestamp(),
       });
       return NextResponse.json({ ok: true });

@@ -39,6 +39,8 @@ type Order = {
   assignedAgentId?: string;
   assignedAgentName?: string;
   status?: string;
+  paymentStatus?: string;
+  paymentMethod?: string;
   undeliveredReason?: string;
   total?: number;
   mealType?: string;
@@ -47,6 +49,12 @@ type Order = {
   createdAt?: any;
   deliveredAt?: string;
   undeliveredAt?: string;
+  codPaymentStatus?: string;
+  codAmountCollected?: number;
+  codBalance?: number;
+  codPaymentNotes?: string;
+  codCollectedByAgentId?: string;
+  codCollectedByAgentName?: string;
 };
 
 function formatOrderDate(value?: string | null) {
@@ -69,6 +77,10 @@ function getOrderDateKey(order: Order) {
     return order.createdAt.slice(0, 10);
   }
   return "";
+}
+
+function isCashOnDeliveryOrder(order: Order) {
+  return order.deliveryType === "delivery" && order.paymentMethod === "cash_on_delivery";
 }
 
 export default function DeliveryPage() {
@@ -228,15 +240,33 @@ export default function DeliveryPage() {
     const totalOrders = activeOrders.length;
     const itemCounts: Record<string, number> = {};
     const areaCounts: Record<string, number> = {};
+    let codDue = 0;
     activeOrders.forEach((order) => {
       const area = order.area || "Unknown";
       areaCounts[area] = (areaCounts[area] || 0) + 1;
+      if (isCashOnDeliveryOrder(order)) {
+        codDue += typeof order.codBalance === "number" ? order.codBalance : order.total || 0;
+      }
       (order.items || []).forEach((item) => {
         itemCounts[item.name] = (itemCounts[item.name] || 0) + item.qty;
       });
     });
-    return { totalOrders, itemCounts, areaCounts };
+    return { totalOrders, itemCounts, areaCounts, codDue };
   }, [activeOrders]);
+
+  const codCollectedSummary = useMemo(() => {
+    return currentMenuOrders.reduce(
+      (summary, order) => {
+        if (!isCashOnDeliveryOrder(order)) return summary;
+        summary.totalOrders += 1;
+        summary.collected += order.codAmountCollected || 0;
+        summary.outstanding +=
+          typeof order.codBalance === "number" ? order.codBalance : order.total || 0;
+        return summary;
+      },
+      { totalOrders: 0, collected: 0, outstanding: 0 }
+    );
+  }, [currentMenuOrders]);
 
   const historicalOrders = useMemo(
     () =>
@@ -351,11 +381,32 @@ export default function DeliveryPage() {
     });
   }, [activeOrders, currentLocation]);
 
-  async function markDelivered(order: Order) {
-    await updateDoc(doc(db, "orders", order.id), {
+  async function markDelivered(order: Order, paymentReceived = false) {
+    const payload: Record<string, any> = {
       status: "closed",
       deliveredAt: new Date().toISOString(),
-    });
+    };
+
+    if (isCashOnDeliveryOrder(order)) {
+      const collectedAmount = paymentReceived ? order.total || 0 : order.codAmountCollected || 0;
+      const balanceAmount = paymentReceived
+        ? 0
+        : typeof order.codBalance === "number"
+        ? order.codBalance
+        : order.total || 0;
+      payload.paymentMethod = "cash_on_delivery";
+      payload.paymentStatus = paymentReceived ? "paid" : "cash_on_delivery";
+      payload.codAmountCollected = collectedAmount;
+      payload.codBalance = balanceAmount;
+      payload.codPaymentStatus = paymentReceived ? "paid" : "unpaid";
+      payload.codCollectedByAgentId = paymentReceived ? getSession()?.username || "" : "";
+      payload.codCollectedByAgentName = paymentReceived ? agentInfo?.name || "" : "";
+      payload.codPaymentNotes = paymentReceived
+        ? "Payment collected by delivery agent."
+        : order.codPaymentNotes || "";
+    }
+
+    await updateDoc(doc(db, "orders", order.id), payload);
   }
 
   async function markUndelivered(order: Order, reason: string) {
@@ -463,6 +514,10 @@ export default function DeliveryPage() {
                     : "No live published menu"}
                 </div>
                 <div className="card">Active Orders: {orderSummary.totalOrders}</div>
+                <div className="card">COD Due on Active Orders: INR {orderSummary.codDue}</div>
+                <div className="card">
+                  COD to hand over: INR {codCollectedSummary.collected}
+                </div>
                 <div className="card">
                   <strong>Active Orders by Area</strong>
                   {Object.keys(orderSummary.areaCounts).length === 0 && <p>No active orders.</p>}
@@ -518,6 +573,16 @@ export default function DeliveryPage() {
                         ?.map((item) => `${item.name} x${item.qty}`)
                         .join(", ") || "Items"}
                     </div>
+                    <div>
+                      Payment:{" "}
+                      {isCashOnDeliveryOrder(order)
+                        ? `Cash on Delivery${` - INR ${
+                            typeof order.codBalance === "number"
+                              ? order.codBalance
+                              : order.total || 0
+                          } due`}`
+                        : "Prepaid / Settled"}
+                    </div>
                     <div>Address: {order.address || ""}</div>
                     <div>Area: {order.area || "Unknown"}</div>
                     {distance !== null && (
@@ -566,9 +631,26 @@ export default function DeliveryPage() {
                           minWidth: 180,
                         }}
                       >
-                        <button className="btn" onClick={() => markDelivered(order)}>
-                          Mark Delivered
-                        </button>
+                        {isCashOnDeliveryOrder(order) ? (
+                          <>
+                            <button
+                              className="btn"
+                              onClick={() => markDelivered(order, true)}
+                            >
+                              Delivered + Payment Received
+                            </button>
+                            <button
+                              className="btn secondary"
+                              onClick={() => markDelivered(order, false)}
+                            >
+                              Delivered, Payment Pending
+                            </button>
+                          </>
+                        ) : (
+                          <button className="btn" onClick={() => markDelivered(order)}>
+                            Mark Delivered
+                          </button>
+                        )}
                         <button
                           className="btn secondary"
                           onClick={() => {

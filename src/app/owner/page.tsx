@@ -89,6 +89,7 @@ type Order = {
   orderId?: string;
   status?: string;
   paymentStatus?: string;
+  paymentMethod?: string;
   customerName?: string;
   phone?: string;
   items?: OrderItem[];
@@ -108,6 +109,14 @@ type Order = {
   pickupPaymentNotes?: string;
   pickupPaymentUpdatedAt?: any;
   pickupPaymentClosedAt?: any;
+  codPaymentStatus?: string;
+  codAmountCollected?: number;
+  codBalance?: number;
+  codPaymentNotes?: string;
+  codPaymentUpdatedAt?: any;
+  codPaymentClosedAt?: any;
+  codCollectedByAgentId?: string;
+  codCollectedByAgentName?: string;
   orderSource?: string;
   location?: any;
 };
@@ -238,6 +247,56 @@ function getOrderStatusLabel(order: Order) {
   return "Active";
 }
 
+function isCashOnDeliveryOrder(order: Order) {
+  return order.deliveryType === "delivery" && order.paymentMethod === "cash_on_delivery";
+}
+
+function isPaymentStatusOrder(order: Order) {
+  return order.deliveryType === "pickup" || isCashOnDeliveryOrder(order);
+}
+
+function getPaymentStatusLabel(order: Order) {
+  if (order.deliveryType === "pickup") {
+    return order.pickupPaymentStatus || "unpaid";
+  }
+  if (isCashOnDeliveryOrder(order)) {
+    return order.codPaymentStatus || "unpaid";
+  }
+  return order.paymentStatus || "pending";
+}
+
+function getPaymentAmountPaid(order: Order) {
+  if (order.deliveryType === "pickup") {
+    return order.pickupAmountPaid || 0;
+  }
+  if (isCashOnDeliveryOrder(order)) {
+    return order.codAmountCollected || 0;
+  }
+  return 0;
+}
+
+function getPaymentBalance(order: Order) {
+  if (order.deliveryType === "pickup") {
+    return typeof order.pickupBalance === "number"
+      ? order.pickupBalance
+      : order.total || 0;
+  }
+  if (isCashOnDeliveryOrder(order)) {
+    return typeof order.codBalance === "number" ? order.codBalance : order.total || 0;
+  }
+  return 0;
+}
+
+function getPaymentNotes(order: Order) {
+  if (order.deliveryType === "pickup") {
+    return order.pickupPaymentNotes || "";
+  }
+  if (isCashOnDeliveryOrder(order)) {
+    return order.codPaymentNotes || "";
+  }
+  return "";
+}
+
 export default function OwnerPage() {
   const [mode, setMode] = useState<Mode>("loading");
   const [tab, setTab] = useState<Tab>("menu");
@@ -324,7 +383,7 @@ export default function OwnerPage() {
   const [areaSearch, setAreaSearch] = useState("");
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
-    "summary" | "activeOrders" | "pickupPayments"
+    "summary" | "activeOrders" | "paymentStatus"
   >("summary");
   const [deliveryTab, setDeliveryTab] = useState<"agents" | "assignments">(
     "agents"
@@ -1028,30 +1087,44 @@ export default function OwnerPage() {
     await updateDoc(doc(db, "area_assignments", areaName), { lastIndex: index });
   }
 
-  async function savePickupPayment(order: Order, markAsFullyPaid = false) {
+  async function saveOrderPaymentStatus(order: Order, markAsFullyPaid = false) {
     const additionalAmount = markAsFullyPaid
-      ? Math.max((order.total || 0) - (order.pickupAmountPaid || 0), 0)
+      ? Math.max((order.total || 0) - getPaymentAmountPaid(order), 0)
       : Number(pickupPaymentForm.amount || 0);
     if (!markAsFullyPaid && additionalAmount <= 0) {
       return;
     }
     const nextPaid = Math.min(
       (order.total || 0),
-      (order.pickupAmountPaid || 0) + additionalAmount
+      getPaymentAmountPaid(order) + additionalAmount
     );
     const nextBalance = Math.max((order.total || 0) - nextPaid, 0);
     const nextStatus =
       nextBalance === 0 ? "paid" : nextPaid > 0 ? "partial" : "unpaid";
-    await updateDoc(doc(db, "orders", order.id), {
-      pickupAmountPaid: nextPaid,
-      pickupBalance: nextBalance,
-      pickupPaymentStatus: nextStatus,
-      pickupPaymentNotes: pickupPaymentForm.notes.trim(),
-      pickupPaymentUpdatedAt: serverTimestamp(),
-      paymentStatus: nextBalance === 0 ? "paid" : order.paymentStatus || "pending",
-      status: nextBalance === 0 ? "closed" : order.status || "active",
-      ...(nextBalance === 0 ? { pickupPaymentClosedAt: serverTimestamp() } : {}),
-    });
+    const notes = pickupPaymentForm.notes.trim();
+    const payload =
+      order.deliveryType === "pickup"
+        ? {
+            pickupAmountPaid: nextPaid,
+            pickupBalance: nextBalance,
+            pickupPaymentStatus: nextStatus,
+            pickupPaymentNotes: notes,
+            pickupPaymentUpdatedAt: serverTimestamp(),
+            paymentStatus: nextBalance === 0 ? "paid" : order.paymentStatus || "pending",
+            status: nextBalance === 0 ? "closed" : order.status || "active",
+            ...(nextBalance === 0 ? { pickupPaymentClosedAt: serverTimestamp() } : {}),
+          }
+        : {
+            codAmountCollected: nextPaid,
+            codBalance: nextBalance,
+            codPaymentStatus: nextStatus,
+            codPaymentNotes: notes,
+            codPaymentUpdatedAt: serverTimestamp(),
+            paymentMethod: "cash_on_delivery",
+            paymentStatus: nextBalance === 0 ? "paid" : "cash_on_delivery",
+            ...(nextBalance === 0 ? { codPaymentClosedAt: serverTimestamp() } : {}),
+          };
+    await updateDoc(doc(db, "orders", order.id), payload);
     setEditingPickupPaymentId(null);
     setPickupPaymentForm({ amount: "", notes: "" });
   }
@@ -1518,7 +1591,7 @@ export default function OwnerPage() {
         if (order.orderSource === "owner") {
           return true;
         }
-        return order.paymentStatus === "paid";
+        return order.paymentStatus === "paid" || order.paymentStatus === "cash_on_delivery";
       }),
     [currentMenuOrders]
   );
@@ -1562,9 +1635,9 @@ export default function OwnerPage() {
     return summary;
   }, [currentOperationalOrders]);
 
-  const filteredPickupOrders = useMemo(() => {
+  const filteredPaymentOrders = useMemo(() => {
     return currentMenuOrders
-      .filter((order) => order.deliveryType === "pickup")
+      .filter((order) => isPaymentStatusOrder(order))
       .filter((order) => {
         const dateKey = formatDateKey(order.createdAt || order.publishedDate);
         if (
@@ -3116,10 +3189,10 @@ export default function OwnerPage() {
                   Active Orders
                 </button>
                 <button
-                  className={`btn ${historyTab === "pickupPayments" ? "" : "secondary"}`}
-                  onClick={() => setHistoryTab("pickupPayments")}
+                  className={`btn ${historyTab === "paymentStatus" ? "" : "secondary"}`}
+                  onClick={() => setHistoryTab("paymentStatus")}
                 >
-                  Pickup Payments
+                  Payment Status
                 </button>
               </div>
 
@@ -3412,7 +3485,8 @@ export default function OwnerPage() {
                             <th>Area</th>
                             <th>Address</th>
                             <th>Items</th>
-                            <th>Delivery Agent</th>
+                              <th>Delivery Agent</th>
+                              <th>Payment</th>
                               <th>Status</th>
                               <th>Total Value</th>
                               <th>WhatsApp</th>
@@ -3452,6 +3526,15 @@ export default function OwnerPage() {
                                     ? order.assignedAgentName || "Unassigned"
                                     : "Pickup"}
                                 </td>
+                                <td>
+                                  {order.deliveryType === "pickup"
+                                    ? "Pay at Outlet"
+                                    : isCashOnDeliveryOrder(order)
+                                    ? "Cash on Delivery"
+                                    : order.paymentStatus === "paid"
+                                    ? "UPI Paid"
+                                    : order.paymentStatus || "-"}
+                                </td>
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>INR {order.total || 0}</td>
                                 <td>
@@ -3479,7 +3562,7 @@ export default function OwnerPage() {
                               </tr>
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={12}>
+                                  <td colSpan={13}>
                                     <div className="order-edit-grid">
                                       <input
                                         className="input"
@@ -3643,7 +3726,7 @@ export default function OwnerPage() {
                 </div>
               )}
 
-              {historyTab === "pickupPayments" && (
+              {historyTab === "paymentStatus" && (
                 <div className="stack">
                   <div className="row">
                     <input
@@ -3681,9 +3764,9 @@ export default function OwnerPage() {
                     />
                   </div>
 
-                  {filteredPickupOrders.length === 0 && <p>No pickup orders found.</p>}
+                  {filteredPaymentOrders.length === 0 && <p>No payment-status orders found.</p>}
 
-                  {filteredPickupOrders.length > 0 && (
+                  {filteredPaymentOrders.length > 0 && (
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
@@ -3692,6 +3775,7 @@ export default function OwnerPage() {
                             <th>Order ID</th>
                             <th>Customer</th>
                             <th>Phone</th>
+                            <th>Type</th>
                             <th>Items</th>
                             <th>Total</th>
                             <th>Paid</th>
@@ -3702,7 +3786,7 @@ export default function OwnerPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredPickupOrders.map((order) => (
+                          {filteredPaymentOrders.map((order) => (
                             <Fragment key={order.id}>
                               <tr>
                                 <td>
@@ -3716,6 +3800,11 @@ export default function OwnerPage() {
                                 <td>{order.customerName || "Customer"}</td>
                                 <td>{order.phone || "-"}</td>
                                 <td>
+                                  {order.deliveryType === "pickup"
+                                    ? "Pay at Outlet"
+                                    : "Cash on Delivery"}
+                                </td>
+                                <td>
                                   {(order.items || []).map((item) => (
                                     <div key={`${order.id}-${item.name}`}>
                                       {item.name} x{item.qty}
@@ -3723,21 +3812,18 @@ export default function OwnerPage() {
                                   ))}
                                 </td>
                                 <td>INR {order.total || 0}</td>
-                                <td>INR {order.pickupAmountPaid || 0}</td>
+                                <td>INR {getPaymentAmountPaid(order)}</td>
                                 <td>
-                                  INR{" "}
-                                  {typeof order.pickupBalance === "number"
-                                    ? order.pickupBalance
-                                    : order.total || 0}
+                                  INR {getPaymentBalance(order)}
                                 </td>
                                 <td>
                                   <span className="status-chip">
-                                    {order.pickupPaymentStatus === "paid"
-                                      ? "Closed"
-                                      : order.pickupPaymentStatus || "unpaid"}
+                                    {getPaymentStatusLabel(order) === "paid"
+                                      ? "Paid"
+                                      : getPaymentStatusLabel(order)}
                                   </span>
                                 </td>
-                                <td>{order.pickupPaymentNotes || "-"}</td>
+                                <td>{getPaymentNotes(order) || "-"}</td>
                                 <td>
                                   <button
                                     className="btn secondary btn-compact"
@@ -3745,7 +3831,7 @@ export default function OwnerPage() {
                                       setEditingPickupPaymentId(order.id);
                                       setPickupPaymentForm({
                                         amount: "",
-                                        notes: order.pickupPaymentNotes || "",
+                                        notes: getPaymentNotes(order),
                                       });
                                     }}
                                   >
@@ -3755,7 +3841,7 @@ export default function OwnerPage() {
                               </tr>
                               {editingPickupPaymentId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={11}>
+                                  <td colSpan={12}>
                                     <div className="payments-edit-grid">
                                       <input
                                         className="input"
@@ -3784,13 +3870,13 @@ export default function OwnerPage() {
                                       <div className="payments-edit-actions">
                                         <button
                                           className="btn btn-compact"
-                                          onClick={() => savePickupPayment(order, false)}
+                                          onClick={() => saveOrderPaymentStatus(order, false)}
                                         >
                                           Save Payment
                                         </button>
                                         <button
                                           className="btn secondary btn-compact"
-                                          onClick={() => savePickupPayment(order, true)}
+                                          onClick={() => saveOrderPaymentStatus(order, true)}
                                         >
                                           Mark Fully Paid
                                         </button>

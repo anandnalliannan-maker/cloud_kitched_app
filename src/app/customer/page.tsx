@@ -45,6 +45,7 @@ type PaymentSummary = {
   deliveryFee: number;
   total: number;
   deliveryType: "delivery" | "pickup" | "";
+  paymentMethod: "upi" | "cash_on_delivery" | "pay_at_outlet";
   location: { lat: number; lng: number } | null;
   addressText?: string;
 };
@@ -65,6 +66,8 @@ type CustomerOrder = {
   address: string;
   area: string;
   total: number;
+  paymentStatus?: string;
+  paymentMethod?: string;
   publishedDate: string;
   mealType: string;
   createdAt: any;
@@ -74,6 +77,7 @@ type CustomerOrder = {
 const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 const pendingPaymentStorageKey = "msk_pending_payment";
+const MIN_HOME_DELIVERY_ORDER = 60;
 
 async function generateUniqueSixDigitOrderId() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -574,8 +578,15 @@ export default function CustomerPage() {
     [serviceAreas, form.area]
   );
 
+  const isLunchMenu = useMemo(
+    () => (menuMealLabel || "").trim().toLowerCase() === "lunch",
+    [menuMealLabel]
+  );
+
   const selectedDeliveryFee =
-    deliveryType === "delivery" ? Number(selectedAreaConfig?.deliveryFee || 0) : 0;
+    deliveryType === "delivery" && !isLunchMenu
+      ? Number(selectedAreaConfig?.deliveryFee || 0)
+      : 0;
 
   const total = itemsTotal + selectedDeliveryFee;
 
@@ -784,6 +795,12 @@ export default function CustomerPage() {
       setPayError("Please select at least one item.");
       return;
     }
+    if (deliveryType === "delivery" && itemsTotal < MIN_HOME_DELIVERY_ORDER) {
+      const message = `Minimum order value for home delivery is INR ${MIN_HOME_DELIVERY_ORDER}.`;
+      setPayError(message);
+      window.alert(message);
+      return;
+    }
 
     setIsPlacingOrder(true);
     try {
@@ -810,6 +827,7 @@ export default function CustomerPage() {
         deliveryFee: selectedDeliveryFee,
         total,
         deliveryType,
+        paymentMethod: deliveryType === "pickup" ? "pay_at_outlet" : "upi",
         location,
         addressText: deliveryAddressText,
       };
@@ -1003,6 +1021,44 @@ export default function CustomerPage() {
     } finally {
       setIsConfirmingOutletOrder(false);
     }
+  }
+
+  async function confirmCashOnDelivery() {
+    setPayError("");
+    setPaymentNotice("");
+    if (!paymentSummary) {
+      setPayError("Order summary is missing.");
+      return;
+    }
+    setIsConfirmingOutletOrder(true);
+    try {
+      const response = await fetch("/api/razorpay/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appOrderId: paymentSummary.appOrderId,
+          offline: true,
+          paymentMethod: "cash_on_delivery",
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to confirm order.");
+      }
+      resetCheckoutState();
+      setPaymentSuccessPopup({
+        orderId: paymentSummary.displayOrderId,
+        message: "Order is placed. Please pay the bill amount to the delivery agent.",
+      });
+    } catch (error: any) {
+      setPayError(error?.message || "Failed to confirm order.");
+    } finally {
+      setIsConfirmingOutletOrder(false);
+    }
+  }
+
+  function setPaymentMethod(method: PaymentSummary["paymentMethod"]) {
+    setPaymentSummary((prev) => (prev ? { ...prev, paymentMethod: method } : prev));
   }
 
   return (
@@ -1568,7 +1624,9 @@ export default function CustomerPage() {
                   <div className="payment-meta-compact-item">
                     <span>Delivery Charge</span>
                     <strong>
-                      {paymentSummary?.deliveryFee
+                      {paymentSummary?.deliveryType === "delivery" && isLunchMenu
+                        ? "Not applicable for lunch"
+                        : paymentSummary?.deliveryFee
                         ? `INR ${paymentSummary.deliveryFee}`
                         : "Included"}
                     </strong>
@@ -1607,11 +1665,15 @@ export default function CustomerPage() {
                 <strong>
                   {paymentSummary?.deliveryType === "pickup"
                     ? "Store payment"
+                    : paymentSummary?.paymentMethod === "cash_on_delivery"
+                    ? "Cash on delivery"
                     : "Proceed to payment"}
                 </strong>
                 <p>
                   {paymentSummary?.deliveryType === "pickup"
                     ? "Self pickup orders must be collected and paid for at the store."
+                    : paymentSummary?.paymentMethod === "cash_on_delivery"
+                    ? "Pay the bill amount directly to the delivery agent."
                     : "Complete payment to confirm this order."}
                 </p>
               </div>
@@ -1627,23 +1689,65 @@ export default function CustomerPage() {
                 </button>
               </div>
             ) : (
-              <button
-                className="btn payment-primary-btn customer-primary-btn"
-                onClick={startOnlinePayment}
-                disabled={isProcessingPayment}
-              >
-                Pay using UPI
-              </button>
+              <div className="row payment-button-row">
+                <button
+                  className={`btn customer-toggle-btn ${
+                    paymentSummary?.paymentMethod === "upi" ? "" : "secondary"
+                  }`}
+                  onClick={() => setPaymentMethod("upi")}
+                  disabled={isProcessingPayment || isConfirmingOutletOrder}
+                >
+                  UPI
+                </button>
+                <button
+                  className={`btn customer-toggle-btn ${
+                    paymentSummary?.paymentMethod === "cash_on_delivery" ? "" : "secondary"
+                  }`}
+                  onClick={() => setPaymentMethod("cash_on_delivery")}
+                  disabled={isProcessingPayment || isConfirmingOutletOrder}
+                >
+                  Cash on Delivery
+                </button>
+              </div>
             )}
+            {paymentSummary?.deliveryType === "delivery" &&
+              paymentSummary?.paymentMethod === "upi" && (
+                <button
+                  className="btn payment-primary-btn customer-primary-btn"
+                  onClick={startOnlinePayment}
+                  disabled={isProcessingPayment}
+                >
+                  Pay using UPI
+                </button>
+              )}
+            {paymentSummary?.deliveryType === "delivery" &&
+              paymentSummary?.paymentMethod === "cash_on_delivery" && (
+                <button
+                  className="btn payment-primary-btn customer-primary-btn"
+                  onClick={confirmCashOnDelivery}
+                  disabled={isConfirmingOutletOrder}
+                >
+                  {isConfirmingOutletOrder ? "Placing order..." : "Cash on Delivery"}
+                </button>
+              )}
             {isProcessingPayment && (
               <p className="payment-status-text">Redirecting to ICICI payment gateway...</p>
             )}
-            {!isProcessingPayment && paymentSummary?.deliveryType !== "pickup" && (
+            {!isProcessingPayment &&
+              paymentSummary?.deliveryType === "delivery" &&
+              paymentSummary?.paymentMethod === "upi" && (
               <p className="payment-status-text">
                 You will be redirected to ICICI to complete payment securely.
               </p>
             )}
-            {paymentSummary?.deliveryType !== "pickup" && (
+            {paymentSummary?.deliveryType === "delivery" &&
+              paymentSummary?.paymentMethod === "cash_on_delivery" && (
+              <p className="payment-status-text">
+                Pay the full bill amount to the delivery agent when your order arrives.
+              </p>
+            )}
+            {paymentSummary?.deliveryType === "delivery" &&
+              paymentSummary?.paymentMethod === "upi" && (
               <p className="payment-status-text">
                 If Google Pay does not return to the browser automatically, reopen this page
                 and use the payment status check.
