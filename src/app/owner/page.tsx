@@ -27,6 +27,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import {
   changeOwnerPassword,
+  ensureOwnerAccounts,
   loginOwner,
   normalizePhone,
   ownerExists,
@@ -497,6 +498,7 @@ export default function OwnerPage() {
         setMode("dashboard");
         return;
       }
+      await ensureOwnerAccounts();
       const exists = await ownerExists();
       setMode(exists ? "login" : "setup");
     }

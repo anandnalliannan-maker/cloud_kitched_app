@@ -5,11 +5,11 @@ import {
   getDoc,
   getDocs,
   limit,
-  query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
+  query,
 } from "firebase/firestore";
 
 import { db } from "./firebase";
@@ -26,10 +26,48 @@ export type DeliveryAccount = {
   active?: boolean;
 };
 
+const OWNER_ADMIN_PHONES = ["9840146764", "9363969180"] as const;
+const OWNER_ADMIN_PASSWORD = "yummy@2026";
+const ALLOWED_OWNER_USERNAMES = OWNER_ADMIN_PHONES.map((phone) => normalizePhone(phone));
+
 export async function ownerExists(): Promise<boolean> {
-  const q = query(collection(db, "admin_users"), limit(1));
-  const snap = await getDocs(q);
-  return !snap.empty;
+  return true;
+}
+
+export async function ensureOwnerAccounts() {
+  const hash = await bcrypt.hash(OWNER_ADMIN_PASSWORD, 10);
+  const adminUsersRef = collection(db, "admin_users");
+  const snap = await getDocs(adminUsersRef);
+
+  await Promise.all(
+    ALLOWED_OWNER_USERNAMES.map((username) =>
+      setDoc(
+        doc(db, "admin_users", username),
+        {
+          username,
+          passwordHash: hash,
+          active: true,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    )
+  );
+
+  await Promise.all(
+    snap.docs
+      .filter((docSnap) => !ALLOWED_OWNER_USERNAMES.includes(docSnap.id))
+      .map((docSnap) =>
+        setDoc(
+          doc(db, "admin_users", docSnap.id),
+          {
+            active: false,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        )
+      )
+  );
 }
 
 export async function createOwnerAccount(
@@ -52,7 +90,11 @@ export async function createOwnerAccount(
 }
 
 export async function loginOwner(username: string, password: string) {
-  const ref = doc(db, "admin_users", username);
+  const normalized = normalizePhone(username);
+  if (!ALLOWED_OWNER_USERNAMES.includes(normalized)) {
+    throw new Error("Invalid credentials");
+  }
+  const ref = doc(db, "admin_users", normalized);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Invalid credentials");
   const data = snap.data() as OwnerAccount;
@@ -66,12 +108,18 @@ export async function changeOwnerPassword(
   username: string,
   newPassword: string
 ) {
-  const ref = doc(db, "admin_users", username);
+  const normalized = normalizePhone(username);
+  if (!ALLOWED_OWNER_USERNAMES.includes(normalized)) {
+    throw new Error("Invalid credentials");
+  }
+  const ref = doc(db, "admin_users", normalized);
   const hash = await bcrypt.hash(newPassword, 10);
-  await updateDoc(ref, {
+  await setDoc(ref, {
+    username: normalized,
     passwordHash: hash,
     updatedAt: serverTimestamp(),
-  });
+    active: true,
+  }, { merge: true });
 }
 
 export async function loginDelivery(
