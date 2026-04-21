@@ -29,6 +29,7 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
+import { getSubAreasForArea } from "@/lib/subareas";
 
 type CartItem = {
   id: string;
@@ -73,6 +74,7 @@ type CustomerOrder = {
   deliveryType: string;
   address: string;
   area: string;
+  subArea?: string;
   total: number;
   paymentStatus?: string;
   paymentMethod?: string;
@@ -144,6 +146,7 @@ async function fetchOrdersByPhone(rawPhone: string) {
           deliveryType: data.deliveryType || "",
           address: data.address || "",
           area: data.area || "",
+          subArea: data.subArea || "",
           total: Number(data.total || 0),
           paymentStatus: data.paymentStatus || "",
           paymentMethod: data.paymentMethod || "",
@@ -187,6 +190,7 @@ export default function CustomerPage() {
     addressLine1: "",
     street: "",
     area: "",
+    subArea: "",
   });
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null
@@ -280,6 +284,7 @@ export default function CustomerPage() {
           deliveryType: data.deliveryType || "",
           address: data.address || "",
           area: data.area || "",
+          subArea: data.subArea || "",
           total: Number(data.total || 0),
           publishedDate: data.publishedDate || "",
           mealType: data.mealType || "",
@@ -604,6 +609,10 @@ export default function CustomerPage() {
             latestOrder.deliveryType === "delivery"
               ? latestOrder.area || prev.area
               : prev.area,
+          subArea:
+            latestOrder.deliveryType === "delivery"
+              ? latestOrder.subArea || prev.subArea
+              : prev.subArea,
         }));
 
         if (latestOrder.deliveryType === "delivery") {
@@ -663,6 +672,7 @@ export default function CustomerPage() {
     () => serviceAreas.find((area) => area.name === form.area) || null,
     [serviceAreas, form.area]
   );
+  const subAreaOptions = useMemo(() => getSubAreasForArea(form.area), [form.area]);
 
   const isLunchMenu = useMemo(
     () => (menuMealLabel || "").trim().toLowerCase() === "lunch",
@@ -703,6 +713,9 @@ export default function CustomerPage() {
       }
       if (!form.area.trim()) {
         missing.push("Area");
+      }
+      if (!form.subArea.trim()) {
+        missing.push("Sub Area");
       }
       if (!location) {
         missing.push("Exact Location on Map");
@@ -1027,9 +1040,14 @@ export default function CustomerPage() {
       const menuRef = doc(db, "published_menus", publishedMenuId);
       const orderRef = doc(collection(db, "orders"));
       const generatedDisplayOrderId = await generateUniqueSixDigitOrderId();
-      const deliveryAddressText =
+        const deliveryAddressText =
         deliveryType === "delivery"
-          ? [form.addressLine1.trim(), form.street.trim(), form.area.trim()]
+          ? [
+              form.addressLine1.trim(),
+              form.street.trim(),
+              form.subArea.trim(),
+              form.area.trim(),
+            ]
               .filter(Boolean)
               .join(", ")
           : "";
@@ -1125,6 +1143,7 @@ export default function CustomerPage() {
               ? `${form.addressLine1}, ${form.street}`
               : "",
           area: deliveryType === "delivery" ? form.area : "",
+          subArea: deliveryType === "delivery" ? form.subArea : "",
           location: location || null,
           items: selectedItems.map((item) => ({
             name: item.name,
@@ -1157,6 +1176,7 @@ export default function CustomerPage() {
       addressLine1: "",
       street: "",
       area: "",
+      subArea: "",
     });
     setLocation(null);
     setLocLabel("");
@@ -1492,6 +1512,7 @@ export default function CustomerPage() {
                   {order.deliveryType === "delivery" && (
                     <div>
                       Address: {order.address || "-"}
+                      {order.subArea ? `, ${order.subArea}` : ""}
                       {order.area ? `, ${order.area}` : ""}
                     </div>
                   )}
@@ -1781,7 +1802,10 @@ export default function CustomerPage() {
                   className={`btn customer-toggle-btn ${
                     deliveryType === "pickup" ? "" : "secondary"
                   }`}
-                  onClick={() => setDeliveryType("pickup")}
+                  onClick={() => {
+                    setDeliveryType("pickup");
+                    setForm((prev) => ({ ...prev, subArea: "" }));
+                  }}
                 >
                   Self Pickup
                 </button>
@@ -1815,12 +1839,30 @@ export default function CustomerPage() {
                   <select
                     className="select"
                     value={form.area}
-                    onChange={(e) => setForm({ ...form, area: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, area: e.target.value, subArea: "" })
+                    }
                   >
                     <option value="">Select area</option>
                     {serviceAreas.map((area) => (
                       <option key={area.id} value={area.name}>
                         {area.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Sub Area</label>
+                  <select
+                    className="select"
+                    value={form.subArea}
+                    onChange={(e) => setForm({ ...form, subArea: e.target.value })}
+                    disabled={!form.area}
+                  >
+                    <option value="">{form.area ? "Select sub area" : "Select area first"}</option>
+                    {subAreaOptions.map((subArea) => (
+                      <option key={subArea} value={subArea}>
+                        {subArea}
                       </option>
                     ))}
                   </select>

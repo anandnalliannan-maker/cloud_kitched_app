@@ -34,6 +34,7 @@ type Order = {
   items?: { name: string; qty: number; price: number }[];
   address?: string;
   area?: string;
+  subArea?: string;
   deliveryType?: string;
   location?: { lat: number; lng: number };
   assignedAgentId?: string;
@@ -654,7 +655,10 @@ export default function DeliveryPage() {
                         : "Prepaid / Settled"}
                     </div>
                     <div>Address: {order.address || ""}</div>
-                    <div>Area: {order.area || "Unknown"}</div>
+                    <div>
+                      Area: {order.area || "Unknown"}
+                      {order.subArea ? ` - ${order.subArea}` : ""}
+                    </div>
                     {distance !== null && (
                       <div>Distance: {distance.toFixed(2)} km</div>
                     )}

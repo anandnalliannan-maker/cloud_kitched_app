@@ -34,6 +34,7 @@ import {
   setDeliveryPassword,
 } from "@/lib/auth";
 import { clearSession, getSession, saveSession } from "@/lib/session";
+import { getSubAreasForArea } from "@/lib/subareas";
 
 type Mode = "loading" | "setup" | "login" | "dashboard";
 type Tab =
@@ -97,6 +98,7 @@ type Order = {
   deliveryType?: string;
   address?: string;
   area?: string;
+  subArea?: string;
   publishedMenuId?: string;
   createdAt?: any;
   mealType?: string;
@@ -431,6 +433,7 @@ export default function OwnerPage() {
     addressLine1: "",
     street: "",
     area: "",
+    subArea: "",
     location: "",
     assignedAgentId: "",
     status: "active",
@@ -467,6 +470,7 @@ export default function OwnerPage() {
     addressLine1: "",
     street: "",
     area: "",
+    subArea: "",
     preferredAgentId: "",
   });
   const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
@@ -499,6 +503,14 @@ export default function OwnerPage() {
     if (!search) return serviceAreas;
     return serviceAreas.filter((area) => area.name.toLowerCase().includes(search));
   }, [serviceAreas, areaSearch]);
+  const ownerOrderSubAreaOptions = useMemo(
+    () => getSubAreasForArea(ownerOrderForm.area),
+    [ownerOrderForm.area]
+  );
+  const activeOrderEditSubAreaOptions = useMemo(
+    () => getSubAreasForArea(activeOrderEditForm.area),
+    [activeOrderEditForm.area]
+  );
 
   const agentNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -1155,6 +1167,7 @@ export default function OwnerPage() {
       addressLine1: savedAddress.addressLine1,
       street: savedAddress.street,
       area: order.area || "",
+      subArea: order.subArea || "",
       location: formatLocationInput(order.location),
       assignedAgentId: order.assignedAgentId || "",
       status:
@@ -1199,9 +1212,10 @@ export default function OwnerPage() {
       activeOrderEditForm.deliveryType === "delivery" &&
       (!activeOrderEditForm.addressLine1.trim() ||
         !activeOrderEditForm.street.trim() ||
-        !activeOrderEditForm.area)
+        !activeOrderEditForm.area ||
+        !activeOrderEditForm.subArea)
     ) {
-      setActiveOrderEditError("Delivery orders require address, street and area.");
+      setActiveOrderEditError("Delivery orders require address, street, area and sub area.");
       return;
     }
 
@@ -1220,6 +1234,10 @@ export default function OwnerPage() {
       area:
         activeOrderEditForm.deliveryType === "delivery"
           ? activeOrderEditForm.area
+          : "",
+      subArea:
+        activeOrderEditForm.deliveryType === "delivery"
+          ? activeOrderEditForm.subArea
           : "",
       location:
         activeOrderEditForm.deliveryType === "delivery"
@@ -1252,9 +1270,10 @@ export default function OwnerPage() {
       (!ownerOrderForm.addressLine1.trim() ||
         !ownerOrderForm.street.trim() ||
         !ownerOrderForm.area ||
+        !ownerOrderForm.subArea ||
         !ownerOrderLocation)
     ) {
-      setOwnerOrderError("Enter full delivery address, area and exact location on map.");
+      setOwnerOrderError("Enter full delivery address, area, sub area and exact location on map.");
       return;
     }
 
@@ -1372,6 +1391,8 @@ export default function OwnerPage() {
               ? `${ownerOrderForm.addressLine1.trim()}, ${ownerOrderForm.street.trim()}`
               : "",
           area: ownerOrderForm.deliveryType === "delivery" ? ownerOrderForm.area : "",
+          subArea:
+            ownerOrderForm.deliveryType === "delivery" ? ownerOrderForm.subArea : "",
           location:
             ownerOrderForm.deliveryType === "delivery"
               ? ownerOrderLocation || null
@@ -1402,6 +1423,7 @@ export default function OwnerPage() {
         addressLine1: "",
         street: "",
         area: "",
+        subArea: "",
         preferredAgentId: "",
       });
       setOwnerOrderLocation(null);
@@ -2806,6 +2828,7 @@ export default function OwnerPage() {
                             setOwnerOrderForm({
                               ...ownerOrderForm,
                               deliveryType: "pickup",
+                              subArea: "",
                               preferredAgentId: "",
                             });
                             setOwnerOrderLocation(null);
@@ -2863,6 +2886,7 @@ export default function OwnerPage() {
                               setOwnerOrderForm({
                                 ...ownerOrderForm,
                                 area: e.target.value,
+                                subArea: "",
                               })
                             }
                           >
@@ -2870,6 +2894,26 @@ export default function OwnerPage() {
                             {areaOptions.map((area) => (
                               <option key={area} value={area}>
                                 {area}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="select"
+                            value={ownerOrderForm.subArea}
+                            onChange={(e) =>
+                              setOwnerOrderForm({
+                                ...ownerOrderForm,
+                                subArea: e.target.value,
+                              })
+                            }
+                            disabled={!ownerOrderForm.area}
+                          >
+                            <option value="">
+                              {ownerOrderForm.area ? "Select sub area" : "Select area first"}
+                            </option>
+                            {ownerOrderSubAreaOptions.map((subArea) => (
+                              <option key={subArea} value={subArea}>
+                                {subArea}
                               </option>
                             ))}
                           </select>
@@ -3241,7 +3285,12 @@ export default function OwnerPage() {
                           <td>{formatDateLabel(order.createdAt || order.publishedDate)}</td>
                           <td>#{order.orderId || order.id}</td>
                           <td>{order.customerName || "-"}</td>
-                          <td>{order.area || "-"}</td>
+                          <td>
+                            {order.area || "-"}
+                            {order.subArea ? (
+                              <small className="payments-subtext">{order.subArea}</small>
+                            ) : null}
+                          </td>
                           <td>
                             {order.deliveryType === "pickup"
                               ? "Self Pickup"
@@ -3680,7 +3729,12 @@ export default function OwnerPage() {
                                     ? "Self Pickup"
                                     : "Home Delivery"}
                                 </td>
-                                <td>{order.area || "-"}</td>
+                                <td>
+                                  {order.area || "-"}
+                                  {order.subArea ? (
+                                    <small className="payments-subtext">{order.subArea}</small>
+                                  ) : null}
+                                </td>
                                 <td>
                                   {order.address || "-"}
                                   {order.location && (
@@ -3824,6 +3878,7 @@ export default function OwnerPage() {
                                               setActiveOrderEditForm({
                                                 ...activeOrderEditForm,
                                                 area: e.target.value,
+                                                subArea: "",
                                               })
                                             }
                                           >
@@ -3831,6 +3886,28 @@ export default function OwnerPage() {
                                             {areaOptions.map((area) => (
                                               <option key={area} value={area}>
                                                 {area}
+                                              </option>
+                                              ))}
+                                          </select>
+                                          <select
+                                            className="select"
+                                            value={activeOrderEditForm.subArea}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                subArea: e.target.value,
+                                              })
+                                            }
+                                            disabled={!activeOrderEditForm.area}
+                                          >
+                                            <option value="">
+                                              {activeOrderEditForm.area
+                                                ? "Select sub area"
+                                                : "Select area first"}
+                                            </option>
+                                            {activeOrderEditSubAreaOptions.map((subArea) => (
+                                              <option key={subArea} value={subArea}>
+                                                {subArea}
                                               </option>
                                             ))}
                                           </select>
