@@ -219,6 +219,7 @@ export default function CustomerPage() {
   const [cancelVerificationLoading, setCancelVerificationLoading] = useState(false);
   const [cancelOtpSending, setCancelOtpSending] = useState(false);
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+  const [expandedDescriptions, setExpandedDescriptions] = useState<string[]>([]);
   const [customerPrefillNotice, setCustomerPrefillNotice] = useState("");
   const [customerPrefillPopup, setCustomerPrefillPopup] = useState("");
   const [isPrefillingCustomer, setIsPrefillingCustomer] = useState(false);
@@ -242,6 +243,12 @@ export default function CustomerPage() {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(pendingPaymentStorageKey);
     }
+  }
+
+  function toggleDescription(itemId: string) {
+    setExpandedDescriptions((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
+    );
   }
 
   useEffect(() => {
@@ -1649,7 +1656,24 @@ export default function CustomerPage() {
                       <div className="product-content">
                         <div className="product-title">{item.name}</div>
                         {item.description && (
-                          <div className="product-desc">{item.description}</div>
+                          <>
+                            <div
+                              className={`product-desc ${
+                                expandedDescriptions.includes(item.id) ? "expanded" : "collapsed"
+                              }`}
+                            >
+                              {item.description}
+                            </div>
+                            {item.description.length > 70 && (
+                              <button
+                                type="button"
+                                className="customer-desc-toggle"
+                                onClick={() => toggleDescription(item.id)}
+                              >
+                                {expandedDescriptions.includes(item.id) ? "Show less" : "Read more"}
+                              </button>
+                            )}
+                          </>
                         )}
                         <div className="product-price">INR {item.price}</div>
                       </div>
