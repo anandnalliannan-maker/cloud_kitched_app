@@ -1345,6 +1345,8 @@ a {
 .table-scroll {
   width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .summary-tables-row {
@@ -1489,6 +1491,20 @@ a {
   background: #fbfefd;
 }
 
+.owner-summary-table {
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.owner-summary-table th,
+.owner-summary-table td {
+  word-break: break-word;
+}
+
+.owner-summary-packing-table {
+  min-width: max-content;
+}
+
 .payments-subtext {
   display: block;
   margin-top: 0.25rem;
@@ -1559,6 +1575,10 @@ a {
     align-items: stretch;
   }
 
+  .summary-tables-row > .card {
+    min-width: 0;
+  }
+
   .owner-summary-metrics,
   .owner-filters-grid,
   .order-edit-grid {
@@ -1571,5 +1591,18 @@ a {
 
   .payments-edit-actions {
     justify-content: flex-start;
+  }
+
+  .owner-summary-table {
+    font-size: 0.83rem;
+  }
+
+  .owner-summary-table th,
+  .owner-summary-table td {
+    padding: 0.6rem 0.55rem;
+  }
+
+  .owner-summary-table th {
+    font-size: 0.7rem;
   }
 }

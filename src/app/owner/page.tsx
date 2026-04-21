@@ -3067,7 +3067,7 @@ export default function OwnerPage() {
                 <div className="card" style={{ flex: 1 }}>
                   <h3>Completed Orders by Area</h3>
                   <div className="table-scroll">
-                    <table className="payments-table payments-table-compact">
+                    <table className="payments-table payments-table-compact owner-summary-table">
                       <thead>
                         <tr>
                           <th>Area</th>
@@ -3094,7 +3094,7 @@ export default function OwnerPage() {
                 <div className="card" style={{ flex: 1 }}>
                   <h3>Delivered by Agent</h3>
                   <div className="table-scroll">
-                    <table className="payments-table payments-table-compact">
+                    <table className="payments-table payments-table-compact owner-summary-table">
                       <thead>
                         <tr>
                           <th>Agent</th>
@@ -3128,7 +3128,7 @@ export default function OwnerPage() {
               <div className="card">
                 <h3>Completed Orders</h3>
                 <div className="table-scroll">
-                  <table className="payments-table payments-table-compact">
+                  <table className="payments-table payments-table-compact owner-summary-table">
                     <thead>
                       <tr>
                         <th>Date</th>
@@ -3238,7 +3238,7 @@ export default function OwnerPage() {
                         <div className="card" style={{ flex: 1 }}>
                           <h3>Orders by Area</h3>
                           <div className="table-scroll">
-                            <table className="payments-table payments-table-compact">
+                            <table className="payments-table payments-table-compact owner-summary-table">
                               <thead>
                                 <tr>
                                   <th>Area</th>
@@ -3264,7 +3264,7 @@ export default function OwnerPage() {
                         <div className="card" style={{ flex: 1 }}>
                           <h3>Items Count</h3>
                           <div className="table-scroll">
-                            <table className="payments-table payments-table-compact">
+                            <table className="payments-table payments-table-compact owner-summary-table">
                               <thead>
                                 <tr>
                                   <th>Item</th>
@@ -3291,7 +3291,7 @@ export default function OwnerPage() {
                       <div className="card">
                         <h3>Item Packing Pairs</h3>
                         <div className="table-scroll">
-                          <table className="payments-table payments-table-compact">
+                          <table className="payments-table payments-table-compact owner-summary-packing-table">
                             <thead>
                               <tr>
                                 <th>Item</th>
@@ -3329,7 +3329,7 @@ export default function OwnerPage() {
                       <div className="card">
                         <h3>Orders by Delivery Type</h3>
                         <div className="table-scroll">
-                          <table className="payments-table payments-table-compact">
+                            <table className="payments-table payments-table-compact owner-summary-table">
                             <thead>
                               <tr>
                                 <th>Delivery Type</th>
@@ -3355,7 +3355,7 @@ export default function OwnerPage() {
                       <div className="card">
                         <h3>Orders by Delivery Agent</h3>
                         <div className="table-scroll">
-                          <table className="payments-table payments-table-compact">
+                            <table className="payments-table payments-table-compact owner-summary-table">
                             <thead>
                               <tr>
                                 <th>Delivery Agent</th>
