@@ -239,6 +239,7 @@ export default function DeliveryPage() {
   const orderSummary = useMemo(() => {
     const totalOrders = activeOrders.length;
     const itemCounts: Record<string, number> = {};
+    const itemPairCounts: Record<string, number> = {};
     const areaCounts: Record<string, number> = {};
     let codDue = 0;
     activeOrders.forEach((order) => {
@@ -249,10 +250,43 @@ export default function DeliveryPage() {
       }
       (order.items || []).forEach((item) => {
         itemCounts[item.name] = (itemCounts[item.name] || 0) + item.qty;
+        const pairKey = `${item.name}__${item.qty}`;
+        itemPairCounts[pairKey] = (itemPairCounts[pairKey] || 0) + 1;
       });
     });
-    return { totalOrders, itemCounts, areaCounts, codDue };
+    return { totalOrders, itemCounts, itemPairCounts, areaCounts, codDue };
   }, [activeOrders]);
+
+  const activeItemPackingMatrix = useMemo(() => {
+    const packQtySet = new Set<number>();
+    const grouped: Record<string, Record<number, number>> = {};
+
+    Object.entries(orderSummary.itemPairCounts).forEach(([pairKey, count]) => {
+      const [itemName, packQtyRaw] = pairKey.split("__");
+      const packQty = Number(packQtyRaw || 0);
+      if (!itemName || !packQty) return;
+
+      packQtySet.add(packQty);
+      if (!grouped[itemName]) {
+        grouped[itemName] = {};
+      }
+      grouped[itemName][packQty] = count;
+    });
+
+    const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
+    const rows = Object.entries(grouped)
+      .map(([itemName, buckets]) => ({
+        key: itemName,
+        itemName,
+        buckets,
+      }))
+      .sort((a, b) => a.itemName.localeCompare(b.itemName));
+
+    return {
+      packQtyColumns,
+      rows,
+    };
+  }, [orderSummary.itemPairCounts]);
 
   const codCollectedSummary = useMemo(() => {
     return currentMenuOrders.reduce(
@@ -537,6 +571,42 @@ export default function DeliveryPage() {
                       <div>{count}</div>
                     </div>
                   ))}
+                </div>
+                <div className="card">
+                  <strong>Packing Buckets</strong>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact owner-summary-packing-table">
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                            <th key={packQty}>{packQty} Pack</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeItemPackingMatrix.rows.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={Math.max(activeItemPackingMatrix.packQtyColumns.length + 1, 2)}
+                            >
+                              No packing data
+                            </td>
+                          </tr>
+                        )}
+                        {activeItemPackingMatrix.rows.map((row) => (
+                          <tr key={row.key}>
+                            <td>{row.itemName}</td>
+                            {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                              <td key={`${row.key}-${packQty}`}>
+                                {row.buckets[packQty] || "-"}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
