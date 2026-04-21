@@ -1405,7 +1405,7 @@ export default function CustomerPage() {
           </div>
         </div>
 
-        {customerView === "menu" && (
+        {customerView === "menu" && step === "menu" && (
           <section className="card customer-hero">
             <div className="customer-hero-main">
               <div className="customer-hero-image-wrap">
