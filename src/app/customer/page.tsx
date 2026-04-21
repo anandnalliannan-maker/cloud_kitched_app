@@ -31,7 +31,7 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
-import { getSubAreasForArea } from "@/lib/subareas";
+import { getSubAreasForArea, isMappedSubArea } from "@/lib/subareas";
 
 type CartItem = {
   id: string;
@@ -1177,12 +1177,19 @@ export default function CustomerPage() {
           const assignmentSnap = await tx.get(assignmentRef);
           if (assignmentSnap.exists()) {
             const assignmentData = assignmentSnap.data() as any;
+            const subAreaAgentIds: string[] = assignmentData.subAreaAgentIds?.[form.subArea] || [];
+            const requiresOwnerAssignment =
+              Boolean(form.subArea) &&
+              !isMappedSubArea(form.area, form.subArea) &&
+              subAreaAgentIds.length === 0;
             const agentIds: string[] =
-              (assignmentData.subAreaAgentIds?.[form.subArea] || []).length > 0
-                ? assignmentData.subAreaAgentIds?.[form.subArea] || []
-                : assignmentData.agentIds || [];
+              subAreaAgentIds.length > 0
+                ? subAreaAgentIds
+                : requiresOwnerAssignment
+                  ? []
+                  : assignmentData.agentIds || [];
             if (agentIds.length > 0) {
-              const usesSubAreaPool = (assignmentData.subAreaAgentIds?.[form.subArea] || []).length > 0;
+              const usesSubAreaPool = subAreaAgentIds.length > 0;
               const lastIndex = usesSubAreaPool
                 ? typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
                   ? assignmentData.subAreaLastIndex[form.subArea]

@@ -35,7 +35,7 @@ import {
   setDeliveryPassword,
 } from "@/lib/auth";
 import { clearSession, getSession, saveSession } from "@/lib/session";
-import { getSubAreasForArea } from "@/lib/subareas";
+import { getSubAreasForArea, isMappedSubArea } from "@/lib/subareas";
 
 type Mode = "loading" | "setup" | "login" | "dashboard";
 type Tab =
@@ -541,6 +541,21 @@ export default function OwnerPage() {
     });
     return map;
   }, [areaAssignments]);
+  const unassignedCustomSubAreas = useMemo(() => {
+    return serviceAreas.flatMap((area) =>
+      ((area.subAreas || []).filter(Boolean) || [])
+        .filter((subArea) => !isMappedSubArea(area.name, subArea))
+        .filter(
+          (subArea) =>
+            (areaAssignmentMap[area.name]?.subAreaAgentIds?.[subArea] || []).length === 0
+        )
+        .sort((a, b) => a.localeCompare(b))
+        .map((subArea) => ({
+          area: area.name,
+          subArea,
+        }))
+    );
+  }, [serviceAreas, areaAssignmentMap]);
 
   function getCreatedAtMs(value: any) {
     if (!value) return 0;
@@ -1173,6 +1188,10 @@ export default function OwnerPage() {
       relevantOrders.map((order) => {
         const subArea = order.subArea || "";
         const subAreaAgentIds = currentAssignment.subAreaAgentIds?.[subArea] || [];
+        const requiresOwnerAssignment =
+          Boolean(subArea) &&
+          !isMappedSubArea(areaName, subArea) &&
+          subAreaAgentIds.length === 0;
         let assignmentPool = subAreaAgentIds;
         let agentId = "";
         if (assignmentPool.length > 0) {
@@ -1181,7 +1200,7 @@ export default function OwnerPage() {
           const nextIndex = (lastIndex + 1) % assignmentPool.length;
           nextSubAreaLastIndex[subArea] = nextIndex;
           agentId = assignmentPool[nextIndex];
-        } else if ((currentAssignment.agentIds || []).length > 0) {
+        } else if (!requiresOwnerAssignment && (currentAssignment.agentIds || []).length > 0) {
           assignmentPool = currentAssignment.agentIds || [];
           areaLastIndex = (areaLastIndex + 1) % assignmentPool.length;
           agentId = assignmentPool[areaLastIndex];
@@ -1436,13 +1455,21 @@ export default function OwnerPage() {
             const assignmentSnap = await tx.get(assignmentRef);
             if (assignmentSnap.exists()) {
               const assignmentData = assignmentSnap.data() as any;
+              const subAreaAgentIds: string[] =
+                assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || [];
+              const requiresOwnerAssignment =
+                Boolean(ownerOrderForm.subArea) &&
+                !isMappedSubArea(ownerOrderForm.area, ownerOrderForm.subArea) &&
+                subAreaAgentIds.length === 0;
               const agentIds: string[] =
-                (assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || []).length > 0
-                  ? assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || []
-                  : assignmentData.agentIds || [];
+                subAreaAgentIds.length > 0
+                  ? subAreaAgentIds
+                  : requiresOwnerAssignment
+                    ? []
+                    : assignmentData.agentIds || [];
               if (agentIds.length > 0) {
                 const usesSubAreaPool =
-                  (assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || []).length > 0;
+                  subAreaAgentIds.length > 0;
                 const lastIndex = usesSubAreaPool
                   ? typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
                     ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
@@ -4445,6 +4472,44 @@ export default function OwnerPage() {
               {deliveryTab === "assignments" && (
                 <div className="card stack">
                   <h3>Area Assignments</h3>
+                  <div className="list-card stack" style={{ gap: 8 }}>
+                    <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div className="stack" style={{ gap: 4 }}>
+                        <strong>New Sub Areas Awaiting Assignment</strong>
+                        <small className="payments-subtext">
+                          Customer-added sub areas stay unassigned until an agent is mapped here.
+                        </small>
+                      </div>
+                      <span className="badge">{unassignedCustomSubAreas.length}</span>
+                    </div>
+                    {unassignedCustomSubAreas.length > 0 ? (
+                      <div className="stack" style={{ gap: 6 }}>
+                        {unassignedCustomSubAreas.map(({ area, subArea }) => (
+                          <div
+                            key={`${area}::${subArea}::pending`}
+                            className="row"
+                            style={{ justifyContent: "space-between", gap: 12 }}
+                          >
+                            <span>
+                              <strong>{subArea}</strong>
+                              {" "}
+                              <small className="payments-subtext">in {area}</small>
+                            </span>
+                            <button
+                              className="btn secondary btn-compact"
+                              onClick={() => setOpenAssignmentArea(`${area}::${subArea}`)}
+                            >
+                              Assign Agent
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <small className="payments-subtext">
+                        No new sub areas are waiting for assignment.
+                      </small>
+                    )}
+                  </div>
                   <div className="table">
                     <div className="row" style={{ fontWeight: 700 }}>
                       <div style={{ flex: 1 }}>Area</div>
@@ -4487,6 +4552,7 @@ export default function OwnerPage() {
                                 const subAreaKey = `${area}::${subArea}`;
                                 const subAssigned =
                                   areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                                const isCustomSubArea = !isMappedSubArea(area, subArea);
                                 const subAssignedNames = subAssigned
                                   .map((id) => agentNameMap[id])
                                   .filter(Boolean)
@@ -4494,10 +4560,20 @@ export default function OwnerPage() {
                                 return (
                                   <div key={subAreaKey} className="row" style={{ alignItems: "flex-start" }}>
                                     <div style={{ flex: 1 }}>
-                                      <small className="payments-subtext">{subArea}</small>
+                                      <small className="payments-subtext">
+                                        {subArea}
+                                        {isCustomSubArea && " • custom"}
+                                      </small>
                                       {subAssignedNames && (
                                         <small style={{ display: "block", marginTop: 4 }}>
                                           {subAssignedNames}
+                                        </small>
+                                      )}
+                                      {!subAssignedNames && isCustomSubArea && (
+                                        <small
+                                          style={{ display: "block", marginTop: 4, color: "crimson" }}
+                                        >
+                                          Agent assignment pending
                                         </small>
                                       )}
                                     </div>

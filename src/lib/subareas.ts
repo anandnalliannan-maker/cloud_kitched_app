@@ -44,3 +44,11 @@ export const AREA_SUBAREA_MAP: Record<string, string[]> = {
 export function getSubAreasForArea(area: string) {
   return AREA_SUBAREA_MAP[area] || [];
 }
+
+export function isMappedSubArea(area: string, subArea: string) {
+  const normalizedSubArea = subArea.trim().toLowerCase();
+  if (!normalizedSubArea) return false;
+  return getSubAreasForArea(area).some(
+    (entry) => entry.trim().toLowerCase() === normalizedSubArea
+  );
+}
