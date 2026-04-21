@@ -214,9 +214,11 @@ export async function POST(request: Request) {
       updatedAt: new Date(),
     });
 
-    const paymentUrl = `${redirectUri}${redirectUri.includes("?") ? "&" : "?"}tranCtx=${encodeURIComponent(
-      tranCtx
-    )}`;
+    const paymentUrl = redirectUri.includes("tranCtx=")
+      ? redirectUri
+      : `${redirectUri}${redirectUri.includes("?") ? "&" : "?"}tranCtx=${encodeURIComponent(
+          tranCtx
+        )}`;
 
     return NextResponse.json({
       appOrderId,
