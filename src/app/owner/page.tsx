@@ -119,6 +119,8 @@ type Order = {
   codCollectedByAgentName?: string;
   orderSource?: string;
   location?: any;
+  cancelledAt?: any;
+  cancelledByPhone?: string;
 };
 
 type DeliveryAgent = {
@@ -295,6 +297,19 @@ function getPaymentNotes(order: Order) {
     return order.codPaymentNotes || "";
   }
   return "";
+}
+
+function getPaymentMethodLabel(order: Order) {
+  if (order.deliveryType === "pickup") {
+    return "Pay at Outlet";
+  }
+  if (isCashOnDeliveryOrder(order)) {
+    return "Cash on Delivery";
+  }
+  if (order.paymentMethod === "upi" || order.paymentStatus === "paid") {
+    return "UPI";
+  }
+  return order.paymentMethod || "-";
 }
 
 export default function OwnerPage() {
@@ -1408,14 +1423,14 @@ export default function OwnerPage() {
     }
   }
 
-  const closedOrders = useMemo(
-    () => orders.filter((order) => order.status === "closed"),
+  const reportBaseOrders = useMemo(
+    () => orders.filter((order) => order.status === "closed" || order.status === "cancelled"),
     [orders]
   );
 
-  const filteredClosedOrders = useMemo(() => {
+  const filteredReportOrders = useMemo(() => {
     const { search, startDate, endDate, area, deliveryType } = appliedReportFilters;
-    return closedOrders.filter((order) => {
+    return reportBaseOrders.filter((order) => {
       const haystack = `${order.orderId || ""} ${order.phone || ""} ${
         order.customerName || ""
       }`.toLowerCase();
@@ -1429,7 +1444,17 @@ export default function OwnerPage() {
       }
       return true;
     });
-  }, [closedOrders, appliedReportFilters]);
+  }, [reportBaseOrders, appliedReportFilters]);
+
+  const filteredClosedOrders = useMemo(
+    () => filteredReportOrders.filter((order) => order.status === "closed"),
+    [filteredReportOrders]
+  );
+
+  const filteredCancelledOrders = useMemo(
+    () => filteredReportOrders.filter((order) => order.status === "cancelled"),
+    [filteredReportOrders]
+  );
 
   const closedOrdersByArea = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -1461,9 +1486,18 @@ export default function OwnerPage() {
         sum + (order.items || []).reduce((itemSum, item) => itemSum + item.qty, 0),
       0
     );
+    const codOrders = filteredClosedOrders.filter((order) => isCashOnDeliveryOrder(order));
+    const codCollected = codOrders.reduce(
+      (sum, order) => sum + getPaymentAmountPaid(order),
+      0
+    );
+    const refundPending = filteredCancelledOrders.filter(
+      (order) => order.paymentStatus === "refund_pending"
+    ).length;
 
     return {
       completedOrders: filteredClosedOrders.length,
+      cancelledOrders: filteredCancelledOrders.length,
       totalSales: completedOrdersTotal,
       avgOrderValue:
         filteredClosedOrders.length > 0
@@ -1475,11 +1509,19 @@ export default function OwnerPage() {
           : 0,
       deliveryOrders: deliveryOrders.length,
       pickupOrders: pickupOrders.length,
+      codOrders: codOrders.length,
+      codCollected,
+      refundPending,
       uniqueCustomers,
       topArea:
         Object.entries(closedOrdersByArea).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
     };
-  }, [filteredClosedOrders, completedOrdersTotal, closedOrdersByArea]);
+  }, [
+    filteredClosedOrders,
+    filteredCancelledOrders,
+    completedOrdersTotal,
+    closedOrdersByArea,
+  ]);
 
   const salesTrendRows = useMemo(() => {
     const buckets: Record<string, { label: string; sales: number; orders: number }> = {};
@@ -1601,6 +1643,7 @@ export default function OwnerPage() {
       totalOrders: 0,
       totalItems: 0,
       totalValue: 0,
+      codOrders: 0,
       itemCounts: {} as Record<string, number>,
       itemPairCounts: {} as Record<string, number>,
       byArea: {} as Record<string, number>,
@@ -1615,6 +1658,9 @@ export default function OwnerPage() {
         0
       );
       summary.totalValue += order.total || 0;
+      if (isCashOnDeliveryOrder(order)) {
+        summary.codOrders += 1;
+      }
       (order.items || []).forEach((item) => {
         summary.itemCounts[item.name] = (summary.itemCounts[item.name] || 0) + item.qty;
         const pairKey = `${item.name}__${item.qty}`;
@@ -1634,6 +1680,32 @@ export default function OwnerPage() {
 
     return summary;
   }, [currentOperationalOrders]);
+
+  const currentCancelledOrders = useMemo(
+    () => currentMenuOrders.filter((order) => order.status === "cancelled"),
+    [currentMenuOrders]
+  );
+
+  const currentCancelledOrderRows = useMemo(
+    () =>
+      currentCancelledOrders
+        .map((order) => ({
+          id: order.id,
+          orderId: order.orderId || order.id,
+          customerName: order.customerName || "Customer",
+          deliveryType:
+            order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery",
+          paymentMethod: getPaymentMethodLabel(order),
+          paymentStatus:
+            order.paymentStatus === "refund_pending"
+              ? "Refund Pending"
+              : order.paymentStatus || "-",
+          total: order.total || 0,
+          cancelledAt: order.cancelledAt || order.createdAt || order.publishedDate,
+        }))
+        .sort((a, b) => String(b.orderId).localeCompare(String(a.orderId))),
+    [currentCancelledOrders]
+  );
 
   const filteredPaymentOrders = useMemo(() => {
     return currentMenuOrders
@@ -3025,6 +3097,22 @@ export default function OwnerPage() {
                   <strong>{reportKpis.pickupOrders}</strong>
                 </div>
                 <div className="card">
+                  <small className="payments-subtext">COD Orders</small>
+                  <strong>{reportKpis.codOrders}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">COD Collected</small>
+                  <strong>INR {reportKpis.codCollected}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Cancelled Orders</small>
+                  <strong>{reportKpis.cancelledOrders}</strong>
+                </div>
+                <div className="card">
+                  <small className="payments-subtext">Refund Pending</small>
+                  <strong>{reportKpis.refundPending}</strong>
+                </div>
+                <div className="card">
                   <small className="payments-subtext">Unique Customers</small>
                   <strong>{reportKpis.uniqueCustomers}</strong>
                 </div>
@@ -3134,18 +3222,20 @@ export default function OwnerPage() {
                         <th>Date</th>
                         <th>Order ID</th>
                         <th>Customer</th>
-                        <th>Area</th>
-                        <th>Delivery Type</th>
-                        <th>Items</th>
-                        <th>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredClosedOrders.length === 0 && (
-                        <tr>
-                          <td colSpan={7}>No completed orders</td>
+                          <th>Area</th>
+                          <th>Delivery Type</th>
+                          <th>Payment</th>
+                          <th>Payment Status</th>
+                          <th>Items</th>
+                          <th>Total</th>
                         </tr>
-                      )}
+                      </thead>
+                      <tbody>
+                        {filteredClosedOrders.length === 0 && (
+                          <tr>
+                            <td colSpan={9}>No completed orders</td>
+                          </tr>
+                        )}
                       {filteredClosedOrders.map((order) => (
                         <tr key={order.id}>
                           <td>{formatDateLabel(order.createdAt || order.publishedDate)}</td>
@@ -3157,11 +3247,52 @@ export default function OwnerPage() {
                               ? "Self Pickup"
                               : "Home Delivery"}
                           </td>
+                          <td>{getPaymentMethodLabel(order)}</td>
+                          <td>{getPaymentStatusLabel(order)}</td>
                           <td>
                             {(order.items || [])
                               .map((item) => `${item.name} x${item.qty}`)
                               .join(", ")}
                           </td>
+                          <td>INR {order.total || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3>Cancelled Orders</h3>
+                <div className="table-scroll">
+                  <table className="payments-table payments-table-compact owner-summary-table">
+                    <thead>
+                      <tr>
+                        <th>Cancelled On</th>
+                        <th>Order ID</th>
+                        <th>Customer</th>
+                        <th>Delivery Type</th>
+                        <th>Payment</th>
+                        <th>Refund Status</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCancelledOrders.length === 0 && (
+                        <tr>
+                          <td colSpan={7}>No cancelled orders</td>
+                        </tr>
+                      )}
+                      {filteredCancelledOrders.map((order) => (
+                        <tr key={order.id}>
+                          <td>{formatDateLabel(order.cancelledAt || order.createdAt || order.publishedDate)}</td>
+                          <td>#{order.orderId || order.id}</td>
+                          <td>{order.customerName || "-"}</td>
+                          <td>
+                            {order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery"}
+                          </td>
+                          <td>{getPaymentMethodLabel(order)}</td>
+                          <td>{order.paymentStatus === "refund_pending" ? "Refund Pending" : order.paymentStatus || "-"}</td>
                           <td>INR {order.total || 0}</td>
                         </tr>
                       ))}
@@ -3230,6 +3361,14 @@ export default function OwnerPage() {
                           <div className="card">
                             <small className="payments-subtext">Total value</small>
                             <strong>INR {currentOrdersSummary.totalValue}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">COD orders</small>
+                            <strong>{currentOrdersSummary.codOrders}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">Cancelled orders</small>
+                            <strong>{currentCancelledOrderRows.length}</strong>
                           </div>
                         </div>
                       </div>
@@ -3320,6 +3459,42 @@ export default function OwnerPage() {
                                       {row.buckets[packQty] || "-"}
                                     </td>
                                   ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div className="card">
+                        <h3>Cancelled Orders</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact owner-summary-table">
+                            <thead>
+                              <tr>
+                                <th>Cancelled On</th>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Type</th>
+                                <th>Payment</th>
+                                <th>Refund Status</th>
+                                <th>Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentCancelledOrderRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={7}>No cancelled orders for this menu</td>
+                                </tr>
+                              )}
+                              {currentCancelledOrderRows.map((row) => (
+                                <tr key={row.id}>
+                                  <td>{formatDateLabel(row.cancelledAt)}</td>
+                                  <td>#{row.orderId}</td>
+                                  <td>{row.customerName}</td>
+                                  <td>{row.deliveryType}</td>
+                                  <td>{row.paymentMethod}</td>
+                                  <td>{row.paymentStatus}</td>
+                                  <td>INR {row.total}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3780,6 +3955,7 @@ export default function OwnerPage() {
                             <th>Total</th>
                             <th>Paid</th>
                             <th>Balance</th>
+                            <th>Order Status</th>
                             <th>Status</th>
                             <th>Notes</th>
                             <th>Action</th>
@@ -3816,6 +3992,7 @@ export default function OwnerPage() {
                                 <td>
                                   INR {getPaymentBalance(order)}
                                 </td>
+                                <td>{getOrderStatusLabel(order)}</td>
                                 <td>
                                   <span className="status-chip">
                                     {getPaymentStatusLabel(order) === "paid"
@@ -3841,7 +4018,7 @@ export default function OwnerPage() {
                               </tr>
                               {editingPickupPaymentId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={12}>
+                                  <td colSpan={13}>
                                     <div className="payments-edit-grid">
                                       <input
                                         className="input"

@@ -906,6 +906,12 @@ export default function CustomerPage() {
       setCancelError("This order can no longer be cancelled.");
       return;
     }
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Are you sure you want to cancel order ${order.orderId}?`)
+    ) {
+      return;
+    }
 
     setCancelingOrderId(order.id);
     try {
