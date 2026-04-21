@@ -199,6 +199,7 @@ export default function CustomerPage() {
   const [showCustomSubAreaInput, setShowCustomSubAreaInput] = useState(false);
   const [customSubAreaError, setCustomSubAreaError] = useState("");
   const [isSavingCustomSubArea, setIsSavingCustomSubArea] = useState(false);
+  const [localSubAreasByArea, setLocalSubAreasByArea] = useState<Record<string, string[]>>({});
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null
   );
@@ -662,6 +663,7 @@ export default function CustomerPage() {
               id: docSnap.id,
               name: data.name || "",
               deliveryFee: Number(data.deliveryFee || 0),
+              subAreas: Array.isArray(data.subAreas) ? data.subAreas.filter(Boolean) : [],
             };
           })
         );
@@ -682,10 +684,11 @@ export default function CustomerPage() {
   const subAreaOptions = useMemo(() => {
     const saved =
       serviceAreas.find((area) => area.name === form.area)?.subAreas?.filter(Boolean) || [];
-    return Array.from(new Set([...getSubAreasForArea(form.area), ...saved])).sort((a, b) =>
-      a.localeCompare(b)
+    const local = localSubAreasByArea[form.area] || [];
+    return Array.from(new Set([...getSubAreasForArea(form.area), ...saved, ...local])).sort(
+      (a, b) => a.localeCompare(b)
     );
-  }, [serviceAreas, form.area]);
+  }, [serviceAreas, form.area, localSubAreasByArea]);
 
   const isLunchMenu = useMemo(
     () => (menuMealLabel || "").trim().toLowerCase() === "lunch",
@@ -943,6 +946,12 @@ export default function CustomerPage() {
     setForm((prev) => ({ ...prev, subArea: nextSubArea }));
     setShowCustomSubAreaInput(false);
     setCustomSubAreaDraft("");
+    setLocalSubAreasByArea((prev) => ({
+      ...prev,
+      [form.area]: Array.from(new Set([...(prev[form.area] || []), nextSubArea])).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    }));
     if (alreadyExists) {
       return;
     }
@@ -1956,6 +1965,9 @@ export default function CustomerPage() {
                       Add
                     </button>
                   </div>
+                  <small className="payments-subtext">
+                    Use sub area to help route your order more accurately.
+                  </small>
                   {showCustomSubAreaInput && (
                     <div className="row" style={{ marginTop: 8 }}>
                       <input
