@@ -1102,7 +1102,7 @@ export default function CustomerPage() {
       return;
     }
     if (deliveryType === "delivery" && itemsTotal < MIN_HOME_DELIVERY_ORDER) {
-      const message = `Minimum order value for home delivery is INR ${MIN_HOME_DELIVERY_ORDER}.`;
+      const message = `Minimum order value for home delivery is Rs. ${MIN_HOME_DELIVERY_ORDER}.`;
       setPayError(message);
       window.alert(message);
       return;
@@ -1596,7 +1596,7 @@ export default function CustomerPage() {
                       </div>
                     ))}
                   </div>
-                  <div>Total: INR {order.total || 0}</div>
+                  <div>Total: Rs. {order.total || 0}</div>
                   <div>
                     Delivery:{" "}
                     {order.deliveryType === "delivery" ? "Home Delivery" : "Self Pickup"}
@@ -1685,7 +1685,7 @@ export default function CustomerPage() {
                         </div>
                       ))}
                     </div>
-                    <div>Total: INR {order.total || 0}</div>
+                    <div>Total: Rs. {order.total || 0}</div>
                     <div>
                       Payment:{" "}
                       {order.paymentMethod === "cash_on_delivery"
@@ -1794,7 +1794,7 @@ export default function CustomerPage() {
                             )}
                           </>
                         )}
-                        <div className="product-price">INR {item.price}</div>
+                        <div className="product-price">Rs. {item.price}</div>
                       </div>
 
                       <div className="product-qty-row">
@@ -1818,7 +1818,7 @@ export default function CustomerPage() {
                   ))}
                 </div>
                 <div className="row customer-menu-footer">
-                  <strong className="customer-menu-total">Total: INR {total}</strong>
+                  <strong className="customer-menu-total">Total: Rs. {total}</strong>
                   <button
                     className="btn customer-primary-btn"
                     disabled={!hasItems}
@@ -2126,10 +2126,10 @@ export default function CustomerPage() {
                     </div>
                     <div className="payment-item-pricing">
                       <span className="payment-item-unit-price">
-                        INR {item.price} each
+                        Rs. {item.price} each
                       </span>
                       <strong className="payment-item-price">
-                        INR {item.price * item.qty}
+                        Rs. {item.price * item.qty}
                       </strong>
                     </div>
                   </div>
@@ -2140,7 +2140,7 @@ export default function CustomerPage() {
                 <div className="payment-meta-compact">
                   <div className="payment-meta-compact-item">
                     <span>Items Total</span>
-                    <strong>INR {paymentSummary?.itemsTotal ?? 0}</strong>
+                    <strong>Rs. {paymentSummary?.itemsTotal ?? 0}</strong>
                   </div>
                   <div className="payment-meta-compact-item">
                     <span>Delivery Charge</span>
@@ -2148,7 +2148,7 @@ export default function CustomerPage() {
                       {paymentSummary?.deliveryType === "delivery" && isLunchMenu
                         ? "Not applicable for lunch"
                         : paymentSummary?.deliveryFee
-                        ? `INR ${paymentSummary.deliveryFee}`
+                        ? `Rs. ${paymentSummary.deliveryFee}`
                         : "Included"}
                     </strong>
                   </div>
@@ -2167,7 +2167,7 @@ export default function CustomerPage() {
                 </div>
                 <div className="payment-meta-row payment-total-row">
                   <span>Total</span>
-                  <strong>INR {paymentSummary?.total ?? 0}</strong>
+                  <strong>Rs. {paymentSummary?.total ?? 0}</strong>
                 </div>
                 {(paymentSummary?.addressText || paymentSummary?.location) && (
                   <div className="payment-location-box">

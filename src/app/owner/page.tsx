@@ -1289,7 +1289,7 @@ export default function OwnerPage() {
         : "Items---0";
     const deliveryLabel =
       order.deliveryType === "pickup" ? "Self Pickup" : "Delivery";
-    return `Thanks for your order.\n\nOrder ID: ${order.orderId || order.id}\n${itemLines}\nTotal Amount is INR ${order.total || 0}/-\n\nYou have opted for ---${deliveryLabel}\n\n-MS Kitchen`;
+    return `Thanks for your order.\n\nOrder ID: ${order.orderId || order.id}\n${itemLines}\nTotal Amount is Rs. ${order.total || 0}/-\n\nYou have opted for ---${deliveryLabel}\n\n-MS Kitchen`;
   }
 
   function openPlacedNotification(order: Order) {
@@ -2425,7 +2425,7 @@ export default function OwnerPage() {
                     .map((item) => (
                       <div key={item.id} className="row">
                         <div style={{ flex: 1 }}>
-                          {item.name} - INR {item.price}
+                          {item.name} - Rs. {item.price}
                         </div>
                         <input
                           className="input"
@@ -2507,7 +2507,7 @@ export default function OwnerPage() {
                         }}
                       />
                     )}
-                    <strong>{item.name}</strong> - INR {item.price}
+                    <strong>{item.name}</strong> - Rs. {item.price}
                     <div>
                       <small>
                         {item.description} • {item.mealType || "Lunch"}
@@ -2802,7 +2802,7 @@ export default function OwnerPage() {
                               )
                               .map((item) => (
                                 <option key={item.id} value={item.id}>
-                                  {item.name} - {item.mealType} - INR {item.price}
+                                  {item.name} - {item.mealType} - Rs. {item.price}
                                 </option>
                               ))}
                           </select>
@@ -2883,7 +2883,7 @@ export default function OwnerPage() {
                       (item) => (
                         <div key={item.itemId} className="row">
                           <div style={{ flex: 1 }}>
-                            {item.name} - INR {item.price}
+                            {item.name} - Rs. {item.price}
                             <small style={{ display: "block" }}>
                               Available: {item.qty}
                             </small>
@@ -3246,11 +3246,11 @@ export default function OwnerPage() {
                 </div>
                 <div className="card">
                   <small className="payments-subtext">Total Sales</small>
-                  <strong>INR {reportKpis.totalSales}</strong>
+                  <strong>Rs. {reportKpis.totalSales}</strong>
                 </div>
                 <div className="card">
                   <small className="payments-subtext">Average Order Value</small>
-                  <strong>INR {reportKpis.avgOrderValue}</strong>
+                  <strong>Rs. {reportKpis.avgOrderValue}</strong>
                 </div>
                 <div className="card">
                   <small className="payments-subtext">Avg Items / Order</small>
@@ -3270,7 +3270,7 @@ export default function OwnerPage() {
                 </div>
                 <div className="card">
                   <small className="payments-subtext">COD Collected</small>
-                  <strong>INR {reportKpis.codCollected}</strong>
+                  <strong>Rs. {reportKpis.codCollected}</strong>
                 </div>
                 <div className="card">
                   <small className="payments-subtext">Cancelled Orders</small>
@@ -3310,7 +3310,7 @@ export default function OwnerPage() {
                             height: `${maxTrendSales ? Math.max((row.sales / maxTrendSales) * 180, 18) : 18}px`,
                           }}
                         />
-                        <strong>INR {row.sales}</strong>
+                        <strong>Rs. {row.sales}</strong>
                         <small>{row.orders} orders</small>
                         <span>{row.label}</span>
                       </div>
@@ -3427,7 +3427,7 @@ export default function OwnerPage() {
                               .map((item) => `${item.name} x${item.qty}`)
                               .join(", ")}
                           </td>
-                          <td>INR {order.total || 0}</td>
+                          <td>Rs. {order.total || 0}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -3466,7 +3466,7 @@ export default function OwnerPage() {
                           </td>
                           <td>{getPaymentMethodLabel(order)}</td>
                           <td>{order.paymentStatus === "refund_pending" ? "Refund Pending" : order.paymentStatus || "-"}</td>
-                          <td>INR {order.total || 0}</td>
+                          <td>Rs. {order.total || 0}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -3533,7 +3533,7 @@ export default function OwnerPage() {
                           </div>
                           <div className="card">
                             <small className="payments-subtext">Total value</small>
-                            <strong>INR {currentOrdersSummary.totalValue}</strong>
+                            <strong>Rs. {currentOrdersSummary.totalValue}</strong>
                           </div>
                           <div className="card">
                             <small className="payments-subtext">COD orders</small>
@@ -3667,7 +3667,7 @@ export default function OwnerPage() {
                                   <td>{row.deliveryType}</td>
                                   <td>{row.paymentMethod}</td>
                                   <td>{row.paymentStatus}</td>
-                                  <td>INR {row.total}</td>
+                                  <td>Rs. {row.total}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3739,7 +3739,7 @@ export default function OwnerPage() {
                                           .map(([itemName, count]) => `${itemName} x${count}`)
                                           .join(", ")}
                                   </td>
-                                  <td>INR {row.totalValue}</td>
+                                  <td>Rs. {row.totalValue}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3889,7 +3889,7 @@ export default function OwnerPage() {
                                     : order.paymentStatus || "-"}
                                 </td>
                                 <td>{getOrderStatusLabel(order)}</td>
-                                <td>INR {order.total || 0}</td>
+                                <td>Rs. {order.total || 0}</td>
                                 <td>
                                   <div className="stack" style={{ gap: 6 }}>
                                     <button
@@ -4188,10 +4188,10 @@ export default function OwnerPage() {
                                     </div>
                                   ))}
                                 </td>
-                                <td>INR {order.total || 0}</td>
-                                <td>INR {getPaymentAmountPaid(order)}</td>
+                                <td>Rs. {order.total || 0}</td>
+                                <td>Rs. {getPaymentAmountPaid(order)}</td>
                                 <td>
-                                  INR {getPaymentBalance(order)}
+                                  Rs. {getPaymentBalance(order)}
                                 </td>
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>

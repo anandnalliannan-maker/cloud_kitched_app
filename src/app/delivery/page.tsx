@@ -556,9 +556,9 @@ export default function DeliveryPage() {
                     : "No live published menu"}
                 </div>
                 <div className="card">Active Orders: {orderSummary.totalOrders}</div>
-                <div className="card">COD Due on Active Orders: INR {orderSummary.codDue}</div>
+                <div className="card">COD Due on Active Orders: Rs. {orderSummary.codDue}</div>
                 <div className="card">
-                  COD to hand over: INR {codCollectedSummary.collected}
+                  COD to hand over: Rs. {codCollectedSummary.collected}
                 </div>
                 <div className="card">
                   <strong>Active Orders by Area</strong>
@@ -654,7 +654,7 @@ export default function DeliveryPage() {
                     <div>
                       Payment:{" "}
                       {isCashOnDeliveryOrder(order)
-                        ? `Cash on Delivery${` - INR ${
+                        ? `Cash on Delivery${` - Rs. ${
                             typeof order.codBalance === "number"
                               ? order.codBalance
                               : order.total || 0
