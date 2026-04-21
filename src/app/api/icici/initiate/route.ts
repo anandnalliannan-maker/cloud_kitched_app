@@ -175,6 +175,24 @@ export async function POST(request: Request) {
     const payload = iciciResponse?.payload || {};
     const redirectUri = String(payload.redirectURI || payload.redirectUrl || "");
     const tranCtx = String(payload.tranCtx || "");
+    const paymentUrl = redirectUri.includes("tranCtx=")
+      ? redirectUri
+      : `${redirectUri}${redirectUri.includes("?") ? "&" : "?"}tranCtx=${encodeURIComponent(
+          tranCtx
+        )}`;
+
+    console.log("ICICI initiate response", {
+      appOrderId,
+      orderId: String(orderData.orderId || appOrderId),
+      amount: amount.toFixed(2),
+      iciciStatus: iciciResponse?.status || 0,
+      payload,
+      rawPayload: iciciResponse?.rawPayload || {},
+      attempts: attemptSummaries,
+      redirectUri,
+      tranCtx,
+      paymentUrl,
+    });
 
     if (!iciciResponse?.ok) {
       return NextResponse.json(
@@ -213,12 +231,6 @@ export async function POST(request: Request) {
       paymentGateway: "icici",
       updatedAt: new Date(),
     });
-
-    const paymentUrl = redirectUri.includes("tranCtx=")
-      ? redirectUri
-      : `${redirectUri}${redirectUri.includes("?") ? "&" : "?"}tranCtx=${encodeURIComponent(
-          tranCtx
-        )}`;
 
     return NextResponse.json({
       appOrderId,
