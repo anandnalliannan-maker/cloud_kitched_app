@@ -163,9 +163,10 @@ export async function findDeliveryByPhone(phone: string) {
 }
 
 export function normalizePhone(raw: string) {
-  const digits = raw.replace(/\D/g, "");
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
   if (digits.length === 10) return `+91${digits}`;
   if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
-  if (raw.startsWith("+")) return raw;
-  return raw;
+  if (trimmed.startsWith("+")) return trimmed;
+  return trimmed;
 }

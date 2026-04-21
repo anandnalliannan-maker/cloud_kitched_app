@@ -1105,7 +1105,7 @@ export default function CustomerPage() {
           publishedDate: menuData.date || "",
           mealType: menuData.mealType || "",
           customerName: form.name.trim(),
-          phone: form.phone.trim(),
+          phone: normalizePhoneForOtp(form.phone),
           deliveryType,
           address:
             deliveryType === "delivery"

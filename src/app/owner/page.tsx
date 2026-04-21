@@ -1196,7 +1196,7 @@ export default function OwnerPage() {
         : "";
     await updateDoc(doc(db, "orders", order.id), {
       customerName: activeOrderEditForm.customerName.trim(),
-      phone: activeOrderEditForm.phone.trim(),
+      phone: normalizePhone(activeOrderEditForm.phone),
       deliveryType: activeOrderEditForm.deliveryType,
       address:
         activeOrderEditForm.deliveryType === "delivery"
@@ -1350,7 +1350,7 @@ export default function OwnerPage() {
           publishedDate: menuData.date || "",
           mealType: menuData.mealType || "",
           customerName: ownerOrderForm.name.trim(),
-          phone: ownerOrderForm.phone.trim(),
+          phone: normalizePhone(ownerOrderForm.phone),
           deliveryType: ownerOrderForm.deliveryType,
           address:
             ownerOrderForm.deliveryType === "delivery"
