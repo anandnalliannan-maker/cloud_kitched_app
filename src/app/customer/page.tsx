@@ -903,7 +903,9 @@ export default function CustomerPage() {
     setCancelingOrderId(order.id);
     try {
       const allowedPhones = getPhoneVariants(cancelVerifiedPhone);
-      if (!allowedPhones.includes(order.phone)) {
+      const orderPhones = getPhoneVariants(order.phone || "");
+      const matchesVerifiedPhone = orderPhones.some((phone) => allowedPhones.includes(phone));
+      if (!matchesVerifiedPhone) {
         throw new Error("Verified phone number does not match this order.");
       }
 
