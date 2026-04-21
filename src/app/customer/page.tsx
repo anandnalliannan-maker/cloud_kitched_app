@@ -2,6 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ConfirmationResult,
+  inMemoryPersistence,
+  RecaptchaVerifier,
+  setPersistence,
+  signInWithPhoneNumber,
+  signOut,
+} from "firebase/auth";
+import {
   Autocomplete,
   GoogleMap,
   LoadScript,
@@ -20,7 +28,7 @@ import {
   where,
 } from "firebase/firestore";
 
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 
 type CartItem = {
   id: string;
@@ -71,6 +79,7 @@ type CustomerOrder = {
   publishedDate: string;
   mealType: string;
   createdAt: any;
+  publishedMenuId?: string;
   items: { name: string; qty: number; price?: number }[];
 };
 
@@ -78,6 +87,29 @@ const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 const pendingPaymentStorageKey = "msk_pending_payment";
 const MIN_HOME_DELIVERY_ORDER = 60;
+
+function normalizePhoneForOtp(raw: string) {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  if (raw.trim().startsWith("+")) return raw.trim();
+  return digits;
+}
+
+function getPhoneVariants(rawPhone: string) {
+  const digits = rawPhone.replace(/\D/g, "");
+  return Array.from(
+    new Set(
+      [
+        rawPhone.trim(),
+        digits,
+        digits ? `+${digits}` : "",
+        digits.length === 10 ? `+91${digits}` : "",
+        digits.length === 10 ? `91${digits}` : "",
+      ].filter(Boolean)
+    )
+  );
+}
 
 async function generateUniqueSixDigitOrderId() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -93,6 +125,45 @@ async function generateUniqueSixDigitOrderId() {
   }
 
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function fetchOrdersByPhone(rawPhone: string) {
+  const latestFirst = await Promise.all(
+    getPhoneVariants(rawPhone).map(async (phoneVariant) => {
+      const snap = await getDocs(
+        query(collection(db, "orders"), where("phone", "==", phoneVariant))
+      );
+      return snap.docs.map((docSnap) => {
+        const data = docSnap.data() as any;
+        return {
+          id: docSnap.id,
+          orderId: data.orderId || docSnap.id,
+          customerName: data.customerName || "",
+          phone: data.phone || "",
+          status: data.status || "",
+          deliveryType: data.deliveryType || "",
+          address: data.address || "",
+          area: data.area || "",
+          total: Number(data.total || 0),
+          paymentStatus: data.paymentStatus || "",
+          paymentMethod: data.paymentMethod || "",
+          publishedDate: data.publishedDate || "",
+          publishedMenuId: data.publishedMenuId || "",
+          mealType: data.mealType || "",
+          createdAt: data.createdAt || null,
+          items: Array.isArray(data.items) ? data.items : [],
+        } as CustomerOrder;
+      });
+    })
+  );
+
+  const merged = new Map<string, CustomerOrder>();
+  latestFirst.flat().forEach((order) => merged.set(order.id, order));
+  return Array.from(merged.values()).sort((a, b) => {
+    const aSec = a.createdAt?.seconds || 0;
+    const bSec = b.createdAt?.seconds || 0;
+    return bSec - aSec;
+  });
 }
 
 export default function CustomerPage() {
@@ -131,12 +202,23 @@ export default function CustomerPage() {
     null
   );
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
-  const [customerView, setCustomerView] = useState<"menu" | "history">("menu");
+  const [customerView, setCustomerView] = useState<"menu" | "history" | "cancel">("menu");
   const [historyPhone, setHistoryPhone] = useState("");
   const [historyOrders, setHistoryOrders] = useState<CustomerOrder[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [historySearched, setHistorySearched] = useState(false);
+  const [cancelPhone, setCancelPhone] = useState("");
+  const [cancelOtp, setCancelOtp] = useState("");
+  const [cancelOrders, setCancelOrders] = useState<CustomerOrder[]>([]);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const [cancelStatus, setCancelStatus] = useState("");
+  const [cancelOtpSent, setCancelOtpSent] = useState(false);
+  const [cancelVerifiedPhone, setCancelVerifiedPhone] = useState("");
+  const [cancelVerificationLoading, setCancelVerificationLoading] = useState(false);
+  const [cancelOtpSending, setCancelOtpSending] = useState(false);
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
   const [customerPrefillNotice, setCustomerPrefillNotice] = useState("");
   const [customerPrefillPopup, setCustomerPrefillPopup] = useState("");
   const [isPrefillingCustomer, setIsPrefillingCustomer] = useState(false);
@@ -150,6 +232,8 @@ export default function CustomerPage() {
     message: string;
   } | null>(null);
   const lastPrefilledPhoneRef = useRef("");
+  const cancelConfirmationRef = useRef<ConfirmationResult | null>(null);
+  const cancelRecaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
@@ -160,20 +244,15 @@ export default function CustomerPage() {
     }
   }
 
-  function getPhoneVariants(rawPhone: string) {
-    const digits = rawPhone.replace(/\D/g, "");
-    return Array.from(
-      new Set(
-        [
-          rawPhone.trim(),
-          digits,
-          digits ? `+${digits}` : "",
-          digits.length === 10 ? `+91${digits}` : "",
-          digits.length === 10 ? `91${digits}` : "",
-        ].filter(Boolean)
-      )
-    );
-  }
+  useEffect(() => {
+    return () => {
+      if (cancelRecaptchaRef.current) {
+        cancelRecaptchaRef.current.clear();
+        cancelRecaptchaRef.current = null;
+      }
+      signOut(auth).catch(() => undefined);
+    };
+  }, []);
 
   async function findLatestOrderByPhone(rawPhone: string) {
     const variants = getPhoneVariants(rawPhone);
@@ -728,45 +807,171 @@ export default function CustomerPage() {
     setHistoryLoading(true);
     setHistorySearched(true);
     try {
-      const latestFirst = await Promise.all(
-        getPhoneVariants(raw).map(async (phoneVariant) => {
-          const snap = await getDocs(
-            query(collection(db, "orders"), where("phone", "==", phoneVariant))
-          );
-          return snap.docs.map((docSnap) => {
-            const data = docSnap.data() as any;
-            return {
-              id: docSnap.id,
-              orderId: data.orderId || docSnap.id,
-              customerName: data.customerName || "",
-              phone: data.phone || "",
-              status: data.status || "",
-              deliveryType: data.deliveryType || "",
-              address: data.address || "",
-              area: data.area || "",
-              total: Number(data.total || 0),
-              publishedDate: data.publishedDate || "",
-              mealType: data.mealType || "",
-              createdAt: data.createdAt || null,
-              items: Array.isArray(data.items) ? data.items : [],
-            } as CustomerOrder;
-          });
-        })
-      );
-
-      const merged = new Map<string, CustomerOrder>();
-      latestFirst.flat().forEach((order) => merged.set(order.id, order));
-      setHistoryOrders(
-        Array.from(merged.values()).sort((a, b) => {
-          const aSec = a.createdAt?.seconds || 0;
-          const bSec = b.createdAt?.seconds || 0;
-          return bSec - aSec;
-        })
-      );
+      setHistoryOrders(await fetchOrdersByPhone(raw));
     } catch (err: any) {
       setHistoryError(err?.message || "Failed to load order history.");
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  function canCancelOrder(order: CustomerOrder) {
+    return order.status === "active" || order.status === "payment_pending";
+  }
+
+  async function ensureCancelRecaptcha() {
+    if (cancelRecaptchaRef.current || typeof window === "undefined") {
+      return cancelRecaptchaRef.current;
+    }
+
+    cancelRecaptchaRef.current = new RecaptchaVerifier(auth, "cancel-order-recaptcha", {
+      size: "invisible",
+    });
+    await cancelRecaptchaRef.current.render();
+    return cancelRecaptchaRef.current;
+  }
+
+  async function sendCancelOtp() {
+    setCancelError("");
+    setCancelStatus("");
+    const phone = cancelPhone.trim();
+    if (!phone) {
+      setCancelError("Enter phone number.");
+      return;
+    }
+
+    setCancelOtpSending(true);
+    try {
+      await setPersistence(auth, inMemoryPersistence);
+      const verifier = await ensureCancelRecaptcha();
+      if (!verifier) {
+        throw new Error("Unable to initialize OTP verification.");
+      }
+      const e164Phone = normalizePhoneForOtp(phone);
+      cancelConfirmationRef.current = await signInWithPhoneNumber(auth, e164Phone, verifier);
+      setCancelOtpSent(true);
+      setCancelStatus("OTP sent");
+    } catch (error: any) {
+      setCancelError(error?.message || "Failed to send OTP.");
+      if (cancelRecaptchaRef.current) {
+        cancelRecaptchaRef.current.clear();
+        cancelRecaptchaRef.current = null;
+      }
+    } finally {
+      setCancelOtpSending(false);
+    }
+  }
+
+  async function verifyCancelOtp() {
+    setCancelError("");
+    setCancelStatus("");
+    if (!cancelConfirmationRef.current) {
+      setCancelError("Send OTP first.");
+      return;
+    }
+    if (!cancelOtp.trim()) {
+      setCancelError("Enter OTP.");
+      return;
+    }
+
+    setCancelVerificationLoading(true);
+    try {
+      const credential = await cancelConfirmationRef.current.confirm(cancelOtp.trim());
+      const verifiedPhone = credential.user.phoneNumber || normalizePhoneForOtp(cancelPhone);
+      setCancelVerifiedPhone(verifiedPhone);
+      setCancelOrders(await fetchOrdersByPhone(cancelPhone));
+      setCancelStatus("Phone verified");
+    } catch (error: any) {
+      setCancelError(error?.message || "Invalid OTP.");
+    } finally {
+      setCancelVerificationLoading(false);
+    }
+  }
+
+  async function cancelCustomerOrder(order: CustomerOrder) {
+    setCancelError("");
+    setCancelStatus("");
+    if (!cancelVerifiedPhone) {
+      setCancelError("Verify OTP before cancelling an order.");
+      return;
+    }
+    if (!canCancelOrder(order)) {
+      setCancelError("This order can no longer be cancelled.");
+      return;
+    }
+
+    setCancelingOrderId(order.id);
+    try {
+      const allowedPhones = getPhoneVariants(cancelVerifiedPhone);
+      if (!allowedPhones.includes(order.phone)) {
+        throw new Error("Verified phone number does not match this order.");
+      }
+
+      await runTransaction(db, async (tx) => {
+        const orderRef = doc(db, "orders", order.id);
+        const orderSnap = await tx.get(orderRef);
+        if (!orderSnap.exists()) {
+          throw new Error("Order not found.");
+        }
+
+        const currentOrder = orderSnap.data() as any;
+        if (!(currentOrder.status === "active" || currentOrder.status === "payment_pending")) {
+          throw new Error("This order can no longer be cancelled.");
+        }
+
+        if (currentOrder.publishedMenuId) {
+          const menuRef = doc(db, "published_menus", currentOrder.publishedMenuId);
+          const menuSnap = await tx.get(menuRef);
+          if (menuSnap.exists()) {
+            const menuData = menuSnap.data() as any;
+            const remaining = (menuData.remaining || menuData.items || []).map((item: any) => ({
+              ...item,
+            }));
+
+            (currentOrder.items || []).forEach((orderedItem: any) => {
+              const remainingItem = remaining.find(
+                (menuItem: any) => menuItem.itemId === orderedItem.itemId || menuItem.name === orderedItem.name
+              );
+              if (remainingItem) {
+                remainingItem.qty = (remainingItem.qty || 0) + (orderedItem.qty || 0);
+              }
+            });
+
+            tx.update(menuRef, {
+              remaining,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+
+        tx.update(orderRef, {
+          status: "cancelled",
+          paymentStatus:
+            currentOrder.paymentStatus === "paid" ? "refund_pending" : "cancelled",
+          cancelledAt: serverTimestamp(),
+          cancelledByPhone: cancelVerifiedPhone,
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      const refreshedOrders = await fetchOrdersByPhone(cancelPhone);
+      setCancelOrders(refreshedOrders);
+      setHistoryOrders((prev) =>
+        prev.map((item) =>
+          item.id === order.id
+            ? {
+                ...item,
+                status: "cancelled",
+                paymentStatus: item.paymentStatus === "paid" ? "refund_pending" : "cancelled",
+              }
+            : item
+        )
+      );
+      setCancelStatus(`Order ${order.orderId} cancelled`);
+    } catch (error: any) {
+      setCancelError(error?.message || "Failed to cancel order.");
+    } finally {
+      setCancelingOrderId(null);
     }
   }
 
@@ -1140,6 +1345,17 @@ export default function CustomerPage() {
                 >
                   Order History
                 </button>
+                <button
+                  className={`btn ${
+                    customerView === "cancel" ? "" : "secondary"
+                  }`}
+                  onClick={() => {
+                    setCustomerView("cancel");
+                    setCustomerDrawerOpen(false);
+                  }}
+                >
+                  Cancel Order
+                </button>
                 <a
                   className="btn secondary"
                   href="/contact-us"
@@ -1267,6 +1483,106 @@ export default function CustomerPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {customerView === "cancel" && (
+          <div className="card stack customer-panel">
+            <h2>Cancel Order</h2>
+            <div className="field">
+              <label>Mobile Number</label>
+              <div className="row">
+                <input
+                  className="input"
+                  placeholder="Enter phone number"
+                  value={cancelPhone}
+                  onChange={(e) => setCancelPhone(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="btn customer-primary-btn"
+                  onClick={sendCancelOtp}
+                  disabled={cancelOtpSending}
+                >
+                  {cancelOtpSending ? "Sending..." : "Send OTP"}
+                </button>
+              </div>
+            </div>
+            {cancelOtpSent && (
+              <div className="field">
+                <label>OTP</label>
+                <div className="row">
+                  <input
+                    className="input"
+                    placeholder="Enter OTP"
+                    value={cancelOtp}
+                    onChange={(e) => setCancelOtp(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    className="btn customer-primary-btn"
+                    onClick={verifyCancelOtp}
+                    disabled={cancelVerificationLoading}
+                  >
+                    {cancelVerificationLoading ? "Verifying..." : "Verify OTP"}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div id="cancel-order-recaptcha" />
+            {cancelStatus && <small className="customer-success-text">{cancelStatus}</small>}
+            {cancelError && <small className="customer-error-text">{cancelError}</small>}
+            {cancelVerifiedPhone && cancelOrders.length === 0 && (
+              <p>No orders found for this phone number.</p>
+            )}
+            {cancelVerifiedPhone && cancelOrders.length > 0 && (
+              <div className="stack">
+                {cancelOrders.map((order) => (
+                  <div key={order.id} className="list-card stack customer-order-card customer-history-card">
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                      <strong>{order.orderId}</strong>
+                      <span className="badge">{order.status || "unknown"}</span>
+                    </div>
+                    <div style={{ color: "var(--muted)" }}>
+                      {order.publishedDate
+                        ? `${formatDateLabel(order.publishedDate)}${
+                            order.mealType ? ` - ${order.mealType}` : ""
+                          }`
+                        : formatDateTimeFromTs(order.createdAt)}
+                    </div>
+                    <div>
+                      {order.items.map((it, idx) => (
+                        <div key={`${order.id}-${idx}`}>
+                          {it.name} x{it.qty}
+                        </div>
+                      ))}
+                    </div>
+                    <div>Total: INR {order.total || 0}</div>
+                    <div>
+                      Payment:{" "}
+                      {order.paymentMethod === "cash_on_delivery"
+                        ? "Cash on Delivery"
+                        : order.paymentMethod === "pay_at_outlet"
+                        ? "Pay at Outlet"
+                        : order.paymentStatus === "paid"
+                        ? "UPI Paid"
+                        : order.paymentStatus || "-"}
+                    </div>
+                    {canCancelOrder(order) ? (
+                      <button
+                        className="btn customer-primary-btn"
+                        onClick={() => cancelCustomerOrder(order)}
+                        disabled={cancelingOrderId === order.id}
+                      >
+                        {cancelingOrderId === order.id ? "Cancelling..." : "Cancel Order"}
+                      </button>
+                    ) : (
+                      <small className="payments-subtext">Cancellation not available for this order.</small>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
