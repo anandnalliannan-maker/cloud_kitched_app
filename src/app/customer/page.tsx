@@ -949,6 +949,18 @@ export default function CustomerPage() {
 
     setIsSavingCustomSubArea(true);
     try {
+      setServiceAreas((prev) =>
+        prev.map((area) =>
+          area.id === targetArea.id
+            ? {
+                ...area,
+                subAreas: Array.from(
+                  new Set([...(area.subAreas || []), nextSubArea])
+                ).sort((a, b) => a.localeCompare(b)),
+              }
+            : area
+        )
+      );
       await updateDoc(doc(db, "service_areas", targetArea.id), {
         subAreas: arrayUnion(nextSubArea),
         updatedAt: serverTimestamp(),
