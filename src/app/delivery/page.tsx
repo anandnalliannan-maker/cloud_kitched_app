@@ -134,12 +134,19 @@ export default function DeliveryPage() {
     const unsubAssignments = onSnapshot(
       collection(db, "area_assignments"),
       (snap) => {
-        const areas = snap.docs
-          .filter((docSnap) => {
-            const data = docSnap.data() as any;
-            return (data.agentIds || []).includes(username);
-          })
-          .map((docSnap) => docSnap.id);
+        const areas = snap.docs.flatMap((docSnap) => {
+          const data = docSnap.data() as any;
+          const names: string[] = [];
+          if ((data.agentIds || []).includes(username)) {
+            names.push(docSnap.id);
+          }
+          Object.entries(data.subAreaAgentIds || {}).forEach(([subArea, agentIds]) => {
+            if (Array.isArray(agentIds) && agentIds.includes(username)) {
+              names.push(`${docSnap.id} - ${subArea}`);
+            }
+          });
+          return names;
+        });
         setAgentInfo((prev) =>
           prev ? { ...prev, areas } : { name: "", areas }
         );

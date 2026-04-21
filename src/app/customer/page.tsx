@@ -16,6 +16,7 @@ import {
   Marker,
 } from "@react-google-maps/api";
 import {
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -25,6 +26,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
@@ -63,6 +65,7 @@ type ServiceAreaOption = {
   id: string;
   name: string;
   deliveryFee?: number;
+  subAreas?: string[];
 };
 
 type CustomerOrder = {
@@ -192,6 +195,10 @@ export default function CustomerPage() {
     area: "",
     subArea: "",
   });
+  const [customSubAreaDraft, setCustomSubAreaDraft] = useState("");
+  const [showCustomSubAreaInput, setShowCustomSubAreaInput] = useState(false);
+  const [customSubAreaError, setCustomSubAreaError] = useState("");
+  const [isSavingCustomSubArea, setIsSavingCustomSubArea] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null
   );
@@ -672,7 +679,13 @@ export default function CustomerPage() {
     () => serviceAreas.find((area) => area.name === form.area) || null,
     [serviceAreas, form.area]
   );
-  const subAreaOptions = useMemo(() => getSubAreasForArea(form.area), [form.area]);
+  const subAreaOptions = useMemo(() => {
+    const saved =
+      serviceAreas.find((area) => area.name === form.area)?.subAreas?.filter(Boolean) || [];
+    return Array.from(new Set([...getSubAreasForArea(form.area), ...saved])).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [serviceAreas, form.area]);
 
   const isLunchMenu = useMemo(
     () => (menuMealLabel || "").trim().toLowerCase() === "lunch",
@@ -908,6 +921,45 @@ export default function CustomerPage() {
     }
   }
 
+  async function saveCustomSubArea() {
+    setCustomSubAreaError("");
+    if (!form.area) {
+      setCustomSubAreaError("Select area first.");
+      return;
+    }
+    const nextSubArea = customSubAreaDraft.trim();
+    if (!nextSubArea) {
+      setCustomSubAreaError("Enter sub area name.");
+      return;
+    }
+    const targetArea = serviceAreas.find((area) => area.name === form.area);
+    if (!targetArea) {
+      setCustomSubAreaError("Selected area is not available.");
+      return;
+    }
+    const alreadyExists = subAreaOptions.some(
+      (subArea) => subArea.toLowerCase() === nextSubArea.toLowerCase()
+    );
+    setForm((prev) => ({ ...prev, subArea: nextSubArea }));
+    setShowCustomSubAreaInput(false);
+    setCustomSubAreaDraft("");
+    if (alreadyExists) {
+      return;
+    }
+
+    setIsSavingCustomSubArea(true);
+    try {
+      await updateDoc(doc(db, "service_areas", targetArea.id), {
+        subAreas: arrayUnion(nextSubArea),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error: any) {
+      setCustomSubAreaError(error?.message || "Failed to save sub area.");
+    } finally {
+      setIsSavingCustomSubArea(false);
+    }
+  }
+
   async function cancelCustomerOrder(order: CustomerOrder) {
     setCancelError("");
     setCancelStatus("");
@@ -1104,10 +1156,17 @@ export default function CustomerPage() {
           const assignmentSnap = await tx.get(assignmentRef);
           if (assignmentSnap.exists()) {
             const assignmentData = assignmentSnap.data() as any;
-            const agentIds: string[] = assignmentData.agentIds || [];
+            const agentIds: string[] =
+              (assignmentData.subAreaAgentIds?.[form.subArea] || []).length > 0
+                ? assignmentData.subAreaAgentIds?.[form.subArea] || []
+                : assignmentData.agentIds || [];
             if (agentIds.length > 0) {
-              const lastIndex =
-                typeof assignmentData.lastIndex === "number"
+              const usesSubAreaPool = (assignmentData.subAreaAgentIds?.[form.subArea] || []).length > 0;
+              const lastIndex = usesSubAreaPool
+                ? typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
+                  ? assignmentData.subAreaLastIndex[form.subArea]
+                  : -1
+                : typeof assignmentData.lastIndex === "number"
                   ? assignmentData.lastIndex
                   : -1;
               const nextIndex = (lastIndex + 1) % agentIds.length;
@@ -1120,7 +1179,12 @@ export default function CustomerPage() {
                 if (agentData.active !== false) {
                   assignedAgentId = agentId;
                   assignedAgentName = agentData.name || "";
-                  tx.update(assignmentRef, { lastIndex: nextIndex });
+                  tx.update(
+                    assignmentRef,
+                    usesSubAreaPool
+                      ? { [`subAreaLastIndex.${form.subArea}`]: nextIndex }
+                      : { lastIndex: nextIndex }
+                  );
                 }
               }
             }
@@ -1853,19 +1917,55 @@ export default function CustomerPage() {
                 </div>
                 <div className="field">
                   <label>Sub Area</label>
-                  <select
-                    className="select"
-                    value={form.subArea}
-                    onChange={(e) => setForm({ ...form, subArea: e.target.value })}
-                    disabled={!form.area}
-                  >
-                    <option value="">{form.area ? "Select sub area" : "Select area first"}</option>
-                    {subAreaOptions.map((subArea) => (
-                      <option key={subArea} value={subArea}>
-                        {subArea}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="row">
+                    <select
+                      className="select"
+                      value={form.subArea}
+                      onChange={(e) => setForm({ ...form, subArea: e.target.value })}
+                      disabled={!form.area}
+                      style={{ flex: 1 }}
+                    >
+                      <option value="">{form.area ? "Select sub area" : "Select area first"}</option>
+                      {subAreaOptions.map((subArea) => (
+                        <option key={subArea} value={subArea}>
+                          {subArea}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn secondary btn-compact"
+                      disabled={!form.area}
+                      onClick={() => {
+                        setShowCustomSubAreaInput((prev) => !prev);
+                        setCustomSubAreaError("");
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {showCustomSubAreaInput && (
+                    <div className="row" style={{ marginTop: 8 }}>
+                      <input
+                        className="input"
+                        placeholder="Enter your sub area"
+                        value={customSubAreaDraft}
+                        onChange={(e) => setCustomSubAreaDraft(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn customer-primary-btn btn-compact"
+                        onClick={saveCustomSubArea}
+                        disabled={isSavingCustomSubArea}
+                      >
+                        {isSavingCustomSubArea ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  )}
+                  {customSubAreaError && (
+                    <small className="customer-error-text">{customSubAreaError}</small>
+                  )}
                 </div>
 
                 <div className="field">

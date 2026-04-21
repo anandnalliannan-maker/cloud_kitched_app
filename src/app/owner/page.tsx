@@ -9,6 +9,7 @@ import {
 } from "@react-google-maps/api";
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -136,12 +137,15 @@ type ServiceArea = {
   id: string;
   name: string;
   deliveryFee?: number;
+  subAreas?: string[];
 };
 
 type AreaAssignment = {
   id: string;
   agentIds: string[];
   lastIndex?: number;
+  subAreaAgentIds?: Record<string, string[]>;
+  subAreaLastIndex?: Record<string, number>;
 };
 
 const mealTypes = ["Breakfast", "Lunch", "Snacks", "Dinner"];
@@ -398,6 +402,7 @@ export default function OwnerPage() {
   const [areaForm, setAreaForm] = useState("");
   const [areaFeeForm, setAreaFeeForm] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
+  const [areaSubAreaDrafts, setAreaSubAreaDrafts] = useState<Record<string, string>>({});
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
     "summary" | "activeOrders" | "paymentStatus"
@@ -503,13 +508,22 @@ export default function OwnerPage() {
     if (!search) return serviceAreas;
     return serviceAreas.filter((area) => area.name.toLowerCase().includes(search));
   }, [serviceAreas, areaSearch]);
+  const subAreaOptionsByArea = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    serviceAreas.forEach((area) => {
+      map[area.name] = Array.from(
+        new Set([...(getSubAreasForArea(area.name) || []), ...((area.subAreas || []).filter(Boolean))])
+      ).sort((a, b) => a.localeCompare(b));
+    });
+    return map;
+  }, [serviceAreas]);
   const ownerOrderSubAreaOptions = useMemo(
-    () => getSubAreasForArea(ownerOrderForm.area),
-    [ownerOrderForm.area]
+    () => subAreaOptionsByArea[ownerOrderForm.area] || [],
+    [subAreaOptionsByArea, ownerOrderForm.area]
   );
   const activeOrderEditSubAreaOptions = useMemo(
-    () => getSubAreasForArea(activeOrderEditForm.area),
-    [activeOrderEditForm.area]
+    () => subAreaOptionsByArea[activeOrderEditForm.area] || [],
+    [subAreaOptionsByArea, activeOrderEditForm.area]
   );
 
   const agentNameMap = useMemo(() => {
@@ -882,6 +896,27 @@ export default function OwnerPage() {
     });
   }
 
+  async function addServiceSubArea(area: ServiceArea) {
+    const nextSubArea = (areaSubAreaDrafts[area.id] || "").trim();
+    if (!nextSubArea) {
+      return;
+    }
+    const existingSubAreas = subAreaOptionsByArea[area.name] || [];
+    const alreadyExists = existingSubAreas.some(
+      (subArea) => subArea.toLowerCase() === nextSubArea.toLowerCase()
+    );
+    if (!alreadyExists) {
+      await updateDoc(doc(db, "service_areas", area.id), {
+        subAreas: arrayUnion(nextSubArea),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    setAreaSubAreaDrafts((prev) => ({
+      ...prev,
+      [area.id]: "",
+    }));
+  }
+
   function runReport() {
     setAppliedReportFilters({ ...reportFilters });
   }
@@ -1005,18 +1040,58 @@ export default function OwnerPage() {
   async function saveAreaAssignment(areaName: string, agentIds: string[]) {
     const existing = areaAssignmentMap[areaName];
     const ref = doc(db, "area_assignments", areaName);
-    const lastIndex =
-      typeof existing?.lastIndex === "number" ? existing.lastIndex : -1;
+    const nextAssignment = {
+      id: areaName,
+      agentIds,
+      lastIndex: typeof existing?.lastIndex === "number" ? existing.lastIndex : -1,
+      subAreaAgentIds: existing?.subAreaAgentIds || {},
+      subAreaLastIndex: existing?.subAreaLastIndex || {},
+    };
     await setDoc(
       ref,
       {
-        agentIds,
-        lastIndex,
+        agentIds: nextAssignment.agentIds,
+        lastIndex: nextAssignment.lastIndex,
+        subAreaAgentIds: nextAssignment.subAreaAgentIds,
+        subAreaLastIndex: nextAssignment.subAreaLastIndex,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
-    await reassignOrdersForArea(areaName, agentIds, lastIndex);
+    await reassignOrdersForArea(areaName, nextAssignment);
+  }
+
+  async function saveSubAreaAssignment(areaName: string, subArea: string, agentIds: string[]) {
+    const existing = areaAssignmentMap[areaName];
+    const ref = doc(db, "area_assignments", areaName);
+    const nextAssignment = {
+      id: areaName,
+      agentIds: existing?.agentIds || [],
+      lastIndex: typeof existing?.lastIndex === "number" ? existing.lastIndex : -1,
+      subAreaAgentIds: {
+        ...(existing?.subAreaAgentIds || {}),
+        [subArea]: agentIds,
+      },
+      subAreaLastIndex: {
+        ...(existing?.subAreaLastIndex || {}),
+        [subArea]:
+          typeof existing?.subAreaLastIndex?.[subArea] === "number"
+            ? existing.subAreaLastIndex[subArea]
+            : -1,
+      },
+    };
+    await setDoc(
+      ref,
+      {
+        agentIds: nextAssignment.agentIds,
+        lastIndex: nextAssignment.lastIndex,
+        subAreaAgentIds: nextAssignment.subAreaAgentIds,
+        subAreaLastIndex: nextAssignment.subAreaLastIndex,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    await reassignOrdersForArea(areaName, nextAssignment);
   }
 
   async function handleOwnerLogin() {
@@ -1077,41 +1152,50 @@ export default function OwnerPage() {
     }
   }
 
-  async function reassignOrdersForArea(
-    areaName: string,
-    agentIds: string[],
-    lastIndex: number
-  ) {
+  async function reassignOrdersForArea(areaName: string, assignment?: AreaAssignment) {
     const relevantOrders = orders
       .filter(
         (order) => (order.area || "Unknown") === areaName && order.status !== "closed"
       )
       .sort((a, b) => getCreatedAtMs(a.createdAt) - getCreatedAtMs(b.createdAt));
     if (!relevantOrders.length) return;
-    if (!agentIds.length) {
-      await Promise.all(
-        relevantOrders.map((order) =>
-          updateDoc(doc(db, "orders", order.id), {
-            assignedAgentId: "",
-            assignedAgentName: "",
-          })
-        )
-      );
-      await updateDoc(doc(db, "area_assignments", areaName), { lastIndex: -1 });
-      return;
-    }
-    let index = lastIndex;
+    const currentAssignment = assignment || areaAssignmentMap[areaName] || {
+      id: areaName,
+      agentIds: [],
+      lastIndex: -1,
+      subAreaAgentIds: {},
+      subAreaLastIndex: {},
+    };
+    let areaLastIndex =
+      typeof currentAssignment.lastIndex === "number" ? currentAssignment.lastIndex : -1;
+    const nextSubAreaLastIndex = { ...(currentAssignment.subAreaLastIndex || {}) };
     await Promise.all(
       relevantOrders.map((order) => {
-        index = (index + 1) % agentIds.length;
-        const agentId = agentIds[index];
+        const subArea = order.subArea || "";
+        const subAreaAgentIds = currentAssignment.subAreaAgentIds?.[subArea] || [];
+        let assignmentPool = subAreaAgentIds;
+        let agentId = "";
+        if (assignmentPool.length > 0) {
+          const lastIndex =
+            typeof nextSubAreaLastIndex[subArea] === "number" ? nextSubAreaLastIndex[subArea] : -1;
+          const nextIndex = (lastIndex + 1) % assignmentPool.length;
+          nextSubAreaLastIndex[subArea] = nextIndex;
+          agentId = assignmentPool[nextIndex];
+        } else if ((currentAssignment.agentIds || []).length > 0) {
+          assignmentPool = currentAssignment.agentIds || [];
+          areaLastIndex = (areaLastIndex + 1) % assignmentPool.length;
+          agentId = assignmentPool[areaLastIndex];
+        }
         return updateDoc(doc(db, "orders", order.id), {
           assignedAgentId: agentId,
           assignedAgentName: agentNameMap[agentId] || "",
         });
       })
     );
-    await updateDoc(doc(db, "area_assignments", areaName), { lastIndex: index });
+    await updateDoc(doc(db, "area_assignments", areaName), {
+      lastIndex: areaLastIndex,
+      subAreaLastIndex: nextSubAreaLastIndex,
+    });
   }
 
   async function saveOrderPaymentStatus(order: Order, markAsFullyPaid = false) {
@@ -1352,10 +1436,18 @@ export default function OwnerPage() {
             const assignmentSnap = await tx.get(assignmentRef);
             if (assignmentSnap.exists()) {
               const assignmentData = assignmentSnap.data() as any;
-              const agentIds: string[] = assignmentData.agentIds || [];
+              const agentIds: string[] =
+                (assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || []).length > 0
+                  ? assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || []
+                  : assignmentData.agentIds || [];
               if (agentIds.length > 0) {
-                const lastIndex =
-                  typeof assignmentData.lastIndex === "number"
+                const usesSubAreaPool =
+                  (assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || []).length > 0;
+                const lastIndex = usesSubAreaPool
+                  ? typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
+                    ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
+                    : -1
+                  : typeof assignmentData.lastIndex === "number"
                     ? assignmentData.lastIndex
                     : -1;
                 const nextIndex = (lastIndex + 1) % agentIds.length;
@@ -1366,7 +1458,12 @@ export default function OwnerPage() {
                   if (agentData.active !== false) {
                     assignedAgentId = agentId;
                     assignedAgentName = agentData.name || "";
-                    tx.update(assignmentRef, { lastIndex: nextIndex });
+                    tx.update(
+                      assignmentRef,
+                      usesSubAreaPool
+                        ? { [`subAreaLastIndex.${ownerOrderForm.subArea}`]: nextIndex }
+                        : { lastIndex: nextIndex }
+                    );
                   }
                 }
               }
@@ -4359,28 +4456,66 @@ export default function OwnerPage() {
                         .map((id) => agentNameMap[id])
                         .filter(Boolean)
                         .join(", ");
+                      const subAreas = subAreaOptionsByArea[area] || [];
                       return (
-                        <div key={area} className="row list-card" style={{ position: "relative" }}>
-                          <div style={{ flex: 1, fontWeight: 600 }}>{area}</div>
-                          <div style={{ width: 260 }}>
-                            <div className="row" style={{ justifyContent: "flex-end" }}>
-                              <button
-                                className="btn secondary"
-                                onClick={() =>
-                                  setOpenAssignmentArea(
-                                    openAssignmentArea === area ? null : area
-                                  )
-                                }
-                              >
-                                Select Agents
-                              </button>
+                        <div key={area} className="list-card stack" style={{ position: "relative" }}>
+                          <div className="row">
+                            <div style={{ flex: 1, fontWeight: 600 }}>{area}</div>
+                            <div style={{ width: 260 }}>
+                              <div className="row" style={{ justifyContent: "flex-end" }}>
+                                <button
+                                  className="btn secondary"
+                                  onClick={() =>
+                                    setOpenAssignmentArea(
+                                      openAssignmentArea === area ? null : area
+                                    )
+                                  }
+                                >
+                                  Select Agents
+                                </button>
+                              </div>
+                              {assignedNames && (
+                                <small style={{ display: "block", marginTop: 6 }}>
+                                  {assignedNames}
+                                </small>
+                              )}
                             </div>
-                            {assignedNames && (
-                              <small style={{ display: "block", marginTop: 6 }}>
-                                {assignedNames}
-                              </small>
-                            )}
                           </div>
+                          {subAreas.length > 0 && (
+                            <div className="stack" style={{ gap: 8 }}>
+                              {subAreas.map((subArea) => {
+                                const subAreaKey = `${area}::${subArea}`;
+                                const subAssigned =
+                                  areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                                const subAssignedNames = subAssigned
+                                  .map((id) => agentNameMap[id])
+                                  .filter(Boolean)
+                                  .join(", ");
+                                return (
+                                  <div key={subAreaKey} className="row" style={{ alignItems: "flex-start" }}>
+                                    <div style={{ flex: 1 }}>
+                                      <small className="payments-subtext">{subArea}</small>
+                                      {subAssignedNames && (
+                                        <small style={{ display: "block", marginTop: 4 }}>
+                                          {subAssignedNames}
+                                        </small>
+                                      )}
+                                    </div>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() =>
+                                        setOpenAssignmentArea(
+                                          openAssignmentArea === subAreaKey ? null : subAreaKey
+                                        )
+                                      }
+                                    >
+                                      Select Agents
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                           {openAssignmentArea === area && (
                             <div
                               className="card stack"
@@ -4419,6 +4554,48 @@ export default function OwnerPage() {
                               </button>
                             </div>
                           )}
+                          {subAreas.map((subArea) => {
+                            const subAreaKey = `${area}::${subArea}`;
+                            const subAssigned = areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                            return openAssignmentArea === subAreaKey ? (
+                              <div
+                                key={`${subAreaKey}-panel`}
+                                className="card stack"
+                                style={{
+                                  position: "absolute",
+                                  right: 16,
+                                  top: "100%",
+                                  zIndex: 10,
+                                  minWidth: 240,
+                                }}
+                              >
+                                <strong>{subArea}</strong>
+                                {deliveryAgents.length === 0 && <span>No agents yet</span>}
+                                {deliveryAgents.map((agent) => (
+                                  <label key={agent.id} className="row">
+                                    <input
+                                      type="checkbox"
+                                      checked={subAssigned.includes(agent.id)}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        const next = checked
+                                          ? Array.from(new Set([...subAssigned, agent.id]))
+                                          : subAssigned.filter((id) => id !== agent.id);
+                                        saveSubAreaAssignment(area, subArea, next);
+                                      }}
+                                    />
+                                    <span>{agent.name}</span>
+                                  </label>
+                                ))}
+                                <button
+                                  className="btn secondary"
+                                  onClick={() => setOpenAssignmentArea(null)}
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            ) : null;
+                          })}
                         </div>
                       );
                     })}
@@ -4462,29 +4639,54 @@ export default function OwnerPage() {
               {filteredServiceAreas.map((area) => (
                 <div
                   key={area.id}
-                  className="row list-card"
-                  style={{ alignItems: "center", gap: 10 }}
+                  className="list-card stack"
+                  style={{ gap: 10 }}
                 >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600 }}>{area.name}</div>
+                  <div className="row" style={{ alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{area.name}</div>
+                      <small className="payments-subtext">
+                        Sub areas: {(subAreaOptionsByArea[area.name] || []).join(", ") || "None"}
+                      </small>
+                    </div>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={String(Number(area.deliveryFee || 0))}
+                      onBlur={(e) =>
+                        updateServiceAreaFee(area.id, Number(e.target.value || 0))
+                      }
+                      style={{ width: 130 }}
+                    />
+                    <button
+                      className="btn secondary"
+                      onClick={() => deleteServiceArea(area.id)}
+                    >
+                      Delete
+                    </button>
                   </div>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="1"
-                    defaultValue={String(Number(area.deliveryFee || 0))}
-                    onBlur={(e) =>
-                      updateServiceAreaFee(area.id, Number(e.target.value || 0))
-                    }
-                    style={{ width: 130 }}
-                  />
-                  <button
-                    className="btn secondary"
-                    onClick={() => deleteServiceArea(area.id)}
-                  >
-                    Delete
-                  </button>
+                  <div className="row">
+                    <input
+                      className="input"
+                      placeholder="Add sub area"
+                      value={areaSubAreaDrafts[area.id] || ""}
+                      onChange={(e) =>
+                        setAreaSubAreaDrafts((prev) => ({
+                          ...prev,
+                          [area.id]: e.target.value,
+                        }))
+                      }
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="btn secondary btn-compact"
+                      onClick={() => addServiceSubArea(area)}
+                    >
+                      Add Sub Area
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
