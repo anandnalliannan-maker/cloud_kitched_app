@@ -1281,15 +1281,26 @@ export default function OwnerPage() {
   }
 
   function buildPlacedNotificationMessage(order: Order) {
+    const mealLabel = (order.mealType || "order").toLowerCase();
     const itemLines =
       (order.items || []).length > 0
         ? (order.items || [])
-            .map((item) => `${item.name}---${item.qty}`)
+            .map((item) => `*${item.name}---${item.qty}*`)
             .join("\n")
-        : "Items---0";
-    const deliveryLabel =
-      order.deliveryType === "pickup" ? "Self Pickup" : "Delivery";
-    return `Thanks for your order.\n\nOrder ID: ${order.orderId || order.id}\n${itemLines}\nTotal Amount is Rs. ${order.total || 0}/-\n\nYou have opted for ---${deliveryLabel}\n\n-MS Kitchen`;
+        : "*Items---0*";
+    const amountLine = `Total Amount is *Rs. ${order.total || 0}/-*`;
+    let deliveryLine = "You have opted for ===Home Delivery";
+    let followupLine = "";
+
+    if (order.deliveryType === "pickup") {
+      deliveryLine = "You have opted for ===Self Pickup";
+      followupLine = "Please visit the store and pick up your ordered items.";
+    } else if (order.paymentMethod === "cash_on_delivery") {
+      deliveryLine = "You have opted for ===Cash On Delivery";
+      followupLine = `Please pay the bill amount of Rs. ${order.total || 0}/- to the delivery agent.`;
+    }
+
+    return `Your ${mealLabel} Order has been\nSuccessfully Received as\n${itemLines}\n${amountLine}\n\n${deliveryLine}${followupLine ? `\n${followupLine}` : ""}\n\n-MS Kitchen`;
   }
 
   function openPlacedNotification(order: Order) {
