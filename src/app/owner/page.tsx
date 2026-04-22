@@ -1800,6 +1800,9 @@ export default function OwnerPage() {
       totalOrders: 0,
       totalItems: 0,
       totalValue: 0,
+      upiValue: 0,
+      codValue: 0,
+      selfPickupValue: 0,
       codOrders: 0,
       itemCounts: {} as Record<string, number>,
       itemPairCounts: {} as Record<string, number>,
@@ -1814,7 +1817,15 @@ export default function OwnerPage() {
         (sum, item) => sum + item.qty,
         0
       );
-      summary.totalValue += order.total || 0;
+      const orderTotal = order.total || 0;
+      summary.totalValue += orderTotal;
+      if (order.deliveryType === "pickup") {
+        summary.selfPickupValue += orderTotal;
+      } else if (isCashOnDeliveryOrder(order)) {
+        summary.codValue += orderTotal;
+      } else {
+        summary.upiValue += orderTotal;
+      }
       if (isCashOnDeliveryOrder(order)) {
         summary.codOrders += 1;
       }
@@ -3545,6 +3556,9 @@ export default function OwnerPage() {
                           <div className="card">
                             <small className="payments-subtext">Total value</small>
                             <strong>Rs. {currentOrdersSummary.totalValue}</strong>
+                            <small className="payments-subtext">
+                              UPI: Rs. {currentOrdersSummary.upiValue} | COD: Rs. {currentOrdersSummary.codValue} | SP: Rs. {currentOrdersSummary.selfPickupValue}
+                            </small>
                           </div>
                           <div className="card">
                             <small className="payments-subtext">COD orders</small>
