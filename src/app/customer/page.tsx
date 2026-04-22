@@ -116,6 +116,13 @@ function getPhoneVariants(rawPhone: string) {
   );
 }
 
+function getAssignmentMealKey(mealType?: string) {
+  const normalized = String(mealType || "").trim().toLowerCase();
+  if (normalized === "lunch") return "Lunch";
+  if (normalized === "dinner") return "Dinner";
+  return "";
+}
+
 async function generateUniqueSixDigitOrderId() {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const timestampPart = Date.now() % 100000;
@@ -1124,6 +1131,8 @@ export default function CustomerPage() {
               .filter(Boolean)
               .join(", ")
           : "";
+      let effectiveDeliveryFee = selectedDeliveryFee;
+      let effectiveOrderTotal = total;
       const summaryForPayment: PaymentSummary = {
         appOrderId: orderRef.id,
         displayOrderId: generatedDisplayOrderId,
@@ -1135,8 +1144,8 @@ export default function CustomerPage() {
           imageUrl: item.imageUrl || "",
         })),
         itemsTotal,
-        deliveryFee: selectedDeliveryFee,
-        total,
+        deliveryFee: effectiveDeliveryFee,
+        total: effectiveOrderTotal,
         deliveryType,
         paymentMethod: deliveryType === "pickup" ? "pay_at_outlet" : "upi",
         location,
@@ -1154,6 +1163,11 @@ export default function CustomerPage() {
         if (menuData.ordersStopped) {
           throw new Error("Sold out.");
         }
+        const mealKey = getAssignmentMealKey(menuData.mealType || "");
+        const mealIsLunch = mealKey === "Lunch";
+        effectiveDeliveryFee =
+          deliveryType === "delivery" && !mealIsLunch ? Number(selectedAreaConfig?.deliveryFee || 0) : 0;
+        effectiveOrderTotal = itemsTotal + effectiveDeliveryFee;
         const remaining = (menuData.remaining || menuData.items || []).map(
           (item: any) => ({ ...item })
         );
@@ -1177,7 +1191,12 @@ export default function CustomerPage() {
           const assignmentSnap = await tx.get(assignmentRef);
           if (assignmentSnap.exists()) {
             const assignmentData = assignmentSnap.data() as any;
-            const subAreaAgentIds: string[] = assignmentData.subAreaAgentIds?.[form.subArea] || [];
+            const subAreaAgentIds: string[] =
+              mealKey
+                ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[form.subArea] ||
+                  assignmentData.subAreaAgentIds?.[form.subArea] ||
+                  []
+                : assignmentData.subAreaAgentIds?.[form.subArea] || [];
             const requiresOwnerAssignment =
               Boolean(form.subArea) &&
               !isMappedSubArea(form.area, form.subArea) &&
@@ -1187,16 +1206,31 @@ export default function CustomerPage() {
                 ? subAreaAgentIds
                 : requiresOwnerAssignment
                   ? []
-                  : assignmentData.agentIds || [];
+                  : mealKey
+                    ? assignmentData.mealAgentIds?.[mealKey] || assignmentData.agentIds || []
+                    : assignmentData.agentIds || [];
             if (agentIds.length > 0) {
               const usesSubAreaPool = subAreaAgentIds.length > 0;
               const lastIndex = usesSubAreaPool
-                ? typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
-                  ? assignmentData.subAreaLastIndex[form.subArea]
+                ? mealKey
+                  ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[form.subArea] === "number"
+                    ? assignmentData.subAreaMealLastIndex[mealKey][form.subArea]
+                    : typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
+                      ? assignmentData.subAreaLastIndex[form.subArea]
+                      : -1
+                  : typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
+                    ? assignmentData.subAreaLastIndex[form.subArea]
+                    : -1
+                : mealKey
+                  ? typeof assignmentData.mealLastIndex?.[mealKey] === "number"
+                    ? assignmentData.mealLastIndex[mealKey]
+                    : typeof assignmentData.lastIndex === "number"
+                      ? assignmentData.lastIndex
+                      : -1
+                  : typeof assignmentData.lastIndex === "number"
+                    ? assignmentData.lastIndex
                   : -1
-                : typeof assignmentData.lastIndex === "number"
-                  ? assignmentData.lastIndex
-                  : -1;
+                ;
               const nextIndex = (lastIndex + 1) % agentIds.length;
               const agentId = agentIds[nextIndex];
               const agentSnap = await tx.get(
@@ -1207,12 +1241,16 @@ export default function CustomerPage() {
                 if (agentData.active !== false) {
                   assignedAgentId = agentId;
                   assignedAgentName = agentData.name || "";
-                  tx.update(
-                    assignmentRef,
-                    usesSubAreaPool
-                      ? { [`subAreaLastIndex.${form.subArea}`]: nextIndex }
-                      : { lastIndex: nextIndex }
-                  );
+                    tx.update(
+                      assignmentRef,
+                      usesSubAreaPool
+                        ? mealKey
+                          ? { [`subAreaMealLastIndex.${mealKey}.${form.subArea}`]: nextIndex }
+                          : { [`subAreaLastIndex.${form.subArea}`]: nextIndex }
+                        : mealKey
+                          ? { [`mealLastIndex.${mealKey}`]: nextIndex }
+                          : { lastIndex: nextIndex }
+                    );
                 }
               }
             }
@@ -1243,13 +1281,15 @@ export default function CustomerPage() {
             price: item.price,
           })),
           itemsTotal,
-          deliveryFee: selectedDeliveryFee,
-          total,
+          deliveryFee: effectiveDeliveryFee,
+          total: effectiveOrderTotal,
           assignedAgentId,
           assignedAgentName,
         });
         tx.update(menuRef, { remaining });
       });
+      summaryForPayment.deliveryFee = effectiveDeliveryFee;
+      summaryForPayment.total = effectiveOrderTotal;
       summaryForPayment.displayOrderId = generatedDisplayOrderId;
       setPaymentSummary(summaryForPayment);
       setStep("payment");

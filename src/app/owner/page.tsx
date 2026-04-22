@@ -124,6 +124,8 @@ type Order = {
   location?: any;
   cancelledAt?: any;
   cancelledByPhone?: string;
+  cancellationRemarks?: string;
+  cancelledByOwner?: boolean;
 };
 
 type DeliveryAgent = {
@@ -146,9 +148,14 @@ type AreaAssignment = {
   lastIndex?: number;
   subAreaAgentIds?: Record<string, string[]>;
   subAreaLastIndex?: Record<string, number>;
+  mealAgentIds?: Record<string, string[]>;
+  mealLastIndex?: Record<string, number>;
+  subAreaMealAgentIds?: Record<string, Record<string, string[]>>;
+  subAreaMealLastIndex?: Record<string, Record<string, number>>;
 };
 
 const mealTypes = ["Breakfast", "Lunch", "Snacks", "Dinner"];
+const deliveryAssignmentMeals = ["Lunch", "Dinner"] as const;
 const fallbackAreas = ["Madipakkam", "Medavakkam", "Velachery"];
 const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
@@ -318,6 +325,55 @@ function getPaymentMethodLabel(order: Order) {
   return order.paymentMethod || "-";
 }
 
+function getAssignmentMealKey(mealType?: string) {
+  const normalized = String(mealType || "").trim().toLowerCase();
+  if (normalized === "lunch") return "Lunch";
+  if (normalized === "dinner") return "Dinner";
+  return "";
+}
+
+function getAreaAgentIdsForMeal(assignmentData: any, mealType?: string) {
+  const mealKey = getAssignmentMealKey(mealType);
+  return mealKey
+    ? assignmentData.mealAgentIds?.[mealKey] || assignmentData.agentIds || []
+    : assignmentData.agentIds || [];
+}
+
+function getSubAreaAgentIdsForMeal(assignmentData: any, mealType: string | undefined, subArea: string) {
+  const mealKey = getAssignmentMealKey(mealType);
+  return mealKey
+    ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[subArea] ||
+        assignmentData.subAreaAgentIds?.[subArea] ||
+        []
+    : assignmentData.subAreaAgentIds?.[subArea] || [];
+}
+
+function getAreaLastIndexForMeal(assignmentData: any, mealType?: string) {
+  const mealKey = getAssignmentMealKey(mealType);
+  if (mealKey) {
+    return typeof assignmentData.mealLastIndex?.[mealKey] === "number"
+      ? assignmentData.mealLastIndex[mealKey]
+      : typeof assignmentData.lastIndex === "number"
+        ? assignmentData.lastIndex
+        : -1;
+  }
+  return typeof assignmentData.lastIndex === "number" ? assignmentData.lastIndex : -1;
+}
+
+function getSubAreaLastIndexForMeal(assignmentData: any, mealType: string | undefined, subArea: string) {
+  const mealKey = getAssignmentMealKey(mealType);
+  if (mealKey) {
+    return typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[subArea] === "number"
+      ? assignmentData.subAreaMealLastIndex[mealKey][subArea]
+      : typeof assignmentData.subAreaLastIndex?.[subArea] === "number"
+        ? assignmentData.subAreaLastIndex[subArea]
+        : -1;
+  }
+  return typeof assignmentData.subAreaLastIndex?.[subArea] === "number"
+    ? assignmentData.subAreaLastIndex[subArea]
+    : -1;
+}
+
 export default function OwnerPage() {
   const [mode, setMode] = useState<Mode>("loading");
   const [tab, setTab] = useState<Tab>("menu");
@@ -396,6 +452,10 @@ export default function OwnerPage() {
   });
   const [publishError, setPublishError] = useState("");
   const [publishedMenuNotice, setPublishedMenuNotice] = useState("");
+  const [editingPublishedMenuDateId, setEditingPublishedMenuDateId] = useState<string | null>(
+    null
+  );
+  const [publishedMenuDateDraft, setPublishedMenuDateDraft] = useState("");
   const [publishedMenuAddItem, setPublishedMenuAddItem] = useState<
     Record<string, { itemId: string; qty: string }>
   >({});
@@ -410,6 +470,8 @@ export default function OwnerPage() {
   const [deliveryTab, setDeliveryTab] = useState<"agents" | "assignments">(
     "agents"
   );
+  const [assignmentMeal, setAssignmentMeal] =
+    useState<(typeof deliveryAssignmentMeals)[number]>("Lunch");
   const [openAssignmentArea, setOpenAssignmentArea] = useState<string | null>(
     null
   );
@@ -427,10 +489,14 @@ export default function OwnerPage() {
   const [activeOrderDeliveryFilter, setActiveOrderDeliveryFilter] = useState("All");
   const [activeOrderStatusFilter, setActiveOrderStatusFilter] = useState("All");
   const [placedNotificationSentIds, setPlacedNotificationSentIds] = useState<string[]>([]);
+  const [openActiveOrderActionsId, setOpenActiveOrderActionsId] = useState<string | null>(null);
   const [editingActiveOrderId, setEditingActiveOrderId] = useState<string | null>(
     null
   );
+  const [cancellingOwnerOrderId, setCancellingOwnerOrderId] = useState<string | null>(null);
   const [activeOrderEditError, setActiveOrderEditError] = useState("");
+  const [ownerCancelError, setOwnerCancelError] = useState("");
+  const [ownerCancelRemarks, setOwnerCancelRemarks] = useState("");
   const [activeOrderEditForm, setActiveOrderEditForm] = useState({
     customerName: "",
     phone: "",
@@ -542,12 +608,19 @@ export default function OwnerPage() {
     return map;
   }, [areaAssignments]);
   const unassignedCustomSubAreas = useMemo(() => {
+    const mealKey = getAssignmentMealKey(assignmentMeal);
     return serviceAreas.flatMap((area) =>
       ((area.subAreas || []).filter(Boolean) || [])
         .filter((subArea) => !isMappedSubArea(area.name, subArea))
         .filter(
           (subArea) =>
-            (areaAssignmentMap[area.name]?.subAreaAgentIds?.[subArea] || []).length === 0
+            (
+              mealKey
+                ? areaAssignmentMap[area.name]?.subAreaMealAgentIds?.[mealKey]?.[subArea] ||
+                  areaAssignmentMap[area.name]?.subAreaAgentIds?.[subArea] ||
+                  []
+                : areaAssignmentMap[area.name]?.subAreaAgentIds?.[subArea] || []
+            ).length === 0
         )
         .sort((a, b) => a.localeCompare(b))
         .map((subArea) => ({
@@ -555,7 +628,7 @@ export default function OwnerPage() {
           subArea,
         }))
     );
-  }, [serviceAreas, areaAssignmentMap]);
+  }, [serviceAreas, areaAssignmentMap, assignmentMeal]);
 
   function getCreatedAtMs(value: any) {
     if (!value) return 0;
@@ -1052,15 +1125,33 @@ export default function OwnerPage() {
     }));
   }
 
-  async function saveAreaAssignment(areaName: string, agentIds: string[]) {
+  async function saveAreaAssignment(areaName: string, agentIds: string[], mealType = assignmentMeal) {
     const existing = areaAssignmentMap[areaName];
     const ref = doc(db, "area_assignments", areaName);
+    const mealKey = getAssignmentMealKey(mealType);
     const nextAssignment = {
       id: areaName,
-      agentIds,
+      agentIds: existing?.agentIds || [],
       lastIndex: typeof existing?.lastIndex === "number" ? existing.lastIndex : -1,
       subAreaAgentIds: existing?.subAreaAgentIds || {},
       subAreaLastIndex: existing?.subAreaLastIndex || {},
+      mealAgentIds: {
+        ...(existing?.mealAgentIds || {}),
+        ...(mealKey ? { [mealKey]: agentIds } : {}),
+      },
+      mealLastIndex: {
+        ...(existing?.mealLastIndex || {}),
+        ...(mealKey
+          ? {
+              [mealKey]:
+                typeof existing?.mealLastIndex?.[mealKey] === "number"
+                  ? existing.mealLastIndex[mealKey]
+                  : -1,
+            }
+          : {}),
+      },
+      subAreaMealAgentIds: existing?.subAreaMealAgentIds || {},
+      subAreaMealLastIndex: existing?.subAreaMealLastIndex || {},
     };
     await setDoc(
       ref,
@@ -1069,16 +1160,26 @@ export default function OwnerPage() {
         lastIndex: nextAssignment.lastIndex,
         subAreaAgentIds: nextAssignment.subAreaAgentIds,
         subAreaLastIndex: nextAssignment.subAreaLastIndex,
+        mealAgentIds: nextAssignment.mealAgentIds,
+        mealLastIndex: nextAssignment.mealLastIndex,
+        subAreaMealAgentIds: nextAssignment.subAreaMealAgentIds,
+        subAreaMealLastIndex: nextAssignment.subAreaMealLastIndex,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
-    await reassignOrdersForArea(areaName, nextAssignment);
+    await reassignOrdersForArea(areaName, nextAssignment, mealType);
   }
 
-  async function saveSubAreaAssignment(areaName: string, subArea: string, agentIds: string[]) {
+  async function saveSubAreaAssignment(
+    areaName: string,
+    subArea: string,
+    agentIds: string[],
+    mealType = assignmentMeal
+  ) {
     const existing = areaAssignmentMap[areaName];
     const ref = doc(db, "area_assignments", areaName);
+    const mealKey = getAssignmentMealKey(mealType);
     const nextAssignment = {
       id: areaName,
       agentIds: existing?.agentIds || [],
@@ -1094,6 +1195,33 @@ export default function OwnerPage() {
             ? existing.subAreaLastIndex[subArea]
             : -1,
       },
+      mealAgentIds: existing?.mealAgentIds || {},
+      mealLastIndex: existing?.mealLastIndex || {},
+      subAreaMealAgentIds: {
+        ...(existing?.subAreaMealAgentIds || {}),
+        ...(mealKey
+          ? {
+              [mealKey]: {
+                ...(existing?.subAreaMealAgentIds?.[mealKey] || {}),
+                [subArea]: agentIds,
+              },
+            }
+          : {}),
+      },
+      subAreaMealLastIndex: {
+        ...(existing?.subAreaMealLastIndex || {}),
+        ...(mealKey
+          ? {
+              [mealKey]: {
+                ...(existing?.subAreaMealLastIndex?.[mealKey] || {}),
+                [subArea]:
+                  typeof existing?.subAreaMealLastIndex?.[mealKey]?.[subArea] === "number"
+                    ? existing.subAreaMealLastIndex[mealKey][subArea]
+                    : -1,
+              },
+            }
+          : {}),
+      },
     };
     await setDoc(
       ref,
@@ -1102,11 +1230,15 @@ export default function OwnerPage() {
         lastIndex: nextAssignment.lastIndex,
         subAreaAgentIds: nextAssignment.subAreaAgentIds,
         subAreaLastIndex: nextAssignment.subAreaLastIndex,
+        mealAgentIds: nextAssignment.mealAgentIds,
+        mealLastIndex: nextAssignment.mealLastIndex,
+        subAreaMealAgentIds: nextAssignment.subAreaMealAgentIds,
+        subAreaMealLastIndex: nextAssignment.subAreaMealLastIndex,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
-    await reassignOrdersForArea(areaName, nextAssignment);
+    await reassignOrdersForArea(areaName, nextAssignment, mealType);
   }
 
   async function handleOwnerLogin() {
@@ -1167,10 +1299,18 @@ export default function OwnerPage() {
     }
   }
 
-  async function reassignOrdersForArea(areaName: string, assignment?: AreaAssignment) {
+  async function reassignOrdersForArea(
+    areaName: string,
+    assignment?: AreaAssignment,
+    mealType?: string
+  ) {
     const relevantOrders = orders
       .filter(
-        (order) => (order.area || "Unknown") === areaName && order.status !== "closed"
+        (order) =>
+          (order.area || "Unknown") === areaName &&
+          order.status !== "closed" &&
+          order.status !== "cancelled" &&
+          (!mealType || getAssignmentMealKey(order.mealType) === getAssignmentMealKey(mealType))
       )
       .sort((a, b) => getCreatedAtMs(a.createdAt) - getCreatedAtMs(b.createdAt));
     if (!relevantOrders.length) return;
@@ -1181,13 +1321,25 @@ export default function OwnerPage() {
       subAreaAgentIds: {},
       subAreaLastIndex: {},
     };
-    let areaLastIndex =
-      typeof currentAssignment.lastIndex === "number" ? currentAssignment.lastIndex : -1;
+    const mealKey = getAssignmentMealKey(mealType);
+    let areaLastIndex = mealKey
+      ? typeof currentAssignment.mealLastIndex?.[mealKey] === "number"
+        ? currentAssignment.mealLastIndex[mealKey]
+        : typeof currentAssignment.lastIndex === "number"
+          ? currentAssignment.lastIndex
+          : -1
+      : typeof currentAssignment.lastIndex === "number"
+        ? currentAssignment.lastIndex
+        : -1;
     const nextSubAreaLastIndex = { ...(currentAssignment.subAreaLastIndex || {}) };
+    const nextSubAreaMealLastIndex = { ...(currentAssignment.subAreaMealLastIndex || {}) };
+    if (mealKey && !nextSubAreaMealLastIndex[mealKey]) {
+      nextSubAreaMealLastIndex[mealKey] = {};
+    }
     await Promise.all(
       relevantOrders.map((order) => {
         const subArea = order.subArea || "";
-        const subAreaAgentIds = currentAssignment.subAreaAgentIds?.[subArea] || [];
+        const subAreaAgentIds = getSubAreaAgentIdsForMeal(currentAssignment, order.mealType, subArea);
         const requiresOwnerAssignment =
           Boolean(subArea) &&
           !isMappedSubArea(areaName, subArea) &&
@@ -1195,13 +1347,24 @@ export default function OwnerPage() {
         let assignmentPool = subAreaAgentIds;
         let agentId = "";
         if (assignmentPool.length > 0) {
-          const lastIndex =
-            typeof nextSubAreaLastIndex[subArea] === "number" ? nextSubAreaLastIndex[subArea] : -1;
+          const lastIndex = mealKey
+            ? typeof nextSubAreaMealLastIndex[mealKey]?.[subArea] === "number"
+              ? nextSubAreaMealLastIndex[mealKey][subArea]
+              : typeof nextSubAreaLastIndex[subArea] === "number"
+                ? nextSubAreaLastIndex[subArea]
+                : -1
+            : typeof nextSubAreaLastIndex[subArea] === "number"
+              ? nextSubAreaLastIndex[subArea]
+              : -1;
           const nextIndex = (lastIndex + 1) % assignmentPool.length;
-          nextSubAreaLastIndex[subArea] = nextIndex;
+          if (mealKey) {
+            nextSubAreaMealLastIndex[mealKey][subArea] = nextIndex;
+          } else {
+            nextSubAreaLastIndex[subArea] = nextIndex;
+          }
           agentId = assignmentPool[nextIndex];
-        } else if (!requiresOwnerAssignment && (currentAssignment.agentIds || []).length > 0) {
-          assignmentPool = currentAssignment.agentIds || [];
+        } else if (!requiresOwnerAssignment && getAreaAgentIdsForMeal(currentAssignment, order.mealType).length > 0) {
+          assignmentPool = getAreaAgentIdsForMeal(currentAssignment, order.mealType);
           areaLastIndex = (areaLastIndex + 1) % assignmentPool.length;
           agentId = assignmentPool[areaLastIndex];
         }
@@ -1211,10 +1374,18 @@ export default function OwnerPage() {
         });
       })
     );
-    await updateDoc(doc(db, "area_assignments", areaName), {
-      lastIndex: areaLastIndex,
-      subAreaLastIndex: nextSubAreaLastIndex,
-    });
+    await updateDoc(
+      doc(db, "area_assignments", areaName),
+      mealKey
+        ? {
+            [`mealLastIndex.${mealKey}`]: areaLastIndex,
+            [`subAreaMealLastIndex.${mealKey}`]: nextSubAreaMealLastIndex[mealKey] || {},
+          }
+        : {
+            lastIndex: areaLastIndex,
+            subAreaLastIndex: nextSubAreaLastIndex,
+          }
+    );
   }
 
   async function saveOrderPaymentStatus(order: Order, markAsFullyPaid = false) {
@@ -1261,6 +1432,10 @@ export default function OwnerPage() {
 
   function openActiveOrderEditor(order: Order) {
     const savedAddress = splitAddress(order.address || "");
+    setOpenActiveOrderActionsId(null);
+    setCancellingOwnerOrderId(null);
+    setOwnerCancelRemarks("");
+    setOwnerCancelError("");
     setEditingActiveOrderId(order.id);
     setActiveOrderEditError("");
     setActiveOrderEditForm({
@@ -1278,6 +1453,119 @@ export default function OwnerPage() {
           ? order.status
           : "active",
     });
+  }
+
+  function canOwnerCancelOrder(order: Order) {
+    return order.orderSource !== "owner" && (order.status === "active" || order.status === "payment_pending");
+  }
+
+  function openOwnerCancelOrder(order: Order) {
+    setEditingActiveOrderId(null);
+    setActiveOrderEditError("");
+    setOpenActiveOrderActionsId(null);
+    setOwnerCancelError("");
+    setOwnerCancelRemarks("");
+    setCancellingOwnerOrderId(order.id);
+  }
+
+  async function cancelOrderByOwner(order: Order) {
+    setOwnerCancelError("");
+    const remarks = ownerCancelRemarks.trim();
+    if (!canOwnerCancelOrder(order)) {
+      setOwnerCancelError("Only customer-created active orders can be cancelled.");
+      return;
+    }
+    if (!remarks) {
+      setOwnerCancelError("Enter cancellation remarks.");
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Are you sure you want to cancel order ${order.orderId || order.id}?`)
+    ) {
+      return;
+    }
+
+    setCancellingOwnerOrderId(order.id);
+    try {
+      await runTransaction(db, async (tx) => {
+        const orderRef = doc(db, "orders", order.id);
+        const orderSnap = await tx.get(orderRef);
+        if (!orderSnap.exists()) {
+          throw new Error("Order not found.");
+        }
+
+        const currentOrder = orderSnap.data() as any;
+        if (!(currentOrder.status === "active" || currentOrder.status === "payment_pending")) {
+          throw new Error("This order can no longer be cancelled.");
+        }
+
+        if (currentOrder.publishedMenuId) {
+          const menuRef = doc(db, "published_menus", currentOrder.publishedMenuId);
+          const menuSnap = await tx.get(menuRef);
+          if (menuSnap.exists()) {
+            const menuData = menuSnap.data() as any;
+            const remaining = (menuData.remaining || menuData.items || []).map((item: any) => ({
+              ...item,
+            }));
+
+            (currentOrder.items || []).forEach((orderedItem: any) => {
+              const remainingItem = remaining.find(
+                (menuItem: any) =>
+                  menuItem.itemId === orderedItem.itemId || menuItem.name === orderedItem.name
+              );
+              if (remainingItem) {
+                remainingItem.qty = (remainingItem.qty || 0) + (orderedItem.qty || 0);
+              }
+            });
+
+            tx.update(menuRef, {
+              remaining,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+
+        tx.update(orderRef, {
+          status: "cancelled",
+          paymentStatus: currentOrder.paymentStatus === "paid" ? "refund_pending" : "cancelled",
+          cancelledAt: serverTimestamp(),
+          cancelledByOwner: true,
+          cancellationRemarks: remarks,
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      setCancellingOwnerOrderId(null);
+      setOwnerCancelRemarks("");
+      setOwnerCancelError("");
+    } catch (error: any) {
+      setOwnerCancelError(error?.message || "Failed to cancel order.");
+    }
+  }
+
+  async function savePublishedMenuDate(menu: PublishedMenu) {
+    if (!publishedMenuDateDraft) {
+      return;
+    }
+    await updateDoc(doc(db, "published_menus", menu.id), {
+      date: publishedMenuDateDraft,
+      updatedAt: serverTimestamp(),
+    });
+    const matchingOrders = await getDocs(
+      query(collection(db, "orders"), where("publishedMenuId", "==", menu.id))
+    );
+    await Promise.all(
+      matchingOrders.docs.map((docSnap) =>
+        updateDoc(doc(db, "orders", docSnap.id), {
+          publishedDate: publishedMenuDateDraft,
+          updatedAt: serverTimestamp(),
+        })
+      )
+    );
+    setEditingPublishedMenuDateId(null);
+    setPublishedMenuDateDraft("");
+    showPublishedMenuNotice("Published menu date updated");
   }
 
   function buildPlacedNotificationMessage(order: Order) {
@@ -1420,6 +1708,7 @@ export default function OwnerPage() {
           throw new Error("Published menu not found.");
         }
         const menuData = menuSnap.data() as any;
+        const mealKey = getAssignmentMealKey(menuData.mealType || "");
         if (menuData.isArchived || menuData.ordersStopped) {
           throw new Error("Orders are closed for this menu.");
         }
@@ -1467,7 +1756,11 @@ export default function OwnerPage() {
             if (assignmentSnap.exists()) {
               const assignmentData = assignmentSnap.data() as any;
               const subAreaAgentIds: string[] =
-                assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || [];
+                mealKey
+                  ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[ownerOrderForm.subArea] ||
+                    assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] ||
+                    []
+                  : assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || [];
               const requiresOwnerAssignment =
                 Boolean(ownerOrderForm.subArea) &&
                 !isMappedSubArea(ownerOrderForm.area, ownerOrderForm.subArea) &&
@@ -1477,17 +1770,32 @@ export default function OwnerPage() {
                   ? subAreaAgentIds
                   : requiresOwnerAssignment
                     ? []
-                    : assignmentData.agentIds || [];
+                    : mealKey
+                      ? assignmentData.mealAgentIds?.[mealKey] || assignmentData.agentIds || []
+                      : assignmentData.agentIds || [];
               if (agentIds.length > 0) {
                 const usesSubAreaPool =
                   subAreaAgentIds.length > 0;
                 const lastIndex = usesSubAreaPool
-                  ? typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
-                    ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
+                  ? mealKey
+                    ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[ownerOrderForm.subArea] === "number"
+                      ? assignmentData.subAreaMealLastIndex[mealKey][ownerOrderForm.subArea]
+                      : typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
+                        ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
+                        : -1
+                    : typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
+                      ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
+                      : -1
+                  : mealKey
+                    ? typeof assignmentData.mealLastIndex?.[mealKey] === "number"
+                      ? assignmentData.mealLastIndex[mealKey]
+                      : typeof assignmentData.lastIndex === "number"
+                        ? assignmentData.lastIndex
+                        : -1
+                    : typeof assignmentData.lastIndex === "number"
+                      ? assignmentData.lastIndex
                     : -1
-                  : typeof assignmentData.lastIndex === "number"
-                    ? assignmentData.lastIndex
-                    : -1;
+                  ;
                 const nextIndex = (lastIndex + 1) % agentIds.length;
                 const agentId = agentIds[nextIndex];
                 const agentSnap = await tx.get(doc(db, "delivery_agents", agentId));
@@ -1499,8 +1807,12 @@ export default function OwnerPage() {
                     tx.update(
                       assignmentRef,
                       usesSubAreaPool
-                        ? { [`subAreaLastIndex.${ownerOrderForm.subArea}`]: nextIndex }
-                        : { lastIndex: nextIndex }
+                        ? mealKey
+                          ? { [`subAreaMealLastIndex.${mealKey}.${ownerOrderForm.subArea}`]: nextIndex }
+                          : { [`subAreaLastIndex.${ownerOrderForm.subArea}`]: nextIndex }
+                        : mealKey
+                          ? { [`mealLastIndex.${mealKey}`]: nextIndex }
+                          : { lastIndex: nextIndex }
                     );
                   }
                 }
@@ -1869,6 +2181,7 @@ export default function OwnerPage() {
               ? "Refund Pending"
               : order.paymentStatus || "-",
           total: order.total || 0,
+          remarks: order.cancellationRemarks || "-",
           cancelledAt: order.cancelledAt || order.createdAt || order.publishedDate,
         }))
         .sort((a, b) => String(b.orderId).localeCompare(String(a.orderId))),
@@ -2729,11 +3042,51 @@ export default function OwnerPage() {
                 .map((menu) => (
                   <div key={menu.id} className="list-card menu-card">
                     <div className="menu-card-body">
-                      <div>
-                        {formatDateLabel(menu.date)} - {menu.mealType} (
-                        {(menu.items || []).filter((item) => item.active !== false).length} active
-                        )
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          {formatDateLabel(menu.date)} - {menu.mealType} (
+                          {(menu.items || []).filter((item) => item.active !== false).length} active
+                          )
+                        </div>
+                        {currentPublishedMenu?.id === menu.id && (
+                          <button
+                            className="btn secondary btn-compact"
+                            onClick={() => {
+                              setEditingPublishedMenuDateId(
+                                editingPublishedMenuDateId === menu.id ? null : menu.id
+                              );
+                              setPublishedMenuDateDraft(menu.date || "");
+                            }}
+                          >
+                            Modify date
+                          </button>
+                        )}
                       </div>
+                      {editingPublishedMenuDateId === menu.id && (
+                        <div className="row">
+                          <input
+                            className="input"
+                            type="date"
+                            value={publishedMenuDateDraft}
+                            onChange={(e) => setPublishedMenuDateDraft(e.target.value)}
+                          />
+                          <button
+                            className="btn secondary btn-compact"
+                            onClick={() => savePublishedMenuDate(menu)}
+                          >
+                            Update
+                          </button>
+                          <button
+                            className="btn secondary btn-compact"
+                            onClick={() => {
+                              setEditingPublishedMenuDateId(null);
+                              setPublishedMenuDateDraft("");
+                            }}
+                          >
+                            Close
+                          </button>
+                        </div>
+                      )}
                       <div>
                         {menu.items?.length ? (
                           menu.items.map((item) => (
@@ -3466,6 +3819,7 @@ export default function OwnerPage() {
                         <th>Cancelled On</th>
                         <th>Order ID</th>
                         <th>Customer</th>
+                        <th>Remarks</th>
                         <th>Delivery Type</th>
                         <th>Payment</th>
                         <th>Refund Status</th>
@@ -3475,7 +3829,7 @@ export default function OwnerPage() {
                     <tbody>
                       {filteredCancelledOrders.length === 0 && (
                         <tr>
-                          <td colSpan={7}>No cancelled orders</td>
+                          <td colSpan={8}>No cancelled orders</td>
                         </tr>
                       )}
                       {filteredCancelledOrders.map((order) => (
@@ -3483,6 +3837,7 @@ export default function OwnerPage() {
                           <td>{formatDateLabel(order.cancelledAt || order.createdAt || order.publishedDate)}</td>
                           <td>#{order.orderId || order.id}</td>
                           <td>{order.customerName || "-"}</td>
+                          <td>{order.cancellationRemarks || "-"}</td>
                           <td>
                             {order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery"}
                           </td>
@@ -3672,6 +4027,7 @@ export default function OwnerPage() {
                                 <th>Cancelled On</th>
                                 <th>Order ID</th>
                                 <th>Customer</th>
+                                <th>Remarks</th>
                                 <th>Type</th>
                                 <th>Payment</th>
                                 <th>Refund Status</th>
@@ -3681,7 +4037,7 @@ export default function OwnerPage() {
                             <tbody>
                               {currentCancelledOrderRows.length === 0 && (
                                 <tr>
-                                  <td colSpan={7}>No cancelled orders for this menu</td>
+                                  <td colSpan={8}>No cancelled orders for this menu</td>
                                 </tr>
                               )}
                               {currentCancelledOrderRows.map((row) => (
@@ -3689,6 +4045,7 @@ export default function OwnerPage() {
                                   <td>{formatDateLabel(row.cancelledAt)}</td>
                                   <td>#{row.orderId}</td>
                                   <td>{row.customerName}</td>
+                                  <td>{row.remarks}</td>
                                   <td>{row.deliveryType}</td>
                                   <td>{row.paymentMethod}</td>
                                   <td>{row.paymentStatus}</td>
@@ -3930,14 +4287,74 @@ export default function OwnerPage() {
                                   </div>
                                 </td>
                                 <td>
-                                  <button
-                                    className="btn secondary btn-compact"
-                                    onClick={() => openActiveOrderEditor(order)}
-                                  >
-                                    Edit
-                                  </button>
+                                  <div className="stack" style={{ gap: 6 }}>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() =>
+                                        setOpenActiveOrderActionsId(
+                                          openActiveOrderActionsId === order.id ? null : order.id
+                                        )
+                                      }
+                                    >
+                                      Actions
+                                    </button>
+                                    {openActiveOrderActionsId === order.id && (
+                                      <div className="list-card stack" style={{ gap: 6 }}>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => openActiveOrderEditor(order)}
+                                        >
+                                          Edit
+                                        </button>
+                                        {canOwnerCancelOrder(order) && (
+                                          <button
+                                            className="btn secondary btn-compact"
+                                            onClick={() => openOwnerCancelOrder(order)}
+                                          >
+                                            Cancel
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
+                              {cancellingOwnerOrderId === order.id && (
+                                <tr className="payments-edit-row">
+                                  <td colSpan={13}>
+                                    <div className="stack" style={{ gap: 10 }}>
+                                      <strong>Cancel Order #{order.orderId || order.id}</strong>
+                                      <input
+                                        className="input"
+                                        placeholder="Cancellation remarks / reason"
+                                        value={ownerCancelRemarks}
+                                        onChange={(e) => setOwnerCancelRemarks(e.target.value)}
+                                      />
+                                      {ownerCancelError && (
+                                        <small className="customer-error-text">{ownerCancelError}</small>
+                                      )}
+                                      <div className="row">
+                                        <button
+                                          className="btn"
+                                          onClick={() => cancelOrderByOwner(order)}
+                                        >
+                                          Confirm Cancel
+                                        </button>
+                                        <button
+                                          className="btn secondary"
+                                          onClick={() => {
+                                            setCancellingOwnerOrderId(null);
+                                            setOwnerCancelRemarks("");
+                                            setOwnerCancelError("");
+                                          }}
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
                                   <td colSpan={13}>
@@ -4496,7 +4913,23 @@ export default function OwnerPage() {
 
               {deliveryTab === "assignments" && (
                 <div className="card stack">
-                  <h3>Area Assignments</h3>
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                    <h3>Area Assignments</h3>
+                    <div className="row">
+                      {deliveryAssignmentMeals.map((meal) => (
+                        <button
+                          key={meal}
+                          className={`btn btn-compact ${assignmentMeal === meal ? "" : "secondary"}`}
+                          onClick={() => {
+                            setAssignmentMeal(meal);
+                            setOpenAssignmentArea(null);
+                          }}
+                        >
+                          {meal}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="table-scroll">
                     <table className="payments-table payments-table-compact owner-assignment-table">
                       <thead>
@@ -4512,7 +4945,7 @@ export default function OwnerPage() {
                           unassignedCustomSubAreas.map(({ area, subArea }) => {
                             const assignmentKey = `${area}::${subArea}`;
                             const subAssigned =
-                              areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                              getSubAreaAgentIdsForMeal(areaAssignmentMap[area] || {}, assignmentMeal, subArea);
                             return (
                               <Fragment key={`${assignmentKey}::pending-table`}>
                                 <tr>
@@ -4524,7 +4957,7 @@ export default function OwnerPage() {
                                   <td>
                                     {subAssigned.length > 0
                                       ? subAssigned
-                                          .map((id) => agentNameMap[id])
+                                          .map((id: string) => agentNameMap[id])
                                           .filter(Boolean)
                                           .join(", ")
                                       : "Pending"}
@@ -4546,7 +4979,7 @@ export default function OwnerPage() {
                                   <tr>
                                     <td colSpan={4} className="owner-assignment-editor-cell">
                                       <div className="owner-assignment-editor">
-                                        <strong>{subArea}</strong>
+                                        <strong>{subArea} - {assignmentMeal}</strong>
                                         {deliveryAgents.length === 0 ? (
                                           <span>No agents yet</span>
                                         ) : (
@@ -4560,8 +4993,8 @@ export default function OwnerPage() {
                                                     const checked = e.target.checked;
                                                     const next = checked
                                                       ? Array.from(new Set([...subAssigned, agent.id]))
-                                                      : subAssigned.filter((id) => id !== agent.id);
-                                                    saveSubAreaAssignment(area, subArea, next);
+                                                      : subAssigned.filter((id: string) => id !== agent.id);
+                                                    saveSubAreaAssignment(area, subArea, next, assignmentMeal);
                                                   }}
                                                 />
                                                 <span>{agent.name}</span>
@@ -4607,9 +5040,9 @@ export default function OwnerPage() {
                       </thead>
                       <tbody>
                         {areaOptions.flatMap((area) => {
-                          const assigned = areaAssignmentMap[area]?.agentIds || [];
+                          const assigned = getAreaAgentIdsForMeal(areaAssignmentMap[area] || {}, assignmentMeal);
                           const assignedNames = assigned
-                            .map((id) => agentNameMap[id])
+                            .map((id: string) => agentNameMap[id])
                             .filter(Boolean)
                             .join(", ");
                           const subAreas = subAreaOptionsByArea[area] || [];
@@ -4651,8 +5084,8 @@ export default function OwnerPage() {
                                                   const checked = e.target.checked;
                                                   const next = checked
                                                     ? Array.from(new Set([...assigned, agent.id]))
-                                                    : assigned.filter((id) => id !== agent.id);
-                                                  saveAreaAssignment(area, next);
+                                                    : assigned.filter((id: string) => id !== agent.id);
+                                                  saveAreaAssignment(area, next, assignmentMeal);
                                                 }}
                                               />
                                               <span>{agent.name}</span>
@@ -4676,10 +5109,10 @@ export default function OwnerPage() {
                           subAreas.forEach((subArea) => {
                             const subAreaKey = `${area}::${subArea}`;
                             const subAssigned =
-                              areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                              getSubAreaAgentIdsForMeal(areaAssignmentMap[area] || {}, assignmentMeal, subArea);
                             const isCustomSubArea = !isMappedSubArea(area, subArea);
                             const subAssignedNames = subAssigned
-                              .map((id) => agentNameMap[id])
+                              .map((id: string) => agentNameMap[id])
                               .filter(Boolean)
                               .join(", ");
                             const statusLabel =
@@ -4727,7 +5160,7 @@ export default function OwnerPage() {
                                 <tr key={`${subAreaKey}::editor`}>
                                   <td colSpan={5} className="owner-assignment-editor-cell">
                                     <div className="owner-assignment-editor">
-                                      <strong>{subArea}</strong>
+                                        <strong>{subArea} - {assignmentMeal}</strong>
                                       {deliveryAgents.length === 0 ? (
                                         <span>No agents yet</span>
                                       ) : (
@@ -4741,8 +5174,8 @@ export default function OwnerPage() {
                                                   const checked = e.target.checked;
                                                   const next = checked
                                                     ? Array.from(new Set([...subAssigned, agent.id]))
-                                                    : subAssigned.filter((id) => id !== agent.id);
-                                                  saveSubAreaAssignment(area, subArea, next);
+                                                    : subAssigned.filter((id: string) => id !== agent.id);
+                                                  saveSubAreaAssignment(area, subArea, next, assignmentMeal);
                                                 }}
                                               />
                                               <span>{agent.name}</span>

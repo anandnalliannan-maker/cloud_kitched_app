@@ -140,10 +140,22 @@ export default function DeliveryPage() {
           if ((data.agentIds || []).includes(username)) {
             names.push(docSnap.id);
           }
+          Object.entries(data.mealAgentIds || {}).forEach(([meal, agentIds]) => {
+            if (Array.isArray(agentIds) && agentIds.includes(username)) {
+              names.push(`${docSnap.id} (${meal})`);
+            }
+          });
           Object.entries(data.subAreaAgentIds || {}).forEach(([subArea, agentIds]) => {
             if (Array.isArray(agentIds) && agentIds.includes(username)) {
               names.push(`${docSnap.id} - ${subArea}`);
             }
+          });
+          Object.entries(data.subAreaMealAgentIds || {}).forEach(([meal, subAreaMap]) => {
+            Object.entries((subAreaMap as Record<string, string[]>) || {}).forEach(([subArea, agentIds]) => {
+              if (Array.isArray(agentIds) && agentIds.includes(username)) {
+                names.push(`${docSnap.id} - ${subArea} (${meal})`);
+              }
+            });
           });
           return names;
         });
