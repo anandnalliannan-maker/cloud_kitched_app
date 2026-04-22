@@ -1505,6 +1505,27 @@ a {
   min-width: max-content;
 }
 
+.owner-assignment-table {
+  min-width: 100%;
+}
+
+.owner-assignment-editor-cell {
+  background: #f9fcfb !important;
+  padding: 0 !important;
+}
+
+.owner-assignment-editor {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.owner-assignment-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 14px;
+}
+
 .payments-subtext {
   display: block;
   margin-top: 0.25rem;

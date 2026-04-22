@@ -4483,7 +4483,278 @@ export default function OwnerPage() {
               {deliveryTab === "assignments" && (
                 <div className="card stack">
                   <h3>Area Assignments</h3>
-                  <div className="list-card stack" style={{ gap: 8 }}>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact owner-assignment-table">
+                      <thead>
+                        <tr>
+                          <th>New Sub Area</th>
+                          <th>Area</th>
+                          <th>Assigned Agents</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unassignedCustomSubAreas.length > 0 ? (
+                          unassignedCustomSubAreas.map(({ area, subArea }) => {
+                            const assignmentKey = `${area}::${subArea}`;
+                            const subAssigned =
+                              areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                            return (
+                              <Fragment key={`${assignmentKey}::pending-table`}>
+                                <tr>
+                                  <td>
+                                    <strong>{subArea}</strong>
+                                    <small className="payments-subtext">Customer-added sub area</small>
+                                  </td>
+                                  <td>{area}</td>
+                                  <td>
+                                    {subAssigned.length > 0
+                                      ? subAssigned
+                                          .map((id) => agentNameMap[id])
+                                          .filter(Boolean)
+                                          .join(", ")
+                                      : "Pending"}
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() =>
+                                        setOpenAssignmentArea(
+                                          openAssignmentArea === assignmentKey ? null : assignmentKey
+                                        )
+                                      }
+                                    >
+                                      Assign Agent
+                                    </button>
+                                  </td>
+                                </tr>
+                                {openAssignmentArea === assignmentKey && (
+                                  <tr>
+                                    <td colSpan={4} className="owner-assignment-editor-cell">
+                                      <div className="owner-assignment-editor">
+                                        <strong>{subArea}</strong>
+                                        {deliveryAgents.length === 0 ? (
+                                          <span>No agents yet</span>
+                                        ) : (
+                                          <div className="owner-assignment-checkboxes">
+                                            {deliveryAgents.map((agent) => (
+                                              <label key={agent.id} className="row">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={subAssigned.includes(agent.id)}
+                                                  onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    const next = checked
+                                                      ? Array.from(new Set([...subAssigned, agent.id]))
+                                                      : subAssigned.filter((id) => id !== agent.id);
+                                                    saveSubAreaAssignment(area, subArea, next);
+                                                  }}
+                                                />
+                                                <span>{agent.name}</span>
+                                              </label>
+                                            ))}
+                                          </div>
+                                        )}
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => setOpenAssignmentArea(null)}
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={4}>
+                              <small className="payments-subtext">
+                                No new sub areas are waiting for assignment.
+                              </small>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact owner-assignment-table">
+                      <thead>
+                        <tr>
+                          <th>Area</th>
+                          <th>Sub Area</th>
+                          <th>Assigned Agents</th>
+                          <th>Status</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {areaOptions.flatMap((area) => {
+                          const assigned = areaAssignmentMap[area]?.agentIds || [];
+                          const assignedNames = assigned
+                            .map((id) => agentNameMap[id])
+                            .filter(Boolean)
+                            .join(", ");
+                          const subAreas = subAreaOptionsByArea[area] || [];
+                          const rows: React.ReactNode[] = [];
+
+                          rows.push(
+                            <Fragment key={`${area}::area-row`}>
+                              <tr>
+                                <td><strong>{area}</strong></td>
+                                <td>-</td>
+                                <td>{assignedNames || "No agents mapped"}</td>
+                                <td>{assigned.length > 0 ? "Assigned" : "Unassigned"}</td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() =>
+                                      setOpenAssignmentArea(openAssignmentArea === area ? null : area)
+                                    }
+                                  >
+                                    Select Agents
+                                  </button>
+                                </td>
+                              </tr>
+                              {openAssignmentArea === area && (
+                                <tr>
+                                  <td colSpan={5} className="owner-assignment-editor-cell">
+                                    <div className="owner-assignment-editor">
+                                      <strong>{area}</strong>
+                                      {deliveryAgents.length === 0 ? (
+                                        <span>No agents yet</span>
+                                      ) : (
+                                        <div className="owner-assignment-checkboxes">
+                                          {deliveryAgents.map((agent) => (
+                                            <label key={agent.id} className="row">
+                                              <input
+                                                type="checkbox"
+                                                checked={assigned.includes(agent.id)}
+                                                onChange={(e) => {
+                                                  const checked = e.target.checked;
+                                                  const next = checked
+                                                    ? Array.from(new Set([...assigned, agent.id]))
+                                                    : assigned.filter((id) => id !== agent.id);
+                                                  saveAreaAssignment(area, next);
+                                                }}
+                                              />
+                                              <span>{agent.name}</span>
+                                            </label>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => setOpenAssignmentArea(null)}
+                                      >
+                                        Close
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+
+                          subAreas.forEach((subArea) => {
+                            const subAreaKey = `${area}::${subArea}`;
+                            const subAssigned =
+                              areaAssignmentMap[area]?.subAreaAgentIds?.[subArea] || [];
+                            const isCustomSubArea = !isMappedSubArea(area, subArea);
+                            const subAssignedNames = subAssigned
+                              .map((id) => agentNameMap[id])
+                              .filter(Boolean)
+                              .join(", ");
+                            const statusLabel =
+                              subAssigned.length > 0
+                                ? "Assigned"
+                                : isCustomSubArea
+                                  ? "Pending"
+                                  : "Uses area rule";
+
+                            rows.push(
+                              <tr key={subAreaKey}>
+                                <td>{area}</td>
+                                <td>
+                                  {subArea}
+                                  {isCustomSubArea && (
+                                    <small className="payments-subtext">Custom sub area</small>
+                                  )}
+                                </td>
+                                <td>{subAssignedNames || "-"}</td>
+                                <td>
+                                  {statusLabel}
+                                  {!subAssignedNames && isCustomSubArea && (
+                                    <small style={{ display: "block", marginTop: 4, color: "crimson" }}>
+                                      Agent assignment pending
+                                    </small>
+                                  )}
+                                </td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() =>
+                                      setOpenAssignmentArea(
+                                        openAssignmentArea === subAreaKey ? null : subAreaKey
+                                      )
+                                    }
+                                  >
+                                    Select Agents
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+
+                            if (openAssignmentArea === subAreaKey) {
+                              rows.push(
+                                <tr key={`${subAreaKey}::editor`}>
+                                  <td colSpan={5} className="owner-assignment-editor-cell">
+                                    <div className="owner-assignment-editor">
+                                      <strong>{subArea}</strong>
+                                      {deliveryAgents.length === 0 ? (
+                                        <span>No agents yet</span>
+                                      ) : (
+                                        <div className="owner-assignment-checkboxes">
+                                          {deliveryAgents.map((agent) => (
+                                            <label key={agent.id} className="row">
+                                              <input
+                                                type="checkbox"
+                                                checked={subAssigned.includes(agent.id)}
+                                                onChange={(e) => {
+                                                  const checked = e.target.checked;
+                                                  const next = checked
+                                                    ? Array.from(new Set([...subAssigned, agent.id]))
+                                                    : subAssigned.filter((id) => id !== agent.id);
+                                                  saveSubAreaAssignment(area, subArea, next);
+                                                }}
+                                              />
+                                              <span>{agent.name}</span>
+                                            </label>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => setOpenAssignmentArea(null)}
+                                      >
+                                        Close
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
+                          });
+
+                          return rows;
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="list-card stack" style={{ gap: 8, display: "none" }}>
                     <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div className="stack" style={{ gap: 4 }}>
                         <strong>New Sub Areas Awaiting Assignment</strong>
@@ -4521,7 +4792,7 @@ export default function OwnerPage() {
                       </small>
                     )}
                   </div>
-                  <div className="table">
+                  <div className="table" style={{ display: "none" }}>
                     <div className="row" style={{ fontWeight: 700 }}>
                       <div style={{ flex: 1 }}>Area</div>
                       <div style={{ width: 260 }}>Agents</div>
