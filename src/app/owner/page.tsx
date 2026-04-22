@@ -463,6 +463,8 @@ export default function OwnerPage() {
   const [areaFeeForm, setAreaFeeForm] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
   const [areaSubAreaDrafts, setAreaSubAreaDrafts] = useState<Record<string, string>>({});
+  const [editingAreaSubAreaKey, setEditingAreaSubAreaKey] = useState<string | null>(null);
+  const [areaSubAreaEditDrafts, setAreaSubAreaEditDrafts] = useState<Record<string, string>>({});
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
     "summary" | "activeOrders" | "paymentStatus"
@@ -1002,6 +1004,118 @@ export default function OwnerPage() {
     setAreaSubAreaDrafts((prev) => ({
       ...prev,
       [area.id]: "",
+    }));
+  }
+
+  function openServiceSubAreaEdit(area: ServiceArea, subArea: string) {
+    const editKey = `${area.id}::${subArea}`;
+    setEditingAreaSubAreaKey(editKey);
+    setAreaSubAreaEditDrafts((prev) => ({
+      ...prev,
+      [editKey]: subArea,
+    }));
+  }
+
+  async function saveServiceSubAreaEdit(area: ServiceArea, previousSubArea: string) {
+    const editKey = `${area.id}::${previousSubArea}`;
+    const nextSubArea = (areaSubAreaEditDrafts[editKey] || "").trim();
+    if (!nextSubArea) {
+      return;
+    }
+    if (nextSubArea === previousSubArea) {
+      setEditingAreaSubAreaKey(null);
+      return;
+    }
+    const existingSubAreas = subAreaOptionsByArea[area.name] || [];
+    const alreadyExists = existingSubAreas.some(
+      (subArea) =>
+        subArea.toLowerCase() === nextSubArea.toLowerCase() &&
+        subArea.toLowerCase() !== previousSubArea.toLowerCase()
+    );
+    if (alreadyExists) {
+      window.alert("This sub area already exists.");
+      return;
+    }
+
+    const storedSubAreas = area.subAreas || [];
+    const nextStoredSubAreas = storedSubAreas.map((subArea) =>
+      subArea === previousSubArea ? nextSubArea : subArea
+    );
+    await updateDoc(doc(db, "service_areas", area.id), {
+      subAreas: nextStoredSubAreas,
+      updatedAt: serverTimestamp(),
+    });
+
+    const assignment = areaAssignmentMap[area.name];
+    if (assignment?.id) {
+      const assignmentUpdates: Record<string, any> = {
+        updatedAt: serverTimestamp(),
+      };
+      if (assignment.subAreaAgentIds?.[previousSubArea]) {
+        assignmentUpdates.subAreaAgentIds = Object.fromEntries(
+          Object.entries(assignment.subAreaAgentIds).map(([key, value]) => [
+            key === previousSubArea ? nextSubArea : key,
+            value,
+          ])
+        );
+      }
+      if (assignment.subAreaLastIndex?.[previousSubArea] !== undefined) {
+        assignmentUpdates.subAreaLastIndex = Object.fromEntries(
+          Object.entries(assignment.subAreaLastIndex || {}).map(([key, value]) => [
+            key === previousSubArea ? nextSubArea : key,
+            value,
+          ])
+        );
+      }
+      if (assignment.subAreaMealAgentIds) {
+        assignmentUpdates.subAreaMealAgentIds = Object.fromEntries(
+          Object.entries(assignment.subAreaMealAgentIds).map(([meal, mealMap]) => [
+            meal,
+            Object.fromEntries(
+              Object.entries(mealMap || {}).map(([key, value]) => [
+                key === previousSubArea ? nextSubArea : key,
+                value,
+              ])
+            ),
+          ])
+        );
+      }
+      if (assignment.subAreaMealLastIndex) {
+        assignmentUpdates.subAreaMealLastIndex = Object.fromEntries(
+          Object.entries(assignment.subAreaMealLastIndex).map(([meal, mealMap]) => [
+            meal,
+            Object.fromEntries(
+              Object.entries(mealMap || {}).map(([key, value]) => [
+                key === previousSubArea ? nextSubArea : key,
+                value,
+              ])
+            ),
+          ])
+        );
+      }
+      await updateDoc(doc(db, "area_assignments", assignment.id), assignmentUpdates);
+    }
+
+    const ordersSnapshot = await getDocs(
+      query(
+        collection(db, "orders"),
+        where("area", "==", area.name),
+        where("subArea", "==", previousSubArea)
+      )
+    );
+    await Promise.all(
+      ordersSnapshot.docs.map((orderDoc) =>
+        updateDoc(orderDoc.ref, {
+          subArea: nextSubArea,
+          updatedAt: serverTimestamp(),
+        })
+      )
+    );
+
+    setEditingAreaSubAreaKey(null);
+    setAreaSubAreaEditDrafts((prev) => ({
+      ...prev,
+      [editKey]: nextSubArea,
     }));
   }
 
@@ -5442,11 +5556,12 @@ export default function OwnerPage() {
               />
               {filteredServiceAreas.length === 0 && <p>No areas found</p>}
               {filteredServiceAreas.map((area) => (
-                <div
-                  key={area.id}
-                  className="list-card stack"
-                  style={{ gap: 10 }}
-                >
+                <div key={area.id} className="list-card stack" style={{ gap: 10 }}>
+                  {(() => {
+                    const mappedSubAreas = getSubAreasForArea(area.name) || [];
+                    const savedCustomSubAreas = (area.subAreas || []).filter(Boolean);
+                    return (
+                      <Fragment>
                   <div className="row" style={{ alignItems: "center", gap: 10 }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600 }}>{area.name}</div>
@@ -5472,10 +5587,89 @@ export default function OwnerPage() {
                       Delete
                     </button>
                   </div>
+                  {mappedSubAreas.length > 0 && (
+                    <div className="stack" style={{ gap: 6 }}>
+                      <small className="payments-subtext">Mapped sub areas</small>
+                      <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                        {mappedSubAreas.map((subArea) => (
+                          <span key={`${area.id}::mapped::${subArea}`} className="badge">
+                            {subArea}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="stack" style={{ gap: 6 }}>
+                    <small className="payments-subtext">
+                      Added sub areas
+                    </small>
+                    {savedCustomSubAreas.length > 0 ? (
+                      <div className="stack" style={{ gap: 8 }}>
+                        {savedCustomSubAreas.map((subArea) => {
+                          const editKey = `${area.id}::${subArea}`;
+                          const isEditing = editingAreaSubAreaKey === editKey;
+                          return (
+                            <div
+                              key={editKey}
+                              className="row"
+                              style={{ alignItems: "center", gap: 8 }}
+                            >
+                              {isEditing ? (
+                                <>
+                                  <input
+                                    className="input"
+                                    value={areaSubAreaEditDrafts[editKey] || ""}
+                                    onChange={(e) =>
+                                      setAreaSubAreaEditDrafts((prev) => ({
+                                        ...prev,
+                                        [editKey]: e.target.value,
+                                      }))
+                                    }
+                                    style={{ flex: 1 }}
+                                  />
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => saveServiceSubAreaEdit(area, subArea)}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => setEditingAreaSubAreaKey(null)}
+                                  >
+                                    Close
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span style={{ flex: 1 }}>
+                                    {subArea}
+                                    {!isMappedSubArea(area.name, subArea) && (
+                                      <small className="payments-subtext"> {" "}• custom</small>
+                                    )}
+                                  </span>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => openServiceSubAreaEdit(area, subArea)}
+                                  >
+                                    Edit
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <small className="payments-subtext">
+                        No owner/customer-added sub areas yet.
+                      </small>
+                    )}
+                  </div>
                   <div className="row">
                     <input
                       className="input"
-                      placeholder="Add sub area"
+                      placeholder="Add sub area manually"
                       value={areaSubAreaDrafts[area.id] || ""}
                       onChange={(e) =>
                         setAreaSubAreaDrafts((prev) => ({
@@ -5492,6 +5686,9 @@ export default function OwnerPage() {
                       Add Sub Area
                     </button>
                   </div>
+                      </Fragment>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
