@@ -93,13 +93,15 @@ a {
 }
 
 .published-menu-qty-edit {
-  display: flex;
+  display: grid;
+  grid-template-columns: 88px 96px auto;
   align-items: center;
   gap: 8px;
 }
 
 .published-menu-qty-edit .input {
-  width: 88px;
+  width: 100%;
+  min-width: 0;
 }
 
 .published-menu-add-row {

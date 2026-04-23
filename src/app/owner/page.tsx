@@ -3271,6 +3271,8 @@ export default function OwnerPage() {
                                       type="number"
                                       min={0}
                                       step={1}
+                                      placeholder="Qty"
+                                      aria-label={`Quantity for ${item.name}`}
                                       value={String(
                                         editPublishQty[
                                           getPublishedItemDraftKey(menu.id, item.itemId)
@@ -3290,6 +3292,8 @@ export default function OwnerPage() {
                                       type="number"
                                       min={0}
                                       step={1}
+                                      placeholder="Price"
+                                      aria-label={`Price for ${item.name}`}
                                       value={String(
                                         editPublishPrice[
                                           getPublishedItemDraftKey(menu.id, item.itemId)
