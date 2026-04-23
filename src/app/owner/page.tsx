@@ -527,9 +527,8 @@ export default function OwnerPage() {
     assignedAgentId: "",
     status: "active",
   });
-  const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>(
-    {}
-  );
+  const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>({});
+  const [editPublishPrice, setEditPublishPrice] = useState<Record<string, number>>({});
   const [pickupPaymentFilters, setPickupPaymentFilters] = useState({
     startDate: "",
     endDate: "",
@@ -1142,7 +1141,7 @@ export default function OwnerPage() {
   async function updatePublishedMenuItem(
     menu: PublishedMenu,
     itemId: string,
-    updates: { active?: boolean; qty?: number }
+    updates: { active?: boolean; qty?: number; price?: number }
   ) {
     const items = (menu.items || []).map((item) => {
       if (item.itemId !== itemId) return { ...item, active: item.active !== false };
@@ -1150,11 +1149,16 @@ export default function OwnerPage() {
         typeof updates.qty === "number" && Number.isFinite(updates.qty)
           ? Math.max(0, updates.qty)
           : item.qty;
+      const nextPrice =
+        typeof updates.price === "number" && Number.isFinite(updates.price)
+          ? Math.max(0, updates.price)
+          : item.price;
       const nextActive =
         typeof updates.active === "boolean" ? updates.active : item.active !== false;
       return {
         ...item,
         qty: nextQty,
+        price: nextPrice,
         active: nextActive,
       };
     });
@@ -1170,11 +1174,16 @@ export default function OwnerPage() {
         typeof updates.qty === "number" && Number.isFinite(updates.qty)
           ? Math.max(0, updates.qty)
           : sourceQty;
+      const nextPrice =
+        typeof updates.price === "number" && Number.isFinite(updates.price)
+          ? Math.max(0, updates.price)
+          : item.price;
       const nextActive =
         typeof updates.active === "boolean" ? updates.active : item.active !== false;
       return {
         ...item,
         qty: Math.max(0, nextQty - soldQty),
+        price: nextPrice,
         active: nextActive,
       };
     });
@@ -1186,22 +1195,33 @@ export default function OwnerPage() {
     });
   }
 
-  async function savePublishedMenuItemQty(
+  async function savePublishedMenuItemDetails(
     menu: PublishedMenu,
     item: PublishedMenu["items"][number]
   ) {
     const draftKey = getPublishedItemDraftKey(menu.id, item.itemId);
     const draftQty = editPublishQty[draftKey];
-    if (typeof draftQty !== "number" || draftQty === item.qty) {
+    const draftPrice = editPublishPrice[draftKey];
+    const nextQty = typeof draftQty === "number" ? draftQty : item.qty;
+    const nextPrice = typeof draftPrice === "number" ? draftPrice : item.price;
+    if (nextQty === item.qty && nextPrice === item.price) {
       return;
     }
-    await updatePublishedMenuItem(menu, item.itemId, { qty: draftQty });
+    await updatePublishedMenuItem(menu, item.itemId, {
+      qty: nextQty,
+      price: nextPrice,
+    });
     setEditPublishQty((prev) => {
       const next = { ...prev };
       delete next[draftKey];
       return next;
     });
-    showPublishedMenuNotice("Quantity updated");
+    setEditPublishPrice((prev) => {
+      const next = { ...prev };
+      delete next[draftKey];
+      return next;
+    });
+    showPublishedMenuNotice("Item updated");
   }
 
   async function addItemToPublishedMenu(menu: PublishedMenu) {
@@ -3228,7 +3248,7 @@ export default function OwnerPage() {
                                     color: item.active === false ? "crimson" : undefined,
                                   }}
                                 >
-                                  {item.active === false ? "Disabled" : "Enabled"} | Qty {item.qty}
+                                  {item.active === false ? "Disabled" : "Enabled"} | Qty {item.qty} | Rs. {item.price}
                                 </small>
                               </div>
                               {currentPublishedMenu?.id === menu.id ? (
@@ -3265,9 +3285,28 @@ export default function OwnerPage() {
                                         }))
                                       }
                                     />
+                                    <input
+                                      className="input"
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      value={String(
+                                        editPublishPrice[
+                                          getPublishedItemDraftKey(menu.id, item.itemId)
+                                        ] ?? item.price
+                                      )}
+                                      onChange={(e) =>
+                                        setEditPublishPrice((prev) => ({
+                                          ...prev,
+                                          [getPublishedItemDraftKey(menu.id, item.itemId)]: Number(
+                                            e.target.value || 0
+                                          ),
+                                        }))
+                                      }
+                                    />
                                     <button
                                       className="btn secondary"
-                                      onClick={() => savePublishedMenuItemQty(menu, item)}
+                                      onClick={() => savePublishedMenuItemDetails(menu, item)}
                                     >
                                       Update
                                     </button>
