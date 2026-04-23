@@ -1147,7 +1147,7 @@ export default function CustomerPage() {
         deliveryFee: effectiveDeliveryFee,
         total: effectiveOrderTotal,
         deliveryType,
-        paymentMethod: deliveryType === "pickup" ? "pay_at_outlet" : "upi",
+        paymentMethod: "upi",
         location,
         addressText: deliveryAddressText,
       };
@@ -2225,31 +2225,21 @@ export default function CustomerPage() {
               <div className="payment-action-copy">
                 <strong>
                   {paymentSummary?.deliveryType === "pickup"
-                    ? "Store payment"
+                    ? "Proceed to payment"
                     : paymentSummary?.paymentMethod === "cash_on_delivery"
                     ? "Cash on delivery"
                     : "Proceed to payment"}
                 </strong>
                 <p>
                   {paymentSummary?.deliveryType === "pickup"
-                    ? "Self pickup orders must be collected and paid for at the store."
+                    ? "Self pickup orders must be paid online before collecting from the store."
                     : paymentSummary?.paymentMethod === "cash_on_delivery"
                     ? "Pay the bill amount directly to the delivery agent."
                     : "Complete payment to confirm this order."}
                 </p>
               </div>
             </div>
-            {paymentSummary?.deliveryType === "pickup" ? (
-              <div className="row payment-button-row">
-                <button
-                  className="btn customer-primary-btn"
-                  onClick={confirmPayAtOutlet}
-                  disabled={isConfirmingOutletOrder}
-                >
-                  {isConfirmingOutletOrder ? "Placing order..." : "Pay at Outlet"}
-                </button>
-              </div>
-            ) : (
+            {paymentSummary?.deliveryType === "delivery" ? (
               <div className="row payment-button-row">
                 <button
                   className={`btn customer-toggle-btn ${
@@ -2270,9 +2260,8 @@ export default function CustomerPage() {
                   Cash on Delivery
                 </button>
               </div>
-            )}
-            {paymentSummary?.deliveryType === "delivery" &&
-              paymentSummary?.paymentMethod === "upi" && (
+            ) : null}
+            {paymentSummary?.paymentMethod === "upi" && (
                 <button
                   className="btn payment-primary-btn customer-primary-btn"
                   onClick={startOnlinePayment}

@@ -267,12 +267,18 @@ function isCashOnDeliveryOrder(order: Order) {
 }
 
 function isPaymentStatusOrder(order: Order) {
-  return order.deliveryType === "pickup" || isCashOnDeliveryOrder(order);
+  return (
+    (order.deliveryType === "pickup" &&
+      (order.paymentMethod === "pay_at_outlet" ||
+        order.paymentStatus === "pay_at_outlet" ||
+        Boolean(order.pickupPaymentStatus))) ||
+    isCashOnDeliveryOrder(order)
+  );
 }
 
 function getPaymentStatusLabel(order: Order) {
   if (order.deliveryType === "pickup") {
-    return order.pickupPaymentStatus || "unpaid";
+    return order.pickupPaymentStatus || order.paymentStatus || "unpaid";
   }
   if (isCashOnDeliveryOrder(order)) {
     return order.codPaymentStatus || "unpaid";
@@ -282,6 +288,9 @@ function getPaymentStatusLabel(order: Order) {
 
 function getPaymentAmountPaid(order: Order) {
   if (order.deliveryType === "pickup") {
+    if (order.paymentStatus === "paid") {
+      return order.total || 0;
+    }
     return order.pickupAmountPaid || 0;
   }
   if (isCashOnDeliveryOrder(order)) {
@@ -314,6 +323,13 @@ function getPaymentNotes(order: Order) {
 
 function getPaymentMethodLabel(order: Order) {
   if (order.deliveryType === "pickup") {
+    if (
+      order.paymentMethod === "upi" ||
+      order.paymentMethod === "online" ||
+      order.paymentStatus === "paid"
+    ) {
+      return "UPI";
+    }
     return "Pay at Outlet";
   }
   if (isCashOnDeliveryOrder(order)) {
