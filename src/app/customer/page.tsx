@@ -91,6 +91,7 @@ type CustomerOrder = {
 const mapContainerStyle = { width: "100%", height: "320px" };
 const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 const pendingPaymentStorageKey = "msk_pending_payment";
+const customerProfileStorageKeyPrefix = "msk_customer_profile";
 const MIN_HOME_DELIVERY_ORDER = 60;
 
 function normalizePhoneForOtp(raw: string) {
@@ -114,6 +115,41 @@ function getPhoneVariants(rawPhone: string) {
       ].filter(Boolean)
     )
   );
+}
+
+type LocalCustomerProfile = {
+  name: string;
+  deliveryType: "delivery" | "pickup" | "";
+  addressLine1: string;
+  street: string;
+  area: string;
+  subArea: string;
+  location: { lat: number; lng: number } | null;
+};
+
+function getLocalCustomerProfileKey(rawPhone: string) {
+  const digits = rawPhone.replace(/\D/g, "");
+  return digits ? `${customerProfileStorageKeyPrefix}:${digits}` : "";
+}
+
+function readLocalCustomerProfile(rawPhone: string): LocalCustomerProfile | null {
+  if (typeof window === "undefined") return null;
+  const key = getLocalCustomerProfileKey(rawPhone);
+  if (!key) return null;
+  try {
+    const stored = window.localStorage.getItem(key);
+    if (!stored) return null;
+    return JSON.parse(stored) as LocalCustomerProfile;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalCustomerProfile(rawPhone: string, profile: LocalCustomerProfile) {
+  if (typeof window === "undefined") return;
+  const key = getLocalCustomerProfileKey(rawPhone);
+  if (!key) return;
+  window.localStorage.setItem(key, JSON.stringify(profile));
 }
 
 function getAssignmentMealKey(mealType?: string) {
@@ -279,55 +315,6 @@ export default function CustomerPage() {
       signOut(auth).catch(() => undefined);
     };
   }, []);
-
-  async function findLatestOrderByPhone(rawPhone: string) {
-    const variants = getPhoneVariants(rawPhone);
-    const results = new Map<string, CustomerOrder & { location?: { lat: number; lng: number } | null }>();
-
-    for (const phoneVariant of variants) {
-      const snap = await getDocs(
-        query(collection(db, "orders"), where("phone", "==", phoneVariant))
-      );
-      snap.docs.forEach((docSnap) => {
-        const data = docSnap.data() as any;
-        results.set(docSnap.id, {
-          id: docSnap.id,
-          orderId: data.orderId || docSnap.id,
-          customerName: data.customerName || "",
-          phone: data.phone || "",
-          status: data.status || "",
-          deliveryType: data.deliveryType || "",
-          address: data.address || "",
-          area: data.area || "",
-          subArea: data.subArea || "",
-          total: Number(data.total || 0),
-          publishedDate: data.publishedDate || "",
-          mealType: data.mealType || "",
-          createdAt: data.createdAt || null,
-          items: Array.isArray(data.items) ? data.items : [],
-          location: data.location || null,
-        });
-      });
-    }
-
-    return Array.from(results.values()).sort((a, b) => {
-      const aSec = a.createdAt?.seconds || 0;
-      const bSec = b.createdAt?.seconds || 0;
-      return bSec - aSec;
-    })[0] || null;
-  }
-
-  function splitSavedAddress(address: string) {
-    const [line1, ...rest] = String(address || "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
-
-    return {
-      addressLine1: line1 || "",
-      street: rest.join(", "),
-    };
-  }
 
   useEffect(() => {
     const q = query(
@@ -596,10 +583,10 @@ export default function CustomerPage() {
       return;
     }
 
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(() => {
       setIsPrefillingCustomer(true);
       try {
-        const latestOrder = await findLatestOrderByPhone(trimmedPhone);
+        const latestOrder = readLocalCustomerProfile(trimmedPhone);
         lastPrefilledPhoneRef.current = trimmedPhone;
 
         if (!latestOrder) {
@@ -608,17 +595,16 @@ export default function CustomerPage() {
           return;
         }
 
-        const savedAddress = splitSavedAddress(latestOrder.address || "");
         setForm((prev) => ({
           ...prev,
-          name: prev.name.trim() || latestOrder.customerName || "",
+          name: prev.name.trim() || latestOrder.name || "",
           addressLine1:
             latestOrder.deliveryType === "delivery"
-              ? savedAddress.addressLine1 || prev.addressLine1
+              ? latestOrder.addressLine1 || prev.addressLine1
               : prev.addressLine1,
           street:
             latestOrder.deliveryType === "delivery"
-              ? savedAddress.street || prev.street
+              ? latestOrder.street || prev.street
               : prev.street,
           area:
             latestOrder.deliveryType === "delivery"
@@ -637,7 +623,7 @@ export default function CustomerPage() {
               lat: Number(latestOrder.location.lat),
               lng: Number(latestOrder.location.lng),
             });
-            setLocLabel("Saved location loaded from your last order");
+            setLocLabel("Saved location loaded from this browser");
             setLocError("");
           }
         } else if (latestOrder.deliveryType === "pickup" && !deliveryType) {
@@ -1288,6 +1274,15 @@ export default function CustomerPage() {
         });
         tx.update(menuRef, { remaining });
       });
+      saveLocalCustomerProfile(form.phone, {
+        name: form.name.trim(),
+        deliveryType,
+        addressLine1: deliveryType === "delivery" ? form.addressLine1.trim() : "",
+        street: deliveryType === "delivery" ? form.street.trim() : "",
+        area: deliveryType === "delivery" ? form.area : "",
+        subArea: deliveryType === "delivery" ? form.subArea : "",
+        location: deliveryType === "delivery" ? location : null,
+      });
       summaryForPayment.deliveryFee = effectiveDeliveryFee;
       summaryForPayment.total = effectiveOrderTotal;
       summaryForPayment.displayOrderId = generatedDisplayOrderId;
@@ -1900,7 +1895,7 @@ export default function CustomerPage() {
             <h2>Customer Details</h2>
             {isPrefillingCustomer && (
               <small className="customer-success-text">
-                Checking your previous order details...
+                Checking saved details on this browser...
               </small>
             )}
             <div className="field">

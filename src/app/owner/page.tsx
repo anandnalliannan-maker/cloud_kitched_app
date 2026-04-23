@@ -483,7 +483,7 @@ export default function OwnerPage() {
   const [areaSubAreaEditDrafts, setAreaSubAreaEditDrafts] = useState<Record<string, string>>({});
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
-    "summary" | "activeOrders" | "paymentStatus"
+    "summary" | "activeOrders" | "pastOrders" | "paymentStatus"
   >("summary");
   const [deliveryTab, setDeliveryTab] = useState<"agents" | "assignments">(
     "agents"
@@ -506,6 +506,13 @@ export default function OwnerPage() {
   const [activeOrderAreaFilter, setActiveOrderAreaFilter] = useState("All");
   const [activeOrderDeliveryFilter, setActiveOrderDeliveryFilter] = useState("All");
   const [activeOrderStatusFilter, setActiveOrderStatusFilter] = useState("All");
+  const [pastOrderSearch, setPastOrderSearch] = useState("");
+  const [pastOrderAreaFilter, setPastOrderAreaFilter] = useState("All");
+  const [pastOrderDeliveryFilter, setPastOrderDeliveryFilter] = useState("All");
+  const [pastOrderStatusFilter, setPastOrderStatusFilter] = useState("All");
+  const [pastOrderMealFilter, setPastOrderMealFilter] = useState("All");
+  const [pastOrderStartDate, setPastOrderStartDate] = useState("");
+  const [pastOrderEndDate, setPastOrderEndDate] = useState("");
   const [placedNotificationSentIds, setPlacedNotificationSentIds] = useState<string[]>([]);
   const [openActiveOrderActionsId, setOpenActiveOrderActionsId] = useState<string | null>(null);
   const [editingActiveOrderId, setEditingActiveOrderId] = useState<string | null>(
@@ -2560,6 +2567,57 @@ export default function OwnerPage() {
     [filteredActiveOrders, placedNotificationSentIds]
   );
 
+  const filteredPastOrders = useMemo(() => {
+    const search = pastOrderSearch.toLowerCase();
+    return orders
+      .filter((order) => order.status !== "cancelled")
+      .filter((order) => {
+        if (currentPublishedMenu && order.publishedMenuId === currentPublishedMenu.id) {
+          return false;
+        }
+        if (
+          pastOrderDeliveryFilter !== "All" &&
+          (order.deliveryType || "Unknown") !== pastOrderDeliveryFilter
+        ) {
+          return false;
+        }
+        if (pastOrderAreaFilter !== "All" && (order.area || "Unknown") !== pastOrderAreaFilter) {
+          return false;
+        }
+        if (pastOrderStatusFilter !== "All" && getOrderStatusLabel(order) !== pastOrderStatusFilter) {
+          return false;
+        }
+        if (pastOrderMealFilter !== "All" && (order.mealType || "Unknown") !== pastOrderMealFilter) {
+          return false;
+        }
+        const dateKey = formatDateKey(order.createdAt || order.publishedDate);
+        if (pastOrderStartDate && dateKey < pastOrderStartDate) {
+          return false;
+        }
+        if (pastOrderEndDate && dateKey > pastOrderEndDate) {
+          return false;
+        }
+        if (!search) return true;
+        const haystack = `${order.orderId || ""} ${order.phone || ""} ${
+          order.customerName || ""
+        } ${order.address || ""} ${(order.items || [])
+          .map((item) => item.name)
+          .join(" ")} ${order.mealType || ""}`.toLowerCase();
+        return haystack.includes(search);
+      })
+      .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
+  }, [
+    orders,
+    currentPublishedMenu,
+    pastOrderSearch,
+    pastOrderAreaFilter,
+    pastOrderDeliveryFilter,
+    pastOrderStatusFilter,
+    pastOrderMealFilter,
+    pastOrderStartDate,
+    pastOrderEndDate,
+  ]);
+
   return (
     <main className="container owner-shell">
       {mode === "loading" && <div className="card">Loading...</div>}
@@ -4043,6 +4101,12 @@ export default function OwnerPage() {
                   Active Orders
                 </button>
                 <button
+                  className={`btn ${historyTab === "pastOrders" ? "" : "secondary"}`}
+                  onClick={() => setHistoryTab("pastOrders")}
+                >
+                  Past Orders
+                </button>
+                <button
                   className={`btn ${historyTab === "paymentStatus" ? "" : "secondary"}`}
                   onClick={() => setHistoryTab("paymentStatus")}
                 >
@@ -4686,6 +4750,392 @@ export default function OwnerPage() {
                                         <small style={{ color: "crimson" }}>
                                           {activeOrderEditError}
                                         </small>
+                                      )}
+                                      <div className="payments-edit-actions">
+                                        <button
+                                          className="btn btn-compact"
+                                          onClick={() => saveActiveOrderEdits(order)}
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => {
+                                            setEditingActiveOrderId(null);
+                                            setActiveOrderEditError("");
+                                          }}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {historyTab === "pastOrders" && (
+                <div className="stack">
+                  <div className="owner-filters-grid">
+                    <input
+                      className="input"
+                      placeholder="Search by order ID / customer / phone / item"
+                      value={pastOrderSearch}
+                      onChange={(e) => setPastOrderSearch(e.target.value)}
+                    />
+                    <select
+                      className="select"
+                      value={pastOrderMealFilter}
+                      onChange={(e) => setPastOrderMealFilter(e.target.value)}
+                    >
+                      <option value="All">All meal types</option>
+                      {mealTypes.map((meal) => (
+                        <option key={meal} value={meal}>
+                          {meal}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={pastOrderDeliveryFilter}
+                      onChange={(e) => setPastOrderDeliveryFilter(e.target.value)}
+                    >
+                      <option value="All">All delivery types</option>
+                      <option value="delivery">Home Delivery</option>
+                      <option value="pickup">Self Pickup</option>
+                    </select>
+                    <select
+                      className="select"
+                      value={pastOrderAreaFilter}
+                      onChange={(e) => setPastOrderAreaFilter(e.target.value)}
+                    >
+                      <option value="All">All areas</option>
+                      {areaOptions.map((area) => (
+                        <option key={area} value={area}>
+                          {area}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={pastOrderStatusFilter}
+                      onChange={(e) => setPastOrderStatusFilter(e.target.value)}
+                    >
+                      <option value="All">All statuses</option>
+                      <option value="Active">Active</option>
+                      <option value="Delivered">Delivered</option>
+                      <option value="Picked Up">Picked Up</option>
+                      <option value="Undelivered">Undelivered</option>
+                      <option value="Payment Pending">Payment Pending</option>
+                    </select>
+                    <input
+                      className="input"
+                      type="date"
+                      value={pastOrderStartDate}
+                      onChange={(e) => setPastOrderStartDate(e.target.value)}
+                    />
+                    <input
+                      className="input"
+                      type="date"
+                      value={pastOrderEndDate}
+                      onChange={(e) => setPastOrderEndDate(e.target.value)}
+                    />
+                  </div>
+                  {filteredPastOrders.length === 0 && <p>No past orders found for the selected filters.</p>}
+                  {filteredPastOrders.length > 0 && (
+                    <div className="table-scroll">
+                      <table className="payments-table">
+                        <thead>
+                          <tr>
+                            <th>Order ID</th>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>Meal</th>
+                            <th>Delivery Type</th>
+                            <th>Area</th>
+                            <th>Address</th>
+                            <th>Items</th>
+                            <th>Delivery Agent</th>
+                            <th>Payment</th>
+                            <th>Status</th>
+                            <th>Total Value</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredPastOrders.map((order) => (
+                            <Fragment key={`past-${order.id}`}>
+                              <tr>
+                                <td>
+                                  #{order.orderId || order.id}
+                                  <small className="payments-subtext">
+                                    {formatDateLabel(order.createdAt || order.publishedDate)}
+                                  </small>
+                                </td>
+                                <td>{order.customerName || "Customer"}</td>
+                                <td>{order.phone || "-"}</td>
+                                <td>{order.mealType || "-"}</td>
+                                <td>
+                                  {order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery"}
+                                </td>
+                                <td>
+                                  {order.area || "-"}
+                                  {order.subArea ? (
+                                    <small className="payments-subtext">{order.subArea}</small>
+                                  ) : null}
+                                </td>
+                                <td>
+                                  {order.address || "-"}
+                                  {order.location && (
+                                    <small className="payments-subtext">
+                                      {formatLocationInput(order.location)}
+                                    </small>
+                                  )}
+                                </td>
+                                <td>
+                                  {(order.items || []).map((item) => (
+                                    <div key={`past-${order.id}-${item.name}`}>
+                                      {item.name} x{item.qty}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td>
+                                  {order.deliveryType === "delivery"
+                                    ? order.assignedAgentName || "Unassigned"
+                                    : "Pickup"}
+                                </td>
+                                <td>{getPaymentMethodLabel(order)}</td>
+                                <td>{getOrderStatusLabel(order)}</td>
+                                <td>Rs. {order.total || 0}</td>
+                                <td>
+                                  <div className="stack" style={{ gap: 6 }}>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() =>
+                                        setOpenActiveOrderActionsId(
+                                          openActiveOrderActionsId === order.id ? null : order.id
+                                        )
+                                      }
+                                    >
+                                      Actions
+                                    </button>
+                                    {openActiveOrderActionsId === order.id && (
+                                      <div className="list-card stack" style={{ gap: 6 }}>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => openActiveOrderEditor(order)}
+                                        >
+                                          Edit
+                                        </button>
+                                        {canOwnerCancelOrder(order) && (
+                                          <button
+                                            className="btn secondary btn-compact"
+                                            onClick={() => openOwnerCancelOrder(order)}
+                                          >
+                                            Cancel
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                              {cancellingOwnerOrderId === order.id && (
+                                <tr className="payments-edit-row">
+                                  <td colSpan={13}>
+                                    <div className="stack" style={{ gap: 10 }}>
+                                      <strong>Cancel Order #{order.orderId || order.id}</strong>
+                                      <input
+                                        className="input"
+                                        placeholder="Cancellation remarks / reason"
+                                        value={ownerCancelRemarks}
+                                        onChange={(e) => setOwnerCancelRemarks(e.target.value)}
+                                      />
+                                      {ownerCancelError && (
+                                        <small className="customer-error-text">{ownerCancelError}</small>
+                                      )}
+                                      <div className="row">
+                                        <button className="btn" onClick={() => cancelOrderByOwner(order)}>
+                                          Confirm Cancel
+                                        </button>
+                                        <button
+                                          className="btn secondary"
+                                          onClick={() => {
+                                            setCancellingOwnerOrderId(null);
+                                            setOwnerCancelRemarks("");
+                                            setOwnerCancelError("");
+                                          }}
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              {editingActiveOrderId === order.id && (
+                                <tr className="payments-edit-row">
+                                  <td colSpan={13}>
+                                    <div className="order-edit-grid">
+                                      <input
+                                        className="input"
+                                        placeholder="Customer name"
+                                        value={activeOrderEditForm.customerName}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            customerName: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <input
+                                        className="input"
+                                        placeholder="Phone number"
+                                        value={activeOrderEditForm.phone}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            phone: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <select
+                                        className="select"
+                                        value={activeOrderEditForm.deliveryType}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            deliveryType: e.target.value,
+                                            assignedAgentId:
+                                              e.target.value === "delivery"
+                                                ? activeOrderEditForm.assignedAgentId
+                                                : "",
+                                          })
+                                        }
+                                      >
+                                        <option value="pickup">Self Pickup</option>
+                                        <option value="delivery">Home Delivery</option>
+                                      </select>
+                                      <select
+                                        className="select"
+                                        value={activeOrderEditForm.status}
+                                        onChange={(e) =>
+                                          setActiveOrderEditForm({
+                                            ...activeOrderEditForm,
+                                            status: e.target.value,
+                                          })
+                                        }
+                                        disabled={order.status === "payment_pending"}
+                                      >
+                                        <option value="active">Active</option>
+                                        <option value="closed">Closed</option>
+                                        <option value="undelivered">Undelivered</option>
+                                      </select>
+                                      {activeOrderEditForm.deliveryType === "delivery" && (
+                                        <>
+                                          <input
+                                            className="input"
+                                            placeholder="Door no / Apartment / House name"
+                                            value={activeOrderEditForm.addressLine1}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                addressLine1: e.target.value,
+                                              })
+                                            }
+                                          />
+                                          <input
+                                            className="input"
+                                            placeholder="Street"
+                                            value={activeOrderEditForm.street}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                street: e.target.value,
+                                              })
+                                            }
+                                          />
+                                          <select
+                                            className="select"
+                                            value={activeOrderEditForm.area}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                area: e.target.value,
+                                                subArea: "",
+                                              })
+                                            }
+                                          >
+                                            <option value="">Select area</option>
+                                            {areaOptions.map((area) => (
+                                              <option key={area} value={area}>
+                                                {area}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <select
+                                            className="select"
+                                            value={activeOrderEditForm.subArea}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                subArea: e.target.value,
+                                              })
+                                            }
+                                            disabled={!activeOrderEditForm.area}
+                                          >
+                                            <option value="">
+                                              {activeOrderEditForm.area
+                                                ? "Select sub area"
+                                                : "Select area first"}
+                                            </option>
+                                            {activeOrderEditSubAreaOptions.map((subArea) => (
+                                              <option key={subArea} value={subArea}>
+                                                {subArea}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <select
+                                            className="select"
+                                            value={activeOrderEditForm.assignedAgentId}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                assignedAgentId: e.target.value,
+                                              })
+                                            }
+                                          >
+                                            <option value="">Unassigned</option>
+                                            {deliveryAgents
+                                              .filter((agent) => agent.active)
+                                              .map((agent) => (
+                                                <option key={agent.id} value={agent.id}>
+                                                  {agent.name}
+                                                </option>
+                                              ))}
+                                          </select>
+                                          <input
+                                            className="input"
+                                            placeholder="Exact location / map link / landmark"
+                                            value={activeOrderEditForm.location}
+                                            onChange={(e) =>
+                                              setActiveOrderEditForm({
+                                                ...activeOrderEditForm,
+                                                location: e.target.value,
+                                              })
+                                            }
+                                          />
+                                        </>
+                                      )}
+                                      {activeOrderEditError && (
+                                        <small style={{ color: "crimson" }}>{activeOrderEditError}</small>
                                       )}
                                       <div className="payments-edit-actions">
                                         <button
