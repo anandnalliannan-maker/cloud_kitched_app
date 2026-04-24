@@ -4544,13 +4544,7 @@ export default function OwnerPage() {
                                     : "Pickup"}
                                 </td>
                                 <td>
-                                  {order.deliveryType === "pickup"
-                                    ? "Pay at Outlet"
-                                    : isCashOnDeliveryOrder(order)
-                                    ? "Cash on Delivery"
-                                    : order.paymentStatus === "paid"
-                                    ? "UPI Paid"
-                                    : order.paymentStatus || "-"}
+                                  {getPaymentMethodLabel(order)}
                                 </td>
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>Rs. {order.total || 0}</td>

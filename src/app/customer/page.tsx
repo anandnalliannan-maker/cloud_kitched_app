@@ -1725,8 +1725,10 @@ export default function CustomerPage() {
                       Payment:{" "}
                       {order.paymentMethod === "cash_on_delivery"
                         ? "Cash on Delivery"
+                        : order.deliveryType === "pickup" && order.paymentStatus === "paid"
+                        ? "UPI Paid"
                         : order.paymentMethod === "pay_at_outlet"
-                        ? "Pay at Outlet"
+                        ? "Legacy Pay at Outlet"
                         : order.paymentStatus === "paid"
                         ? "UPI Paid"
                         : order.paymentStatus || "-"}
