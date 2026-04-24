@@ -64,8 +64,8 @@ type PaymentSummary = {
 type ServiceAreaOption = {
   id: string;
   name: string;
-  deliveryFee?: number;
   subAreas?: string[];
+  subAreaFees?: Record<string, number>;
 };
 
 type CustomerOrder = {
@@ -711,8 +711,16 @@ export default function CustomerPage() {
             return {
               id: docSnap.id,
               name: data.name || "",
-              deliveryFee: Number(data.deliveryFee || 0),
               subAreas: Array.isArray(data.subAreas) ? data.subAreas.filter(Boolean) : [],
+              subAreaFees:
+                typeof data.subAreaFees === "object" && data.subAreaFees
+                  ? Object.fromEntries(
+                      Object.entries(data.subAreaFees).map(([key, value]) => [
+                        key,
+                        Number(value || 0),
+                      ])
+                    )
+                  : {},
             };
           })
         );
@@ -730,6 +738,12 @@ export default function CustomerPage() {
     () => serviceAreas.find((area) => area.name === form.area) || null,
     [serviceAreas, form.area]
   );
+  const selectedSubAreaFee = useMemo(() => {
+    if (!form.subArea || !selectedAreaConfig) {
+      return 0;
+    }
+    return Number(selectedAreaConfig.subAreaFees?.[form.subArea] || 0);
+  }, [form.subArea, selectedAreaConfig]);
   const subAreaOptions = useMemo(() => {
     const saved =
       serviceAreas.find((area) => area.name === form.area)?.subAreas?.filter(Boolean) || [];
@@ -746,7 +760,7 @@ export default function CustomerPage() {
 
   const selectedDeliveryFee =
     deliveryType === "delivery" && !isLunchMenu
-      ? Number(selectedAreaConfig?.deliveryFee || 0)
+      ? selectedSubAreaFee
       : 0;
 
   const total = itemsTotal + selectedDeliveryFee;
@@ -1208,7 +1222,7 @@ export default function CustomerPage() {
         const mealKey = getAssignmentMealKey(menuData.mealType || "");
         const mealIsLunch = mealKey === "Lunch";
         effectiveDeliveryFee =
-          deliveryType === "delivery" && !mealIsLunch ? Number(selectedAreaConfig?.deliveryFee || 0) : 0;
+          deliveryType === "delivery" && !mealIsLunch ? selectedSubAreaFee : 0;
         effectiveOrderTotal = itemsTotal + effectiveDeliveryFee;
         const remaining = (menuData.remaining || menuData.items || []).map(
           (item: any) => ({ ...item })

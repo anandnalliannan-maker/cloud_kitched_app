@@ -144,8 +144,8 @@ type DeliveryAgent = {
 type ServiceArea = {
   id: string;
   name: string;
-  deliveryFee?: number;
   subAreas?: string[];
+  subAreaFees?: Record<string, number>;
 };
 
 type AreaAssignment = {
@@ -701,7 +701,6 @@ export default function OwnerPage() {
     Record<string, { itemId: string; qty: string }>
   >({});
   const [areaForm, setAreaForm] = useState("");
-  const [areaFeeForm, setAreaFeeForm] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
   const [areaSubAreaDrafts, setAreaSubAreaDrafts] = useState<Record<string, string>>({});
   const [openManagedAreaId, setOpenManagedAreaId] = useState<string | null>(null);
@@ -1010,10 +1009,23 @@ export default function OwnerPage() {
       query(collection(db, "service_areas"), orderBy("name", "asc")),
       (snap) => {
         setServiceAreas(
-          snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            ...(docSnap.data() as any),
-          }))
+          snap.docs.map((docSnap) => {
+            const data = docSnap.data() as any;
+            return {
+              id: docSnap.id,
+              ...data,
+              subAreas: Array.isArray(data.subAreas) ? data.subAreas.filter(Boolean) : [],
+              subAreaFees:
+                typeof data.subAreaFees === "object" && data.subAreaFees
+                  ? Object.fromEntries(
+                      Object.entries(data.subAreaFees).map(([key, value]) => [
+                        key,
+                        Number(value || 0),
+                      ])
+                    )
+                  : {},
+            } as ServiceArea;
+          })
         );
       }
     );
@@ -1232,11 +1244,11 @@ export default function OwnerPage() {
     if (!areaForm.trim()) return;
     await addDoc(collection(db, "service_areas"), {
       name: areaForm.trim(),
-      deliveryFee: Number(areaFeeForm || 0),
+      subAreas: [],
+      subAreaFees: {},
       createdAt: serverTimestamp(),
     });
     setAreaForm("");
-    setAreaFeeForm("");
   }
 
   async function deleteServiceArea(id: string) {
@@ -1245,9 +1257,14 @@ export default function OwnerPage() {
     await deleteDoc(doc(db, "service_areas", id));
   }
 
-  async function updateServiceAreaFee(id: string, deliveryFee: number) {
-    await updateDoc(doc(db, "service_areas", id), {
-      deliveryFee: Number.isFinite(deliveryFee) ? deliveryFee : 0,
+  async function updateServiceSubAreaFee(area: ServiceArea, subArea: string, fee: number) {
+    const nextSubAreaFees = {
+      ...(area.subAreaFees || {}),
+      [subArea]: Number.isFinite(fee) ? Math.max(0, fee) : 0,
+    };
+    await updateDoc(doc(db, "service_areas", area.id), {
+      subAreaFees: nextSubAreaFees,
+      updatedAt: serverTimestamp(),
     });
   }
 
@@ -1263,6 +1280,10 @@ export default function OwnerPage() {
     if (!alreadyExists) {
       await updateDoc(doc(db, "service_areas", area.id), {
         subAreas: arrayUnion(nextSubArea),
+        subAreaFees: {
+          ...(area.subAreaFees || {}),
+          [nextSubArea]: 0,
+        },
         updatedAt: serverTimestamp(),
       });
     }
@@ -1306,8 +1327,15 @@ export default function OwnerPage() {
     const nextStoredSubAreas = storedSubAreas.map((subArea) =>
       subArea === previousSubArea ? nextSubArea : subArea
     );
+    const nextSubAreaFees = Object.fromEntries(
+      Object.entries(area.subAreaFees || {}).map(([key, value]) => [
+        key === previousSubArea ? nextSubArea : key,
+        value,
+      ])
+    );
     await updateDoc(doc(db, "service_areas", area.id), {
       subAreas: nextStoredSubAreas,
+      subAreaFees: nextSubAreaFees,
       updatedAt: serverTimestamp(),
     });
 
@@ -6601,16 +6629,6 @@ export default function OwnerPage() {
                   value={areaForm}
                   onChange={(e) => setAreaForm(e.target.value)}
                 />
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  step="1"
-                  placeholder="Delivery fee"
-                  value={areaFeeForm}
-                  onChange={(e) => setAreaFeeForm(e.target.value)}
-                  style={{ maxWidth: 150 }}
-                />
                 <button className="btn" onClick={addServiceArea}>
                   Add Area
                 </button>
@@ -6628,7 +6646,6 @@ export default function OwnerPage() {
                     <thead>
                       <tr>
                         <th>Area</th>
-                        <th>Delivery Fee</th>
                         <th>Mapped Sub Areas</th>
                         <th>Added Sub Areas</th>
                         <th>Action</th>
@@ -6647,19 +6664,6 @@ export default function OwnerPage() {
                             <tr>
                               <td>
                                 <strong>{area.name}</strong>
-                              </td>
-                              <td>
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  defaultValue={String(Number(area.deliveryFee || 0))}
-                                  onBlur={(e) =>
-                                    updateServiceAreaFee(area.id, Number(e.target.value || 0))
-                                  }
-                                  style={{ width: 130 }}
-                                />
                               </td>
                               <td>
                                 {previewMapped || "None"}
@@ -6696,41 +6700,31 @@ export default function OwnerPage() {
                             </tr>
                             {openManagedAreaId === area.id && (
                               <tr>
-                                <td colSpan={5} className="owner-assignment-editor-cell">
+                                <td colSpan={4} className="owner-assignment-editor-cell">
                                   <div className="owner-assignment-editor">
                                     <strong>{area.name}</strong>
-                                    <div className="stack" style={{ gap: 6 }}>
-                                      <small className="payments-subtext">Mapped sub areas</small>
-                                      {mappedSubAreas.length > 0 ? (
-                                        <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-                                          {mappedSubAreas.map((subArea) => (
-                                            <span
-                                              key={`${area.id}::mapped::${subArea}`}
-                                              className="badge"
-                                            >
-                                              {subArea}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <small className="payments-subtext">No mapped sub areas.</small>
-                                      )}
-                                    </div>
-                                    <div className="stack" style={{ gap: 6 }}>
-                                      <small className="payments-subtext">Added sub areas</small>
-                                      {savedCustomSubAreas.length > 0 ? (
-                                        <div className="stack" style={{ gap: 8 }}>
-                                          {savedCustomSubAreas.map((subArea) => {
+                                    <small className="payments-subtext">
+                                      Delivery fee is managed only at sub-area level.
+                                    </small>
+                                    <div className="table-scroll">
+                                      <table className="payments-table payments-table-compact owner-assignment-table">
+                                        <thead>
+                                          <tr>
+                                            <th>Sub Area</th>
+                                            <th>Type</th>
+                                            <th>Delivery Fee</th>
+                                            <th>Action</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {Array.from(new Set([...mappedSubAreas, ...savedCustomSubAreas])).map((subArea) => {
                                             const editKey = `${area.id}::${subArea}`;
                                             const isEditing = editingAreaSubAreaKey === editKey;
+                                            const isCustom = savedCustomSubAreas.includes(subArea);
                                             return (
-                                              <div
-                                                key={editKey}
-                                                className="row"
-                                                style={{ alignItems: "center", gap: 8 }}
-                                              >
-                                                {isEditing ? (
-                                                  <>
+                                              <tr key={editKey}>
+                                                <td>
+                                                  {isEditing ? (
                                                     <input
                                                       className="input"
                                                       value={areaSubAreaEditDrafts[editKey] || ""}
@@ -6740,53 +6734,50 @@ export default function OwnerPage() {
                                                           [editKey]: e.target.value,
                                                         }))
                                                       }
-                                                      style={{ flex: 1 }}
                                                     />
-                                                    <button
-                                                      className="btn secondary btn-compact"
-                                                      onClick={() =>
-                                                        saveServiceSubAreaEdit(area, subArea)
-                                                      }
-                                                    >
-                                                      Save
-                                                    </button>
-                                                    <button
-                                                      className="btn secondary btn-compact"
-                                                      onClick={() => setEditingAreaSubAreaKey(null)}
-                                                    >
-                                                      Close
-                                                    </button>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <span style={{ flex: 1 }}>
-                                                      {subArea}
-                                                      {!isMappedSubArea(area.name, subArea) && (
-                                                        <small className="payments-subtext">
-                                                          {" "}
-                                                          • custom
-                                                        </small>
-                                                      )}
-                                                    </span>
-                                                    <button
-                                                      className="btn secondary btn-compact"
-                                                      onClick={() =>
-                                                        openServiceSubAreaEdit(area, subArea)
-                                                      }
-                                                    >
-                                                      Edit
-                                                    </button>
-                                                  </>
-                                                )}
-                                              </div>
+                                                  ) : (
+                                                    subArea
+                                                  )}
+                                                </td>
+                                                <td>{isCustom ? "Custom" : "Mapped"}</td>
+                                                <td>
+                                                  <input
+                                                    className="input"
+                                                    type="number"
+                                                    min="0"
+                                                    step="1"
+                                                    defaultValue={String(Number(area.subAreaFees?.[subArea] || 0))}
+                                                    onBlur={(e) =>
+                                                      updateServiceSubAreaFee(area, subArea, Number(e.target.value || 0))
+                                                    }
+                                                    style={{ width: 140 }}
+                                                  />
+                                                </td>
+                                                <td>
+                                                  {isCustom ? (
+                                                    isEditing ? (
+                                                      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                                        <button className="btn secondary btn-compact" onClick={() => saveServiceSubAreaEdit(area, subArea)}>
+                                                          Save
+                                                        </button>
+                                                        <button className="btn secondary btn-compact" onClick={() => setEditingAreaSubAreaKey(null)}>
+                                                          Close
+                                                        </button>
+                                                      </div>
+                                                    ) : (
+                                                      <button className="btn secondary btn-compact" onClick={() => openServiceSubAreaEdit(area, subArea)}>
+                                                        Edit
+                                                      </button>
+                                                    )
+                                                  ) : (
+                                                    <small className="payments-subtext">-</small>
+                                                  )}
+                                                </td>
+                                              </tr>
                                             );
                                           })}
-                                        </div>
-                                      ) : (
-                                        <small className="payments-subtext">
-                                          No owner/customer-added sub areas yet.
-                                        </small>
-                                      )}
+                                        </tbody>
+                                      </table>
                                     </div>
                                     <div className="row">
                                       <input
@@ -6801,16 +6792,10 @@ export default function OwnerPage() {
                                         }
                                         style={{ flex: 1 }}
                                       />
-                                      <button
-                                        className="btn secondary btn-compact"
-                                        onClick={() => addServiceSubArea(area)}
-                                      >
+                                      <button className="btn secondary btn-compact" onClick={() => addServiceSubArea(area)}>
                                         Add Sub Area
                                       </button>
-                                      <button
-                                        className="btn secondary btn-compact"
-                                        onClick={() => setOpenManagedAreaId(null)}
-                                      >
+                                      <button className="btn secondary btn-compact" onClick={() => setOpenManagedAreaId(null)}>
                                         Close
                                       </button>
                                     </div>
@@ -6825,142 +6810,6 @@ export default function OwnerPage() {
                   </table>
                 </div>
               )}
-              {false && filteredServiceAreas.map((area) => (
-                <div key={area.id} className="list-card stack" style={{ gap: 10 }}>
-                  {(() => {
-                    const mappedSubAreas = getSubAreasForArea(area.name) || [];
-                    const savedCustomSubAreas = (area.subAreas || []).filter(Boolean);
-                    return (
-                      <Fragment>
-                  <div className="row" style={{ alignItems: "center", gap: 10 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{area.name}</div>
-                      <small className="payments-subtext">
-                        Sub areas: {(subAreaOptionsByArea[area.name] || []).join(", ") || "None"}
-                      </small>
-                    </div>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0"
-                      step="1"
-                      defaultValue={String(Number(area.deliveryFee || 0))}
-                      onBlur={(e) =>
-                        updateServiceAreaFee(area.id, Number(e.target.value || 0))
-                      }
-                      style={{ width: 130 }}
-                    />
-                    <button
-                      className="btn secondary"
-                      onClick={() => deleteServiceArea(area.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  {mappedSubAreas.length > 0 && (
-                    <div className="stack" style={{ gap: 6 }}>
-                      <small className="payments-subtext">Mapped sub areas</small>
-                      <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-                        {mappedSubAreas.map((subArea) => (
-                          <span key={`${area.id}::mapped::${subArea}`} className="badge">
-                            {subArea}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="stack" style={{ gap: 6 }}>
-                    <small className="payments-subtext">
-                      Added sub areas
-                    </small>
-                    {savedCustomSubAreas.length > 0 ? (
-                      <div className="stack" style={{ gap: 8 }}>
-                        {savedCustomSubAreas.map((subArea) => {
-                          const editKey = `${area.id}::${subArea}`;
-                          const isEditing = editingAreaSubAreaKey === editKey;
-                          return (
-                            <div
-                              key={editKey}
-                              className="row"
-                              style={{ alignItems: "center", gap: 8 }}
-                            >
-                              {isEditing ? (
-                                <>
-                                  <input
-                                    className="input"
-                                    value={areaSubAreaEditDrafts[editKey] || ""}
-                                    onChange={(e) =>
-                                      setAreaSubAreaEditDrafts((prev) => ({
-                                        ...prev,
-                                        [editKey]: e.target.value,
-                                      }))
-                                    }
-                                    style={{ flex: 1 }}
-                                  />
-                                  <button
-                                    className="btn secondary btn-compact"
-                                    onClick={() => saveServiceSubAreaEdit(area, subArea)}
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    className="btn secondary btn-compact"
-                                    onClick={() => setEditingAreaSubAreaKey(null)}
-                                  >
-                                    Close
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <span style={{ flex: 1 }}>
-                                    {subArea}
-                                    {!isMappedSubArea(area.name, subArea) && (
-                                      <small className="payments-subtext"> {" "}• custom</small>
-                                    )}
-                                  </span>
-                                  <button
-                                    className="btn secondary btn-compact"
-                                    onClick={() => openServiceSubAreaEdit(area, subArea)}
-                                  >
-                                    Edit
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <small className="payments-subtext">
-                        No owner/customer-added sub areas yet.
-                      </small>
-                    )}
-                  </div>
-                  <div className="row">
-                    <input
-                      className="input"
-                      placeholder="Add sub area manually"
-                      value={areaSubAreaDrafts[area.id] || ""}
-                      onChange={(e) =>
-                        setAreaSubAreaDrafts((prev) => ({
-                          ...prev,
-                          [area.id]: e.target.value,
-                        }))
-                      }
-                      style={{ flex: 1 }}
-                    />
-                    <button
-                      className="btn secondary btn-compact"
-                      onClick={() => addServiceSubArea(area)}
-                    >
-                      Add Sub Area
-                    </button>
-                  </div>
-                      </Fragment>
-                    );
-                  })()}
-                </div>
-              ))}
             </div>
           )}
         </div>
