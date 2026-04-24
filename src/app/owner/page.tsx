@@ -653,7 +653,13 @@ function getAssignmentMealKey(mealType?: string) {
 }
 
 function normalizeSubAreaName(raw: string) {
-  return raw.trim().replace(/\s+/g, " ");
+  const cleaned = raw.trim().replace(/\s+/g, " ");
+  if (!cleaned) return "";
+  const lowered = cleaned.toLowerCase();
+  if (lowered === "-" || lowered === "--" || lowered === "na" || lowered === "n/a" || lowered === "none") {
+    return "";
+  }
+  return cleaned;
 }
 
 function getSubAreaDocId(raw: string) {
