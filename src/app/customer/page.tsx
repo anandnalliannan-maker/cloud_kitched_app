@@ -336,7 +336,8 @@ export default function CustomerPage() {
         snap.docs.find((candidate) => {
           const candidateData = candidate.data() as any;
           if (candidateData.isArchived || candidateData.ordersStopped) return false;
-          return (candidateData.items || []).some((item: any) => item.active !== false);
+          const effectiveItems = candidateData.remaining || candidateData.items || [];
+          return effectiveItems.some((item: any) => item.active !== false);
         }) || snap.docs[0];
       const data = docSnap.data() as any;
 
@@ -356,13 +357,25 @@ export default function CustomerPage() {
         return;
       }
 
+      const effectiveItems = data.remaining || data.items || [];
       const remainingMap = new Map(
-        (data.remaining || data.items || [])
+        effectiveItems
           .filter((item: any) => item.active !== false)
           .map((item: any) => [item.itemId, item.qty ?? 0])
       );
-      const menuItems = (data.items || [])
-        .filter((item: any) => item.active !== false)
+      const sourceItems =
+        data.items && data.items.length
+          ? data.items.filter((item: any) =>
+              effectiveItems.some((effectiveItem: any) => effectiveItem.itemId === item.itemId)
+            )
+          : effectiveItems;
+      const menuItems = sourceItems
+        .filter((item: any) => {
+          const effectiveItem = effectiveItems.find(
+            (candidate: any) => candidate.itemId === item.itemId
+          );
+          return (effectiveItem || item).active !== false;
+        })
         .map((item: any) => ({
           id: item.itemId,
           name: item.name,
