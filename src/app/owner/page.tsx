@@ -2476,15 +2476,11 @@ export default function OwnerPage() {
     if (!currentPublishedMenu) {
       return [];
     }
-    return orders.filter((order) => {
-      if (order.publishedMenuId) {
-        return order.publishedMenuId === currentPublishedMenu.id;
-      }
-      return (
+    return orders.filter(
+      (order) =>
         `${formatDateKey(order.publishedDate)}__${order.mealType || "Unknown"}` ===
         currentPublishedMenuKey
-      );
-    });
+    );
   }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
 
   const currentOperationalOrders = useMemo(
@@ -2647,7 +2643,10 @@ export default function OwnerPage() {
     }, {});
 
     return publishedMenus
-      .filter((menu) => menu.id !== currentPublishedMenu?.id)
+      .filter(
+        (menu) =>
+          `${formatDateKey(menu.date)}__${menu.mealType || "Unknown"}` !== currentPublishedMenuKey
+      )
       .map((menu) => {
         const dateKey = formatDateKey(menu.date);
         const mealType = menu.mealType || "Unknown";
@@ -2676,7 +2675,7 @@ export default function OwnerPage() {
             ) ||
           a.mealType.localeCompare(b.mealType)
       );
-  }, [publishedMenus, currentPublishedMenu]);
+  }, [publishedMenus, currentPublishedMenuKey]);
 
   useEffect(() => {
     if (!pastPublishedMenuOptions.length) {
