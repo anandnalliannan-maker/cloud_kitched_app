@@ -236,6 +236,8 @@ a {
 }
 
 .owner-shell {
+  width: min(98vw, 1540px);
+  max-width: 1540px;
   padding-top: 20px;
   padding-bottom: 40px;
 }
@@ -330,6 +332,22 @@ a {
 
 .owner-shell .payments-table tbody tr:hover td {
   background: #f8fcfb;
+}
+
+.owner-orders-table-scroll {
+  overflow-x: auto;
+}
+
+.owner-orders-table {
+  min-width: 1200px;
+}
+
+.owner-orders-actions-cell {
+  min-width: 132px;
+}
+
+.owner-orders-actions-cell .btn {
+  width: 100%;
 }
 
 .owner-shell .status-chip {
@@ -1627,6 +1645,19 @@ a {
 
   .owner-summary-table th {
     font-size: 0.7rem;
+  }
+
+  .owner-shell {
+    width: min(100vw, 1540px);
+    max-width: 100%;
+  }
+
+  .owner-orders-table {
+    min-width: 980px;
+  }
+
+  .owner-orders-actions-cell {
+    min-width: 118px;
   }
 }
 

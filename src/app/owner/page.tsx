@@ -4712,8 +4712,8 @@ export default function OwnerPage() {
                   </div>
                   {filteredActiveOrders.length === 0 && <p>No active orders for the live menu.</p>}
                   {filteredActiveOrders.length > 0 && (
-                    <div className="table-scroll">
-                      <table className="payments-table">
+                    <div className="table-scroll owner-orders-table-scroll">
+                      <table className="payments-table owner-orders-table">
                         <thead>
                             <tr>
                               <th>Order ID</th>
@@ -4727,8 +4727,7 @@ export default function OwnerPage() {
                               <th>Payment</th>
                               <th>Status</th>
                               <th>Total Value</th>
-                              <th>WhatsApp</th>
-                              <th>Action</th>
+                              <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -4775,7 +4774,7 @@ export default function OwnerPage() {
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>
-                                  <div className="stack" style={{ gap: 6 }}>
+                                  <div className="stack owner-orders-actions-cell" style={{ gap: 6 }}>
                                     <button
                                       className="btn secondary btn-compact"
                                       onClick={() => openPlacedNotification(order)}
@@ -4786,10 +4785,6 @@ export default function OwnerPage() {
                                     {placedNotificationSentIds.includes(order.id) && (
                                       <small className="payments-subtext">Opened</small>
                                     )}
-                                  </div>
-                                </td>
-                                <td>
-                                  <div className="stack" style={{ gap: 6 }}>
                                     <button
                                       className="btn secondary btn-compact"
                                       onClick={() =>
@@ -4823,7 +4818,7 @@ export default function OwnerPage() {
                               </tr>
                               {cancellingOwnerOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={13}>
+                                  <td colSpan={12}>
                                     <div className="stack" style={{ gap: 10 }}>
                                       <strong>Cancel Order #{order.orderId || order.id}</strong>
                                       <input
@@ -4859,7 +4854,7 @@ export default function OwnerPage() {
                               )}
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={13}>
+                                  <td colSpan={12}>
                                     <div className="order-edit-grid">
                                       <input
                                         className="input"
@@ -5375,8 +5370,8 @@ export default function OwnerPage() {
 
                   {selectedPastMenuOption && filteredPastOrders.length === 0 && <p>No orders found for the selected menu and filters.</p>}
                   {selectedPastMenuOption && filteredPastOrders.length > 0 && (
-                    <div className="table-scroll">
-                      <table className="payments-table">
+                    <div className="table-scroll owner-orders-table-scroll">
+                      <table className="payments-table owner-orders-table">
                         <thead>
                           <tr>
                             <th>Order ID</th>
@@ -5391,8 +5386,7 @@ export default function OwnerPage() {
                             <th>Payment</th>
                             <th>Status</th>
                             <th>Total Value</th>
-                            <th>WhatsApp</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5441,7 +5435,7 @@ export default function OwnerPage() {
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>
-                                  <div className="stack" style={{ gap: 6 }}>
+                                  <div className="stack owner-orders-actions-cell" style={{ gap: 6 }}>
                                     <button
                                       className="btn secondary btn-compact"
                                       onClick={() => openPlacedNotification(order)}
@@ -5452,10 +5446,6 @@ export default function OwnerPage() {
                                     {placedNotificationSentIds.includes(order.id) && (
                                       <small className="payments-subtext">Opened</small>
                                     )}
-                                  </div>
-                                </td>
-                                <td>
-                                  <div className="stack" style={{ gap: 6 }}>
                                     <button
                                       className="btn secondary btn-compact"
                                       onClick={() =>
@@ -5489,7 +5479,7 @@ export default function OwnerPage() {
                               </tr>
                               {cancellingOwnerOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={14}>
+                                  <td colSpan={13}>
                                     <div className="stack" style={{ gap: 10 }}>
                                       <strong>Cancel Order #{order.orderId || order.id}</strong>
                                       <input
@@ -5522,7 +5512,7 @@ export default function OwnerPage() {
                               )}
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={14}>
+                                  <td colSpan={13}>
                                     <div className="order-edit-grid">
                                       <input
                                         className="input"
