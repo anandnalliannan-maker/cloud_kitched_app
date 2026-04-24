@@ -23,23 +23,32 @@ export async function POST(request: Request) {
     }
 
     if (body?.offline === true) {
+      const orderData = orderSnap.data() as any;
       const paymentMethod =
         body?.paymentMethod === "cash_on_delivery"
           ? "cash_on_delivery"
           : "pay_at_outlet";
+      if (orderData.deliveryType === "pickup") {
+        return NextResponse.json(
+          { error: "Self pickup orders must be paid online before confirmation." },
+          { status: 400 }
+        );
+      }
+      if (paymentMethod !== "cash_on_delivery") {
+        return NextResponse.json(
+          { error: "Offline confirmation is not available for this order." },
+          { status: 400 }
+        );
+      }
       await updateDoc(orderRef, {
         status: "active",
-        paymentStatus: paymentMethod === "cash_on_delivery" ? "cash_on_delivery" : "pay_at_outlet",
+        paymentStatus: "cash_on_delivery",
         paymentMethod,
-        ...(paymentMethod === "cash_on_delivery"
-          ? {
-              codAmountCollected: 0,
-              codBalance: (orderSnap.data() as any).total || 0,
-              codPaymentStatus: "unpaid",
-              codPaymentNotes: "",
-              codPaymentUpdatedAt: serverTimestamp(),
-            }
-          : {}),
+        codAmountCollected: 0,
+        codBalance: orderData.total || 0,
+        codPaymentStatus: "unpaid",
+        codPaymentNotes: "",
+        codPaymentUpdatedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
       return NextResponse.json({ ok: true });

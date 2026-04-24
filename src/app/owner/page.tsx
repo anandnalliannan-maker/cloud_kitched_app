@@ -324,7 +324,12 @@ function shouldShowInOperationalWorkspace(order: Order) {
     return false;
   }
   if (order.deliveryType === "pickup") {
-    return true;
+    return (
+      order.paymentStatus === "paid" ||
+      order.paymentMethod === "upi" ||
+      order.paymentMethod === "online" ||
+      order.pickupPaymentStatus === "paid"
+    );
   }
   if (order.orderSource === "owner") {
     return true;

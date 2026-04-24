@@ -1591,7 +1591,13 @@ export default function CustomerPage() {
   }
 
   function setPaymentMethod(method: PaymentSummary["paymentMethod"]) {
-    setPaymentSummary((prev) => (prev ? { ...prev, paymentMethod: method } : prev));
+    setPaymentSummary((prev) => {
+      if (!prev) return prev;
+      if (prev.deliveryType === "pickup") {
+        return { ...prev, paymentMethod: "upi" };
+      }
+      return { ...prev, paymentMethod: method };
+    });
   }
 
   return (
