@@ -704,6 +704,7 @@ export default function OwnerPage() {
   const [areaFeeForm, setAreaFeeForm] = useState("");
   const [areaSearch, setAreaSearch] = useState("");
   const [areaSubAreaDrafts, setAreaSubAreaDrafts] = useState<Record<string, string>>({});
+  const [openManagedAreaId, setOpenManagedAreaId] = useState<string | null>(null);
   const [editingAreaSubAreaKey, setEditingAreaSubAreaKey] = useState<string | null>(null);
   const [areaSubAreaEditDrafts, setAreaSubAreaEditDrafts] = useState<Record<string, string>>({});
   const [showNav, setShowNav] = useState(false);
@@ -6621,7 +6622,210 @@ export default function OwnerPage() {
                 onChange={(e) => setAreaSearch(e.target.value)}
               />
               {filteredServiceAreas.length === 0 && <p>No areas found</p>}
-              {filteredServiceAreas.map((area) => (
+              {filteredServiceAreas.length > 0 && (
+                <div className="table-scroll">
+                  <table className="payments-table payments-table-compact owner-assignment-table">
+                    <thead>
+                      <tr>
+                        <th>Area</th>
+                        <th>Delivery Fee</th>
+                        <th>Mapped Sub Areas</th>
+                        <th>Added Sub Areas</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredServiceAreas.map((area) => {
+                        const mappedSubAreas = getSubAreasForArea(area.name) || [];
+                        const savedCustomSubAreas = (area.subAreas || []).filter(Boolean);
+                        const previewMapped = mappedSubAreas.slice(0, 3).join(", ");
+                        const previewCustom = savedCustomSubAreas.slice(0, 3).join(", ");
+                        const hiddenMapped = Math.max(mappedSubAreas.length - 3, 0);
+                        const hiddenCustom = Math.max(savedCustomSubAreas.length - 3, 0);
+                        return (
+                          <Fragment key={`${area.id}::table`}>
+                            <tr>
+                              <td>
+                                <strong>{area.name}</strong>
+                              </td>
+                              <td>
+                                <input
+                                  className="input"
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  defaultValue={String(Number(area.deliveryFee || 0))}
+                                  onBlur={(e) =>
+                                    updateServiceAreaFee(area.id, Number(e.target.value || 0))
+                                  }
+                                  style={{ width: 130 }}
+                                />
+                              </td>
+                              <td>
+                                {previewMapped || "None"}
+                                {hiddenMapped > 0 && (
+                                  <small className="payments-subtext">+{hiddenMapped} more</small>
+                                )}
+                              </td>
+                              <td>
+                                {previewCustom || "None"}
+                                {hiddenCustom > 0 && (
+                                  <small className="payments-subtext">+{hiddenCustom} more</small>
+                                )}
+                              </td>
+                              <td>
+                                <div className="stack" style={{ gap: 6 }}>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() =>
+                                      setOpenManagedAreaId(
+                                        openManagedAreaId === area.id ? null : area.id
+                                      )
+                                    }
+                                  >
+                                    Manage Sub Areas
+                                  </button>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => deleteServiceArea(area.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            {openManagedAreaId === area.id && (
+                              <tr>
+                                <td colSpan={5} className="owner-assignment-editor-cell">
+                                  <div className="owner-assignment-editor">
+                                    <strong>{area.name}</strong>
+                                    <div className="stack" style={{ gap: 6 }}>
+                                      <small className="payments-subtext">Mapped sub areas</small>
+                                      {mappedSubAreas.length > 0 ? (
+                                        <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                                          {mappedSubAreas.map((subArea) => (
+                                            <span
+                                              key={`${area.id}::mapped::${subArea}`}
+                                              className="badge"
+                                            >
+                                              {subArea}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <small className="payments-subtext">No mapped sub areas.</small>
+                                      )}
+                                    </div>
+                                    <div className="stack" style={{ gap: 6 }}>
+                                      <small className="payments-subtext">Added sub areas</small>
+                                      {savedCustomSubAreas.length > 0 ? (
+                                        <div className="stack" style={{ gap: 8 }}>
+                                          {savedCustomSubAreas.map((subArea) => {
+                                            const editKey = `${area.id}::${subArea}`;
+                                            const isEditing = editingAreaSubAreaKey === editKey;
+                                            return (
+                                              <div
+                                                key={editKey}
+                                                className="row"
+                                                style={{ alignItems: "center", gap: 8 }}
+                                              >
+                                                {isEditing ? (
+                                                  <>
+                                                    <input
+                                                      className="input"
+                                                      value={areaSubAreaEditDrafts[editKey] || ""}
+                                                      onChange={(e) =>
+                                                        setAreaSubAreaEditDrafts((prev) => ({
+                                                          ...prev,
+                                                          [editKey]: e.target.value,
+                                                        }))
+                                                      }
+                                                      style={{ flex: 1 }}
+                                                    />
+                                                    <button
+                                                      className="btn secondary btn-compact"
+                                                      onClick={() =>
+                                                        saveServiceSubAreaEdit(area, subArea)
+                                                      }
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      className="btn secondary btn-compact"
+                                                      onClick={() => setEditingAreaSubAreaKey(null)}
+                                                    >
+                                                      Close
+                                                    </button>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <span style={{ flex: 1 }}>
+                                                      {subArea}
+                                                      {!isMappedSubArea(area.name, subArea) && (
+                                                        <small className="payments-subtext">
+                                                          {" "}
+                                                          • custom
+                                                        </small>
+                                                      )}
+                                                    </span>
+                                                    <button
+                                                      className="btn secondary btn-compact"
+                                                      onClick={() =>
+                                                        openServiceSubAreaEdit(area, subArea)
+                                                      }
+                                                    >
+                                                      Edit
+                                                    </button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <small className="payments-subtext">
+                                          No owner/customer-added sub areas yet.
+                                        </small>
+                                      )}
+                                    </div>
+                                    <div className="row">
+                                      <input
+                                        className="input"
+                                        placeholder="Add sub area manually"
+                                        value={areaSubAreaDrafts[area.id] || ""}
+                                        onChange={(e) =>
+                                          setAreaSubAreaDrafts((prev) => ({
+                                            ...prev,
+                                            [area.id]: e.target.value,
+                                          }))
+                                        }
+                                        style={{ flex: 1 }}
+                                      />
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => addServiceSubArea(area)}
+                                      >
+                                        Add Sub Area
+                                      </button>
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => setOpenManagedAreaId(null)}
+                                      >
+                                        Close
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {false && filteredServiceAreas.map((area) => (
                 <div key={area.id} className="list-card stack" style={{ gap: 10 }}>
                   {(() => {
                     const mappedSubAreas = getSubAreasForArea(area.name) || [];
