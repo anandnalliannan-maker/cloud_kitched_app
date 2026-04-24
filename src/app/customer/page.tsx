@@ -332,27 +332,41 @@ export default function CustomerPage() {
         return;
       }
 
-      const docSnap =
-        snap.docs.find((candidate) => {
-          const candidateData = candidate.data() as any;
-          if (candidateData.isArchived || candidateData.ordersStopped) return false;
-          const itemIds = Array.from(
-            new Set(
-              [...(candidateData.items || []), ...(candidateData.remaining || [])].map(
-                (item: any) => item.itemId
-              )
+      const hasActiveItems = (menuData: any) => {
+        const itemIds = Array.from(
+          new Set(
+            [...(menuData.items || []), ...(menuData.remaining || [])].map(
+              (item: any) => item.itemId
             )
+          )
+        );
+        return itemIds.some((itemId) => {
+          const itemRecord = (menuData.items || []).find(
+            (item: any) => item.itemId === itemId
           );
-          return itemIds.some((itemId) => {
-            const itemRecord = (candidateData.items || []).find(
-              (item: any) => item.itemId === itemId
-            );
-            const remainingRecord = (candidateData.remaining || []).find(
-              (item: any) => item.itemId === itemId
-            );
-            return itemRecord?.active !== false && remainingRecord?.active !== false;
-          });
-        }) || snap.docs[0];
+          const remainingRecord = (menuData.remaining || []).find(
+            (item: any) => item.itemId === itemId
+          );
+          return itemRecord?.active !== false && remainingRecord?.active !== false;
+        });
+      };
+
+      const candidateDocs = snap.docs.filter((candidate) => {
+        const candidateData = candidate.data() as any;
+        return !candidateData.isArchived && !candidateData.ordersStopped;
+      });
+
+      const seenMenuSignatures = new Set<string>();
+      const docSnap =
+        candidateDocs.find((candidate) => {
+          const candidateData = candidate.data() as any;
+          const signature = `${candidateData.date || ""}__${candidateData.mealType || "Unknown"}`;
+          if (seenMenuSignatures.has(signature)) {
+            return false;
+          }
+          seenMenuSignatures.add(signature);
+          return hasActiveItems(candidateData);
+        }) || candidateDocs[0] || snap.docs[0];
       const data = docSnap.data() as any;
 
       setPublishedMenuId(docSnap.id);
@@ -410,6 +424,11 @@ export default function CustomerPage() {
           remaining: remainingMap.get(item.itemId) ?? 0,
           active: item.active !== false,
         }));
+      if (menuItems.length === 0) {
+        setItems([]);
+        setMenuAvailability("empty");
+        return;
+      }
       setItems(menuItems);
       setMenuAvailability("available");
     });
