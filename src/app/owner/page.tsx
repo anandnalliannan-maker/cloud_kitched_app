@@ -2635,6 +2635,96 @@ export default function OwnerPage() {
     [filteredActiveOrders, placedNotificationSentIds]
   );
 
+  const exportActiveOrdersCsv = () => {
+    if (!filteredActiveOrders.length) {
+      window.alert("No active orders to export.");
+      return;
+    }
+
+    const csvEscape = (value: unknown) => {
+      const text = String(value ?? "").replace(/"/g, '""');
+      return `"${text}"`;
+    };
+
+    const rows = filteredActiveOrders.map((order) => ({
+      orderId: `#${order.orderId || order.id}`,
+      customer: order.customerName || "Customer",
+      phone: order.phone || "",
+      mealType: order.mealType || currentPublishedMenu?.mealType || "",
+      deliveryType:
+        order.deliveryType === "pickup"
+          ? "Self Pickup"
+          : isCashOnDeliveryOrder(order)
+            ? "Cash On Delivery"
+            : "Home Delivery",
+      area: order.area || "",
+      subArea: order.subArea || "",
+      address: order.address || "",
+      location: formatLocationInput(order.location),
+      items: (order.items || []).map((item) => `${item.name} x${item.qty}`).join(", "),
+      deliveryAgent:
+        order.deliveryType === "delivery" ? order.assignedAgentName || "Unassigned" : "Pickup",
+      payment: getPaymentMethodLabel(order),
+      status: getOrderStatusLabel(order),
+      totalValue: order.total || 0,
+    }));
+
+    const headers = [
+      "Order ID",
+      "Customer",
+      "Phone",
+      "Meal Type",
+      "Delivery Type",
+      "Area",
+      "Sub Area",
+      "Address",
+      "Location",
+      "Items",
+      "Delivery Agent",
+      "Payment",
+      "Status",
+      "Total Value",
+    ];
+
+    const csvLines = [
+      headers.map(csvEscape).join(","),
+      ...rows.map((row) =>
+        [
+          row.orderId,
+          row.customer,
+          row.phone,
+          row.mealType,
+          row.deliveryType,
+          row.area,
+          row.subArea,
+          row.address,
+          row.location,
+          row.items,
+          row.deliveryAgent,
+          row.payment,
+          row.status,
+          `Rs. ${row.totalValue}`,
+        ]
+          .map(csvEscape)
+          .join(",")
+      ),
+    ];
+
+    const blob = new Blob([`\uFEFF${csvLines.join("\r\n")}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const dateLabel = currentPublishedMenu ? formatDateKey(currentPublishedMenu.date) : "active";
+    const mealLabel = (currentPublishedMenu?.mealType || "orders").replace(/\s+/g, "-");
+    link.href = url;
+    link.download = `active-orders-${dateLabel}-${mealLabel}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const pastPublishedMenuOptions = useMemo(() => {
     const duplicateCounts = publishedMenus.reduce<Record<string, number>>((acc, menu) => {
       const signature = `${formatDateKey(menu.date)}__${menu.mealType || "Unknown"}`;
@@ -4557,18 +4647,23 @@ export default function OwnerPage() {
                           WhatsApp Web/app.
                         </small>
                       </div>
-                      <button
-                        className="btn secondary"
-                        onClick={() => {
-                          if (!pendingPlacedNotificationOrders.length) {
-                            window.alert("No pending WhatsApp notifications in the current list.");
-                            return;
-                          }
-                          openPlacedNotification(pendingPlacedNotificationOrders[0]);
-                        }}
-                      >
-                        Open Next
-                      </button>
+                      <div className="row" style={{ gap: 10 }}>
+                        <button className="btn secondary" onClick={exportActiveOrdersCsv}>
+                          Export to Excel
+                        </button>
+                        <button
+                          className="btn secondary"
+                          onClick={() => {
+                            if (!pendingPlacedNotificationOrders.length) {
+                              window.alert("No pending WhatsApp notifications in the current list.");
+                              return;
+                            }
+                            openPlacedNotification(pendingPlacedNotificationOrders[0]);
+                          }}
+                        >
+                          Open Next
+                        </button>
+                      </div>
                     </div>
                     <small className="payments-subtext">
                       Pending notifications: {pendingPlacedNotificationOrders.length}
