@@ -112,6 +112,12 @@ type Order = {
   pickupPaymentNotes?: string;
   pickupPaymentUpdatedAt?: any;
   pickupPaymentClosedAt?: any;
+  manualAmountPaid?: number;
+  manualBalance?: number;
+  manualPaymentStatus?: string;
+  manualPaymentNotes?: string;
+  manualPaymentUpdatedAt?: any;
+  manualPaymentClosedAt?: any;
   codPaymentStatus?: string;
   codAmountCollected?: number;
   codBalance?: number;
@@ -266,8 +272,18 @@ function isCashOnDeliveryOrder(order: Order) {
   return order.deliveryType === "delivery" && order.paymentMethod === "cash_on_delivery";
 }
 
+function isOwnerManualPaymentOrder(order: Order) {
+  return (
+    order.orderSource === "owner" &&
+    (order.paymentMethod === "manual_pending" ||
+      Boolean(order.manualPaymentStatus) ||
+      order.paymentStatus === "manual_pending")
+  );
+}
+
 function isPaymentStatusOrder(order: Order) {
   return (
+    isOwnerManualPaymentOrder(order) ||
     (order.deliveryType === "pickup" &&
       (order.paymentMethod === "pay_at_outlet" ||
         order.paymentStatus === "pay_at_outlet" ||
@@ -277,6 +293,9 @@ function isPaymentStatusOrder(order: Order) {
 }
 
 function getPaymentStatusLabel(order: Order) {
+  if (isOwnerManualPaymentOrder(order)) {
+    return order.manualPaymentStatus || order.paymentStatus || "unpaid";
+  }
   if (order.deliveryType === "pickup") {
     return order.pickupPaymentStatus || order.paymentStatus || "unpaid";
   }
@@ -287,6 +306,9 @@ function getPaymentStatusLabel(order: Order) {
 }
 
 function getPaymentAmountPaid(order: Order) {
+  if (isOwnerManualPaymentOrder(order)) {
+    return order.manualAmountPaid || 0;
+  }
   if (order.deliveryType === "pickup") {
     if (order.paymentStatus === "paid") {
       return order.total || 0;
@@ -300,6 +322,9 @@ function getPaymentAmountPaid(order: Order) {
 }
 
 function getPaymentBalance(order: Order) {
+  if (isOwnerManualPaymentOrder(order)) {
+    return typeof order.manualBalance === "number" ? order.manualBalance : order.total || 0;
+  }
   if (order.deliveryType === "pickup") {
     return typeof order.pickupBalance === "number"
       ? order.pickupBalance
@@ -312,6 +337,9 @@ function getPaymentBalance(order: Order) {
 }
 
 function getPaymentNotes(order: Order) {
+  if (isOwnerManualPaymentOrder(order)) {
+    return order.manualPaymentNotes || "";
+  }
   if (order.deliveryType === "pickup") {
     return order.pickupPaymentNotes || "";
   }
@@ -322,6 +350,9 @@ function getPaymentNotes(order: Order) {
 }
 
 function getPaymentMethodLabel(order: Order) {
+  if (isOwnerManualPaymentOrder(order)) {
+    return "Manual";
+  }
   if (order.deliveryType === "pickup") {
     if (
       order.paymentMethod === "upi" ||
@@ -1561,7 +1592,18 @@ export default function OwnerPage() {
       nextBalance === 0 ? "paid" : nextPaid > 0 ? "partial" : "unpaid";
     const notes = pickupPaymentForm.notes.trim();
     const payload =
-      order.deliveryType === "pickup"
+      isOwnerManualPaymentOrder(order)
+        ? {
+            manualAmountPaid: nextPaid,
+            manualBalance: nextBalance,
+            manualPaymentStatus: nextStatus,
+            manualPaymentNotes: notes,
+            manualPaymentUpdatedAt: serverTimestamp(),
+            paymentMethod: "manual_pending",
+            paymentStatus: nextBalance === 0 ? "paid" : "manual_pending",
+            ...(nextBalance === 0 ? { manualPaymentClosedAt: serverTimestamp() } : {}),
+          }
+        : order.deliveryType === "pickup"
         ? {
             pickupAmountPaid: nextPaid,
             pickupBalance: nextBalance,
@@ -1981,8 +2023,8 @@ export default function OwnerPage() {
         tx.set(orderRef, {
           orderId: displayOrderId,
           status: "active",
-          paymentStatus:
-            ownerOrderForm.deliveryType === "pickup" ? "pay_at_outlet" : "manual_pending",
+          paymentStatus: "manual_pending",
+          paymentMethod: "manual_pending",
           createdAt: serverTimestamp(),
           publishedMenuId: selectedOwnerMenu.id,
           publishedDate: menuData.date || "",
@@ -2010,10 +2052,13 @@ export default function OwnerPage() {
           assignedAgentId,
           assignedAgentName,
           orderSource: "owner",
+          manualAmountPaid: 0,
+          manualBalance: total,
+          manualPaymentStatus: "unpaid",
+          manualPaymentNotes: "",
           pickupAmountPaid: 0,
-          pickupBalance: ownerOrderForm.deliveryType === "pickup" ? total : 0,
-          pickupPaymentStatus:
-            ownerOrderForm.deliveryType === "pickup" ? "unpaid" : "",
+          pickupBalance: 0,
+          pickupPaymentStatus: "",
           pickupPaymentNotes: "",
         });
         tx.update(menuRef, { remaining });
@@ -5242,7 +5287,9 @@ export default function OwnerPage() {
                                 <td>{order.customerName || "Customer"}</td>
                                 <td>{order.phone || "-"}</td>
                                 <td>
-                                  {order.deliveryType === "pickup"
+                                  {isOwnerManualPaymentOrder(order)
+                                    ? "Manual Collection"
+                                    : order.deliveryType === "pickup"
                                     ? "Pay at Outlet"
                                     : "Cash on Delivery"}
                                 </td>
