@@ -1321,6 +1321,10 @@ export default function CustomerPage() {
           remainingItem.qty = (remainingItem.qty || 0) - item.qty;
         });
 
+        const customerMasterId = normalizePhoneForOtp(form.phone);
+        const customerMasterRef = doc(db, "customer_master", customerMasterId);
+        const customerMasterSnap = await tx.get(customerMasterRef);
+
         let assignedAgentId = "";
         let assignedAgentName = "";
         if (deliveryType === "delivery" && resolvedArea) {
@@ -1400,9 +1404,6 @@ export default function CustomerPage() {
           }
         }
 
-        const customerMasterId = normalizePhoneForOtp(form.phone);
-        const customerMasterRef = doc(db, "customer_master", customerMasterId);
-        const customerMasterSnap = await tx.get(customerMasterRef);
         const nextCustomerMaster = {
           phone: customerMasterId,
           normalizedPhone: customerMasterId,
