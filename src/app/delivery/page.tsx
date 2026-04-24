@@ -478,8 +478,8 @@ export default function DeliveryPage() {
   }
 
   return (
-    <main className="container">
-      <div className="card stack">
+    <main className="container delivery-portal">
+      <div className="card stack delivery-shell">
         <h1>Delivery Portal</h1>
         {mode === "loading" && <p>Loading...</p>}
         {mode === "login" && (
@@ -512,7 +512,7 @@ export default function DeliveryPage() {
         {mode === "dashboard" && (
           <div className="stack">
             {agentInfo && (
-              <div className="card row" style={{ justifyContent: "space-between" }}>
+              <div className="card row delivery-agent-header" style={{ justifyContent: "space-between" }}>
                 <div>
                   <strong>{agentInfo.name}</strong>
                 </div>
@@ -521,7 +521,7 @@ export default function DeliveryPage() {
                 </div>
               </div>
             )}
-            <div className="row">
+            <div className="row delivery-toolbar">
               <button className="btn secondary" onClick={requestCurrentLocation}>
                 Use Current Location (Sort by distance)
               </button>
@@ -532,7 +532,7 @@ export default function DeliveryPage() {
               )}
               {locError && <small style={{ color: "crimson" }}>{locError}</small>}
             </div>
-            <div className="row">
+            <div className="row delivery-tabs">
               <button
                 className={`btn ${tab === "summary" ? "" : "secondary"}`}
                 onClick={() => setTab("summary")}
@@ -557,8 +557,8 @@ export default function DeliveryPage() {
             </div>
 
             {tab === "summary" && (
-              <div className="stack">
-                <div className="card">
+              <div className="stack delivery-summary-stack">
+                <div className="card delivery-summary-card">
                   Current Menu:{" "}
                   {currentPublishedMenu
                     ? `${formatOrderDate(currentPublishedMenu.date)} - ${
@@ -566,35 +566,35 @@ export default function DeliveryPage() {
                       }`
                     : "No live published menu"}
                 </div>
-                <div className="card">Active Orders: {orderSummary.totalOrders}</div>
-                <div className="card">COD Due on Active Orders: Rs. {orderSummary.codDue}</div>
-                <div className="card">
+                <div className="card delivery-summary-card">Active Orders: {orderSummary.totalOrders}</div>
+                <div className="card delivery-summary-card">COD Due on Active Orders: Rs. {orderSummary.codDue}</div>
+                <div className="card delivery-summary-card">
                   COD to hand over: Rs. {codCollectedSummary.collected}
                 </div>
-                <div className="card">
+                <div className="card delivery-summary-card">
                   <strong>Active Orders by Area</strong>
                   {Object.keys(orderSummary.areaCounts).length === 0 && <p>No active orders.</p>}
                   {Object.entries(orderSummary.areaCounts).map(([name, count]) => (
-                    <div key={name} className="row">
+                    <div key={name} className="row delivery-summary-row">
                       <div style={{ flex: 1 }}>{name}</div>
                       <div>{count}</div>
                     </div>
                   ))}
                 </div>
-                <div className="card">
+                <div className="card delivery-summary-card">
                   <strong>Active Items Count</strong>
                   {Object.keys(orderSummary.itemCounts).length === 0 && <p>No items</p>}
                   {Object.entries(orderSummary.itemCounts).map(([name, count]) => (
-                    <div key={name} className="row">
+                    <div key={name} className="row delivery-summary-row">
                       <div style={{ flex: 1 }}>{name}</div>
                       <div>{count}</div>
                     </div>
                   ))}
                 </div>
-                <div className="card">
+                <div className="card delivery-summary-card">
                   <strong>Packing Buckets</strong>
-                  <div className="table-scroll">
-                    <table className="payments-table payments-table-compact owner-summary-packing-table">
+                  <div className="table-scroll delivery-packing-scroll">
+                    <table className="payments-table payments-table-compact owner-summary-packing-table delivery-packing-table">
                       <thead>
                         <tr>
                           <th>Item</th>
@@ -631,8 +631,8 @@ export default function DeliveryPage() {
             )}
 
             {tab === "orders" && (
-              <div className="stack">
-                <div className="card">
+              <div className="stack delivery-orders-stack">
+                <div className="card delivery-summary-card">
                   Current Menu:{" "}
                   {currentPublishedMenu
                     ? `${formatOrderDate(currentPublishedMenu.date)} - ${
@@ -652,7 +652,7 @@ export default function DeliveryPage() {
                         )
                       : null;
                   return (
-                  <div key={order.id} className="card" style={{ position: "relative" }}>
+                  <div key={order.id} className="card delivery-order-card" style={{ position: "relative" }}>
                     <div>
                       {order.customerName || "Customer"} | {order.phone || ""}
                     </div>
@@ -680,7 +680,7 @@ export default function DeliveryPage() {
                     {distance !== null && (
                       <div>Distance: {distance.toFixed(2)} km</div>
                     )}
-                    <div className="row">
+                    <div className="row delivery-order-actions">
                       <a
                         className="btn secondary"
                         href={`tel:${order.phone || ""}`}
@@ -714,7 +714,7 @@ export default function DeliveryPage() {
                     </div>
                     {openOrderActions === order.id && (
                       <div
-                        className="card stack"
+                        className="card stack delivery-order-menu"
                         style={{
                           position: "absolute",
                           right: 12,
@@ -765,8 +765,8 @@ export default function DeliveryPage() {
             )}
 
             {tab === "dashboard" && (
-              <div className="stack">
-                <div className="row">
+              <div className="stack delivery-dashboard-stack">
+                <div className="row delivery-dashboard-filters">
                   <input
                     className="input"
                     type="date"
@@ -799,14 +799,14 @@ export default function DeliveryPage() {
                   </button>
                 </div>
 
-                <div className="row">
-                  <div className="card" style={{ minWidth: 160 }}>
+                <div className="row delivery-dashboard-metrics">
+                  <div className="card delivery-dashboard-metric" style={{ minWidth: 160 }}>
                     Total History Orders: {historySummary.total}
                   </div>
-                  <div className="card" style={{ minWidth: 160 }}>
+                  <div className="card delivery-dashboard-metric" style={{ minWidth: 160 }}>
                     Delivered: {historySummary.delivered}
                   </div>
-                  <div className="card" style={{ minWidth: 160 }}>
+                  <div className="card delivery-dashboard-metric" style={{ minWidth: 160 }}>
                     Undelivered: {historySummary.undelivered}
                   </div>
                 </div>

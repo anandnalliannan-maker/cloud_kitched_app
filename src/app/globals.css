@@ -1629,3 +1629,125 @@ a {
     font-size: 0.7rem;
   }
 }
+
+.delivery-shell {
+  gap: 1rem;
+}
+
+.delivery-agent-header,
+.delivery-toolbar,
+.delivery-tabs,
+.delivery-dashboard-filters,
+.delivery-dashboard-metrics,
+.delivery-order-actions,
+.delivery-summary-row {
+  flex-wrap: wrap;
+}
+
+.delivery-summary-stack,
+.delivery-orders-stack,
+.delivery-dashboard-stack {
+  gap: 0.85rem;
+}
+
+.delivery-summary-card {
+  min-width: 0;
+}
+
+.delivery-packing-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.delivery-packing-table {
+  min-width: 460px;
+}
+
+.delivery-order-card {
+  min-width: 0;
+}
+
+.delivery-order-actions .btn {
+  min-width: 0;
+}
+
+.delivery-order-menu {
+  width: min(280px, calc(100vw - 48px));
+}
+
+.delivery-dashboard-metric {
+  min-width: 160px;
+}
+
+@media (max-width: 768px) {
+  .delivery-portal {
+    padding-inline: 12px;
+  }
+
+  .delivery-shell {
+    padding: 16px;
+  }
+
+  .delivery-agent-header {
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .delivery-toolbar,
+  .delivery-tabs,
+  .delivery-dashboard-filters,
+  .delivery-dashboard-metrics,
+  .delivery-order-actions {
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .delivery-toolbar .btn,
+  .delivery-tabs .btn,
+  .delivery-order-actions .btn,
+  .delivery-dashboard-filters .btn,
+  .delivery-dashboard-filters .input,
+  .delivery-dashboard-filters .select {
+    width: 100%;
+  }
+
+  .delivery-summary-card {
+    padding: 14px;
+  }
+
+  .delivery-summary-row {
+    gap: 8px;
+  }
+
+  .delivery-packing-table {
+    min-width: 360px;
+    font-size: 0.82rem;
+  }
+
+  .delivery-packing-table th,
+  .delivery-packing-table td {
+    padding: 0.55rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .delivery-order-card {
+    padding: 14px;
+  }
+
+  .delivery-order-card > div {
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  .delivery-order-menu {
+    left: 0;
+    right: auto !important;
+    width: calc(100% - 24px);
+    min-width: 0 !important;
+  }
+
+  .delivery-dashboard-metric {
+    width: 100%;
+    min-width: 0 !important;
+  }
+}
