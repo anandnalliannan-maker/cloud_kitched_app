@@ -94,6 +94,25 @@ const pendingPaymentStorageKey = "msk_pending_payment";
 const customerProfileStorageKeyPrefix = "msk_customer_profile";
 const MIN_HOME_DELIVERY_ORDER = 60;
 
+function getApplicableDeliveryFee(params: {
+  deliveryType: string;
+  isLunchMenu: boolean;
+  itemsTotal: number;
+  subAreaFee: number;
+}) {
+  const { deliveryType, isLunchMenu, itemsTotal, subAreaFee } = params;
+  if (deliveryType !== "delivery") {
+    return 0;
+  }
+  if (isLunchMenu) {
+    return 0;
+  }
+  if (itemsTotal > 199) {
+    return 0;
+  }
+  return subAreaFee;
+}
+
 function normalizePhoneForOtp(raw: string) {
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 10) return `+91${digits}`;
@@ -758,10 +777,12 @@ export default function CustomerPage() {
     [menuMealLabel]
   );
 
-  const selectedDeliveryFee =
-    deliveryType === "delivery" && !isLunchMenu
-      ? selectedSubAreaFee
-      : 0;
+  const selectedDeliveryFee = getApplicableDeliveryFee({
+    deliveryType,
+    isLunchMenu,
+    itemsTotal,
+    subAreaFee: selectedSubAreaFee,
+  });
 
   const total = itemsTotal + selectedDeliveryFee;
 
@@ -1221,8 +1242,12 @@ export default function CustomerPage() {
         }
         const mealKey = getAssignmentMealKey(menuData.mealType || "");
         const mealIsLunch = mealKey === "Lunch";
-        effectiveDeliveryFee =
-          deliveryType === "delivery" && !mealIsLunch ? selectedSubAreaFee : 0;
+        effectiveDeliveryFee = getApplicableDeliveryFee({
+          deliveryType,
+          isLunchMenu: mealIsLunch,
+          itemsTotal,
+          subAreaFee: selectedSubAreaFee,
+        });
         effectiveOrderTotal = itemsTotal + effectiveDeliveryFee;
         const remaining = (menuData.remaining || menuData.items || []).map(
           (item: any) => ({ ...item })
