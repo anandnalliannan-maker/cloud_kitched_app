@@ -1240,6 +1240,27 @@ export default function OwnerPage() {
       return true;
     });
   }, [masterSubAreas, subAreaMasterFilters]);
+  const customerMasterByPhone = useMemo(
+    () =>
+      Object.fromEntries(
+        customerMasterRecords.map((record) => [
+          normalizePhone(record.normalizedPhone || record.phone || ""),
+          record,
+        ])
+      ) as Record<string, CustomerMasterRecord>,
+    [customerMasterRecords]
+  );
+  const getOrderDisplaySubArea = (order: Order) => {
+    if (order.subArea && order.subArea.trim()) {
+      return order.subArea.trim();
+    }
+    const normalizedOrderPhone = normalizePhone(order.phone || "");
+    const matchedCustomer = customerMasterByPhone[normalizedOrderPhone];
+    if (matchedCustomer?.subArea && matchedCustomer.subArea.trim()) {
+      return matchedCustomer.subArea.trim();
+    }
+    return "";
+  };
   const unassignedCustomSubAreas = useMemo(() => {
     const mealKey = getAssignmentMealKey(assignmentMeal);
     return serviceAreas.flatMap((area) =>
@@ -5765,9 +5786,9 @@ export default function OwnerPage() {
                                 </td>
                                 <td>
                                   {order.area || "-"}
-                                  {order.subArea ? (
-                                    <small className="payments-subtext">{order.subArea}</small>
-                                  ) : null}
+                                  <small className="payments-subtext">
+                                    {getOrderDisplaySubArea(order) || "No sub area mapped"}
+                                  </small>
                                 </td>
                                 <td>
                                   {order.address || "-"}
@@ -6467,9 +6488,9 @@ export default function OwnerPage() {
                                 </td>
                                 <td>
                                   {order.area || "-"}
-                                  {order.subArea ? (
-                                    <small className="payments-subtext">{order.subArea}</small>
-                                  ) : null}
+                                  <small className="payments-subtext">
+                                    {getOrderDisplaySubArea(order) || "No sub area mapped"}
+                                  </small>
                                 </td>
                                 <td>
                                   {order.address || "-"}
