@@ -336,8 +336,22 @@ export default function CustomerPage() {
         snap.docs.find((candidate) => {
           const candidateData = candidate.data() as any;
           if (candidateData.isArchived || candidateData.ordersStopped) return false;
-          const effectiveItems = candidateData.remaining || candidateData.items || [];
-          return effectiveItems.some((item: any) => item.active !== false);
+          const itemIds = Array.from(
+            new Set(
+              [...(candidateData.items || []), ...(candidateData.remaining || [])].map(
+                (item: any) => item.itemId
+              )
+            )
+          );
+          return itemIds.some((itemId) => {
+            const itemRecord = (candidateData.items || []).find(
+              (item: any) => item.itemId === itemId
+            );
+            const remainingRecord = (candidateData.remaining || []).find(
+              (item: any) => item.itemId === itemId
+            );
+            return itemRecord?.active !== false && remainingRecord?.active !== false;
+          });
         }) || snap.docs[0];
       const data = docSnap.data() as any;
 
@@ -357,25 +371,35 @@ export default function CustomerPage() {
         return;
       }
 
-      const effectiveItems = data.remaining || data.items || [];
+      const itemIds = Array.from(
+        new Set(
+          [...(data.items || []), ...(data.remaining || [])].map((item: any) => item.itemId)
+        )
+      );
+      const effectiveItems = itemIds.map((itemId) => {
+        const itemRecord = (data.items || []).find((item: any) => item.itemId === itemId) || {};
+        const remainingRecord =
+          (data.remaining || []).find((item: any) => item.itemId === itemId) || {};
+        return {
+          ...itemRecord,
+          ...remainingRecord,
+          itemId,
+          active: itemRecord.active !== false && remainingRecord.active !== false,
+          qty:
+            typeof remainingRecord.qty === "number"
+              ? remainingRecord.qty
+              : typeof itemRecord.qty === "number"
+                ? itemRecord.qty
+                : 0,
+        };
+      });
       const remainingMap = new Map(
         effectiveItems
           .filter((item: any) => item.active !== false)
           .map((item: any) => [item.itemId, item.qty ?? 0])
       );
-      const sourceItems =
-        data.items && data.items.length
-          ? data.items.filter((item: any) =>
-              effectiveItems.some((effectiveItem: any) => effectiveItem.itemId === item.itemId)
-            )
-          : effectiveItems;
-      const menuItems = sourceItems
-        .filter((item: any) => {
-          const effectiveItem = effectiveItems.find(
-            (candidate: any) => candidate.itemId === item.itemId
-          );
-          return (effectiveItem || item).active !== false;
-        })
+      const menuItems = effectiveItems
+        .filter((item: any) => item.active !== false)
         .map((item: any) => ({
           id: item.itemId,
           name: item.name,
