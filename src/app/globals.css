@@ -1546,6 +1546,21 @@ a {
   background: #f7faf9;
 }
 
+.owner-assignment-table .table-filter-row th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: #f9fbfa;
+}
+
+.owner-assignment-table .table-filter-row .input,
+.owner-assignment-table .table-filter-row .select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+}
+
 .owner-assignment-editor-cell {
   background: #f9fcfb !important;
   padding: 0 !important;

@@ -893,7 +893,27 @@ export default function OwnerPage() {
   const [openManagedAreaId, setOpenManagedAreaId] = useState<string | null>(null);
   const [editingAreaSubAreaKey, setEditingAreaSubAreaKey] = useState<string | null>(null);
   const [areaSubAreaEditDrafts, setAreaSubAreaEditDrafts] = useState<Record<string, string>>({});
-  const [masterDataSearch, setMasterDataSearch] = useState("");
+  const [masterDataTab, setMasterDataTab] = useState<"lookup" | "subAreas" | "pending">("lookup");
+  const [pendingMasterFilters, setPendingMasterFilters] = useState({
+    phone: "",
+    customer: "",
+    area: "",
+    address: "",
+  });
+  const [lookupMasterFilters, setLookupMasterFilters] = useState({
+    phone: "",
+    customer: "",
+    area: "",
+    subArea: "",
+    address: "",
+    status: "All",
+  });
+  const [subAreaMasterFilters, setSubAreaMasterFilters] = useState({
+    subArea: "",
+    area: "",
+    fee: "",
+    agent: "",
+  });
   const [editingCustomerMasterId, setEditingCustomerMasterId] = useState<string | null>(null);
   const [customerMasterEditForm, setCustomerMasterEditForm] = useState({
     customerName: "",
@@ -1103,22 +1123,103 @@ export default function OwnerPage() {
     () => customerMasterRecords.filter((record) => !record.subArea),
     [customerMasterRecords]
   );
+  const filteredPendingCustomerMasterRecords = useMemo(() => {
+    return pendingCustomerMasterRecords.filter((record) => {
+      if (
+        pendingMasterFilters.phone &&
+        !(record.phone || "").toLowerCase().includes(pendingMasterFilters.phone.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        pendingMasterFilters.customer &&
+        !(record.customerName || "").toLowerCase().includes(pendingMasterFilters.customer.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        pendingMasterFilters.area &&
+        !(record.area || "").toLowerCase().includes(pendingMasterFilters.area.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        pendingMasterFilters.address &&
+        !(record.address || "").toLowerCase().includes(pendingMasterFilters.address.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [pendingCustomerMasterRecords, pendingMasterFilters]);
   const filteredCustomerMasterRecords = useMemo(() => {
-    const search = masterDataSearch.trim().toLowerCase();
-    if (!search) return customerMasterRecords;
     return customerMasterRecords.filter((record) => {
-      const haystack = `${record.phone || ""} ${record.customerName || ""} ${record.area || ""} ${record.subArea || ""} ${record.address || ""}`.toLowerCase();
-      return haystack.includes(search);
+      if (
+        lookupMasterFilters.phone &&
+        !(record.phone || "").toLowerCase().includes(lookupMasterFilters.phone.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        lookupMasterFilters.customer &&
+        !(record.customerName || "").toLowerCase().includes(lookupMasterFilters.customer.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        lookupMasterFilters.area &&
+        !(record.area || "").toLowerCase().includes(lookupMasterFilters.area.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        lookupMasterFilters.subArea &&
+        !(record.subArea || "").toLowerCase().includes(lookupMasterFilters.subArea.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        lookupMasterFilters.address &&
+        !(record.address || "").toLowerCase().includes(lookupMasterFilters.address.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      const recordStatus = record.subArea ? "Mapped" : "Pending";
+      if (lookupMasterFilters.status !== "All" && recordStatus !== lookupMasterFilters.status) {
+        return false;
+      }
+      return true;
     });
-  }, [customerMasterRecords, masterDataSearch]);
+  }, [customerMasterRecords, lookupMasterFilters]);
   const filteredMasterSubAreaRecords = useMemo(() => {
-    const search = masterDataSearch.trim().toLowerCase();
-    if (!search) return masterSubAreas;
     return masterSubAreas.filter((record) => {
-      const haystack = `${record.name || ""} ${record.parentArea || ""} ${record.deliveryAgentName || ""}`.toLowerCase();
-      return haystack.includes(search);
+      if (
+        subAreaMasterFilters.subArea &&
+        !(record.name || "").toLowerCase().includes(subAreaMasterFilters.subArea.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        subAreaMasterFilters.area &&
+        !(record.parentArea || "").toLowerCase().includes(subAreaMasterFilters.area.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        subAreaMasterFilters.agent &&
+        !(record.deliveryAgentName || "").toLowerCase().includes(subAreaMasterFilters.agent.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        subAreaMasterFilters.fee &&
+        !String(Number(record.deliveryFee || 0)).includes(subAreaMasterFilters.fee.trim())
+      ) {
+        return false;
+      }
+      return true;
     });
-  }, [masterSubAreas, masterDataSearch]);
+  }, [masterSubAreas, subAreaMasterFilters]);
   const unassignedCustomSubAreas = useMemo(() => {
     const mealKey = getAssignmentMealKey(assignmentMeal);
     return serviceAreas.flatMap((area) =>
@@ -3405,6 +3506,82 @@ export default function OwnerPage() {
       ),
     [filteredActiveOrders, placedNotificationSentIds]
   );
+
+  const exportRowsAsCsv = (filename: string, headers: string[], rows: unknown[][]) => {
+    const csvEscape = (value: unknown) => {
+      const text = String(value ?? "").replace(/"/g, '""');
+      return `"${text}"`;
+    };
+    const csvLines = [
+      headers.map(csvEscape).join(","),
+      ...rows.map((row) => row.map(csvEscape).join(",")),
+    ];
+    const blob = new Blob([`\uFEFF${csvLines.join("\r\n")}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPendingMasterCsv = () => {
+    if (!filteredPendingCustomerMasterRecords.length) {
+      window.alert("No pending customer mappings to export.");
+      return;
+    }
+    exportRowsAsCsv(
+      "master-data-pending-customers.csv",
+      ["Phone", "Customer", "Area", "Address", "Status"],
+      filteredPendingCustomerMasterRecords.map((record) => [
+        record.phone || "",
+        record.customerName || "",
+        record.area || "",
+        record.address || "",
+        "Pending",
+      ])
+    );
+  };
+
+  const exportCustomerLookupCsv = () => {
+    if (!filteredCustomerMasterRecords.length) {
+      window.alert("No customer master rows to export.");
+      return;
+    }
+    exportRowsAsCsv(
+      "master-data-customer-lookup.csv",
+      ["Phone", "Customer", "Area", "Sub Area", "Address", "Status"],
+      filteredCustomerMasterRecords.map((record) => [
+        record.phone || "",
+        record.customerName || "",
+        record.area || "",
+        record.subArea || "",
+        record.address || "",
+        record.subArea ? "Mapped" : "Pending",
+      ])
+    );
+  };
+
+  const exportSubAreaMasterCsv = () => {
+    if (!filteredMasterSubAreaRecords.length) {
+      window.alert("No sub area master rows to export.");
+      return;
+    }
+    exportRowsAsCsv(
+      "master-data-sub-area-master.csv",
+      ["Sub Area", "Area", "Delivery Fee", "Delivery Agent"],
+      filteredMasterSubAreaRecords.map((record) => [
+        record.name || "",
+        record.parentArea || "",
+        Number(record.deliveryFee || 0),
+        record.deliveryAgentName || "",
+      ])
+    );
+  };
 
   const exportActiveOrdersCsv = () => {
     if (!filteredActiveOrders.length) {
@@ -7661,23 +7838,55 @@ export default function OwnerPage() {
               <small className="payments-subtext">
                 Maintain phone to sub-area lookup, sub-area delivery agent mapping, and sub-area delivery fees.
               </small>
-              <input
-                className="input"
-                placeholder="Search phone / customer / sub area / agent"
-                value={masterDataSearch}
-                onChange={(e) => setMasterDataSearch(e.target.value)}
-              />
-              <div className="card stack">
-                <strong>Import Master Data</strong>
-                <small className="payments-subtext">
-                  Export each Excel sheet as CSV, then upload them here one by one.
-                </small>
-                <div className="owner-summary-grid">
+              <div className="row" style={{ gap: 10 }}>
+                <button
+                  className={`btn ${masterDataTab === "lookup" ? "" : "secondary"}`}
+                  onClick={() => setMasterDataTab("lookup")}
+                >
+                  Customer Lookup
+                </button>
+                <button
+                  className={`btn ${masterDataTab === "subAreas" ? "" : "secondary"}`}
+                  onClick={() => setMasterDataTab("subAreas")}
+                >
+                  Sub Area Master
+                </button>
+                <button
+                  className={`btn ${masterDataTab === "pending" ? "" : "secondary"}`}
+                  onClick={() => setMasterDataTab("pending")}
+                >
+                  New Customer Pending Mapping
+                </button>
+              </div>
+              {masterImportingSheet && (
+                <small className="payments-subtext">Importing {masterImportingSheet} data...</small>
+              )}
+              {masterImportStatus && (
+                <small className="customer-success-text">{masterImportStatus}</small>
+              )}
+              {masterImportError && (
+                <small className="customer-error-text">{masterImportError}</small>
+              )}
+
+              {masterDataTab === "pending" && (
+                <div className="card stack">
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <strong>New Customers Pending Mapping</strong>
+                      <small className="payments-subtext" style={{ display: "block" }}>
+                        Orders from unknown phones are captured here for sub-area mapping.
+                      </small>
+                    </div>
+                    <div className="row" style={{ gap: 8 }}>
+                      <span className="badge">{filteredPendingCustomerMasterRecords.length}</span>
+                      <button className="btn secondary btn-compact" onClick={exportPendingMasterCsv}>
+                        Export to Excel
+                      </button>
+                    </div>
+                  </div>
                   <div className="card stack">
-                    <strong>Sheet 1: Sub Area</strong>
-                    <small className="payments-subtext">
-                      Columns: Mobile, Sub Area
-                    </small>
+                    <strong>Import Sheet 1: Sub Area</strong>
+                    <small className="payments-subtext">Columns: Mobile, Sub Area</small>
                     <textarea
                       className="input"
                       rows={6}
@@ -7688,126 +7897,29 @@ export default function OwnerPage() {
                       }
                       disabled={masterImportingSheet !== ""}
                     />
-                    <button
-                      className="btn secondary"
-                      onClick={() => importMasterPaste("subArea")}
-                      disabled={masterImportingSheet !== ""}
-                    >
-                      Paste Import
-                    </button>
-                    <input
-                      className="input"
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          await importMasterSheet(file, "subArea");
-                        }
-                        e.currentTarget.value = "";
-                      }}
-                      disabled={masterImportingSheet !== ""}
-                    />
+                    <div className="row">
+                      <button
+                        className="btn secondary"
+                        onClick={() => importMasterPaste("subArea")}
+                        disabled={masterImportingSheet !== ""}
+                      >
+                        Paste Import
+                      </button>
+                      <input
+                        className="input"
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            await importMasterSheet(file, "subArea");
+                          }
+                          e.currentTarget.value = "";
+                        }}
+                        disabled={masterImportingSheet !== ""}
+                      />
+                    </div>
                   </div>
-                  <div className="card stack">
-                    <strong>Sheet 2: Delivery Agent</strong>
-                    <small className="payments-subtext">
-                      Columns: Sub Area, Delivery Agent
-                    </small>
-                    <textarea
-                      className="input"
-                      rows={6}
-                      placeholder={"Paste two Excel columns here:\nSub Area\tDelivery Agent"}
-                      value={masterPasteData.deliveryAgent}
-                      onChange={(e) =>
-                        setMasterPasteData((prev) => ({ ...prev, deliveryAgent: e.target.value }))
-                      }
-                      disabled={masterImportingSheet !== ""}
-                    />
-                    <button
-                      className="btn secondary"
-                      onClick={() => importMasterPaste("deliveryAgent")}
-                      disabled={masterImportingSheet !== ""}
-                    >
-                      Paste Import
-                    </button>
-                    <input
-                      className="input"
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          await importMasterSheet(file, "deliveryAgent");
-                        }
-                        e.currentTarget.value = "";
-                      }}
-                      disabled={masterImportingSheet !== ""}
-                    />
-                  </div>
-                  <div className="card stack">
-                    <strong>Sheet 3: Delivery Charge</strong>
-                    <small className="payments-subtext">
-                      Columns: Sub Area, Delivery Fee
-                    </small>
-                    <textarea
-                      className="input"
-                      rows={6}
-                      placeholder={"Paste two Excel columns here:\nSub Area\tDelivery Fee"}
-                      value={masterPasteData.deliveryCharge}
-                      onChange={(e) =>
-                        setMasterPasteData((prev) => ({ ...prev, deliveryCharge: e.target.value }))
-                      }
-                      disabled={masterImportingSheet !== ""}
-                    />
-                    <button
-                      className="btn secondary"
-                      onClick={() => importMasterPaste("deliveryCharge")}
-                      disabled={masterImportingSheet !== ""}
-                    >
-                      Paste Import
-                    </button>
-                    <input
-                      className="input"
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          await importMasterSheet(file, "deliveryCharge");
-                        }
-                        e.currentTarget.value = "";
-                      }}
-                      disabled={masterImportingSheet !== ""}
-                    />
-                  </div>
-                </div>
-                {masterImportingSheet && (
-                  <small className="payments-subtext">
-                    Importing {masterImportingSheet} data...
-                  </small>
-                )}
-                {masterImportStatus && (
-                  <small className="customer-success-text">{masterImportStatus}</small>
-                )}
-                {masterImportError && (
-                  <small className="customer-error-text">{masterImportError}</small>
-                )}
-              </div>
-
-              <div className="card stack">
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <div>
-                    <strong>New Customers Pending Mapping</strong>
-                    <small className="payments-subtext" style={{ display: "block" }}>
-                      Orders from unknown phones are captured here for sub-area mapping.
-                    </small>
-                  </div>
-                  <span className="badge">{pendingCustomerMasterRecords.length}</span>
-                </div>
-                {pendingCustomerMasterRecords.length === 0 ? (
-                  <small className="payments-subtext">No pending customer mappings.</small>
-                ) : (
                   <div className="table-scroll">
                     <table className="payments-table payments-table-compact owner-assignment-table">
                       <thead>
@@ -7818,385 +7930,592 @@ export default function OwnerPage() {
                           <th>Address</th>
                           <th>Action</th>
                         </tr>
+                        <tr className="table-filter-row">
+                          <th>
+                            <input
+                              className="input"
+                              placeholder="Filter"
+                              value={pendingMasterFilters.phone}
+                              onChange={(e) =>
+                                setPendingMasterFilters((prev) => ({ ...prev, phone: e.target.value }))
+                              }
+                            />
+                          </th>
+                          <th>
+                            <input
+                              className="input"
+                              placeholder="Filter"
+                              value={pendingMasterFilters.customer}
+                              onChange={(e) =>
+                                setPendingMasterFilters((prev) => ({ ...prev, customer: e.target.value }))
+                              }
+                            />
+                          </th>
+                          <th>
+                            <input
+                              className="input"
+                              placeholder="Filter"
+                              value={pendingMasterFilters.area}
+                              onChange={(e) =>
+                                setPendingMasterFilters((prev) => ({ ...prev, area: e.target.value }))
+                              }
+                            />
+                          </th>
+                          <th>
+                            <input
+                              className="input"
+                              placeholder="Filter"
+                              value={pendingMasterFilters.address}
+                              onChange={(e) =>
+                                setPendingMasterFilters((prev) => ({ ...prev, address: e.target.value }))
+                              }
+                            />
+                          </th>
+                          <th />
+                        </tr>
                       </thead>
                       <tbody>
-                        {pendingCustomerMasterRecords.map((record) => (
-                          <Fragment key={`pending-master-${record.id}`}>
-                            <tr>
-                              <td>{record.phone}</td>
-                              <td>{record.customerName || "-"}</td>
-                              <td>{record.area || "-"}</td>
-                              <td>{record.address || "-"}</td>
-                              <td>
-                                <button
-                                  className="btn secondary btn-compact"
-                                  onClick={() => openCustomerMasterEditor(record)}
-                                >
-                                  Map Sub Area
-                                </button>
-                              </td>
-                            </tr>
-                            {editingCustomerMasterId === record.id && (
+                        {filteredPendingCustomerMasterRecords.length === 0 ? (
+                          <tr>
+                            <td colSpan={5}>
+                              <small className="payments-subtext">No pending customer mappings.</small>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredPendingCustomerMasterRecords.map((record) => (
+                            <Fragment key={`pending-master-${record.id}`}>
                               <tr>
-                                <td colSpan={5} className="owner-assignment-editor-cell">
-                                  <div className="owner-assignment-editor">
-                                    <div className="row">
-                                      <input
-                                        className="input"
-                                        placeholder="Customer name"
-                                        value={customerMasterEditForm.customerName}
-                                        onChange={(e) =>
-                                          setCustomerMasterEditForm({
-                                            ...customerMasterEditForm,
-                                            customerName: e.target.value,
-                                          })
-                                        }
-                                      />
-                                      <select
-                                        className="select"
-                                        value={customerMasterEditForm.area}
-                                        onChange={(e) =>
-                                          setCustomerMasterEditForm({
-                                            ...customerMasterEditForm,
-                                            area: e.target.value,
-                                          })
-                                        }
-                                      >
-                                        <option value="">Select area</option>
-                                        {areaOptions.map((area) => (
-                                          <option key={area} value={area}>
-                                            {area}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      <input
-                                        className="input"
-                                        placeholder="Sub area"
-                                        value={customerMasterEditForm.subArea}
-                                        onChange={(e) =>
-                                          setCustomerMasterEditForm({
-                                            ...customerMasterEditForm,
-                                            subArea: e.target.value,
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                    <input
-                                      className="input"
-                                      placeholder="Address"
-                                      value={customerMasterEditForm.address}
-                                      onChange={(e) =>
-                                        setCustomerMasterEditForm({
-                                          ...customerMasterEditForm,
-                                          address: e.target.value,
-                                        })
-                                      }
-                                    />
-                                    <div className="row">
-                                      <button className="btn btn-compact" onClick={() => saveCustomerMasterRecord(record)}>
-                                        Save
-                                      </button>
-                                      <button
-                                        className="btn secondary btn-compact"
-                                        onClick={() => setEditingCustomerMasterId(null)}
-                                      >
-                                        Close
-                                      </button>
-                                    </div>
-                                  </div>
+                                <td>{record.phone}</td>
+                                <td>{record.customerName || "-"}</td>
+                                <td>{record.area || "-"}</td>
+                                <td>{record.address || "-"}</td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => openCustomerMasterEditor(record)}
+                                  >
+                                    Map Sub Area
+                                  </button>
                                 </td>
                               </tr>
-                            )}
-                          </Fragment>
-                        ))}
+                              {editingCustomerMasterId === record.id && (
+                                <tr>
+                                  <td colSpan={5} className="owner-assignment-editor-cell">
+                                    <div className="owner-assignment-editor">
+                                      <div className="row">
+                                        <input
+                                          className="input"
+                                          placeholder="Customer name"
+                                          value={customerMasterEditForm.customerName}
+                                          onChange={(e) =>
+                                            setCustomerMasterEditForm({
+                                              ...customerMasterEditForm,
+                                              customerName: e.target.value,
+                                            })
+                                          }
+                                        />
+                                        <select
+                                          className="select"
+                                          value={customerMasterEditForm.area}
+                                          onChange={(e) =>
+                                            setCustomerMasterEditForm({
+                                              ...customerMasterEditForm,
+                                              area: e.target.value,
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select area</option>
+                                          {areaOptions.map((area) => (
+                                            <option key={area} value={area}>
+                                              {area}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <input
+                                          className="input"
+                                          placeholder="Sub area"
+                                          value={customerMasterEditForm.subArea}
+                                          onChange={(e) =>
+                                            setCustomerMasterEditForm({
+                                              ...customerMasterEditForm,
+                                              subArea: e.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                      <input
+                                        className="input"
+                                        placeholder="Address"
+                                        value={customerMasterEditForm.address}
+                                        onChange={(e) =>
+                                          setCustomerMasterEditForm({
+                                            ...customerMasterEditForm,
+                                            address: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <div className="row">
+                                        <button className="btn btn-compact" onClick={() => saveCustomerMasterRecord(record)}>
+                                          Save
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => setEditingCustomerMasterId(null)}
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              <div className="card stack">
-                <strong>Customer Lookup</strong>
-                <div className="table-scroll">
-                  <table className="payments-table payments-table-compact owner-assignment-table">
-                    <thead>
-                      <tr>
-                        <th>Phone</th>
-                        <th>Customer</th>
-                        <th>Area</th>
-                        <th>Sub Area</th>
-                        <th>Address</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCustomerMasterRecords.map((record) => (
-                        <Fragment key={`customer-master-${record.id}`}>
+              {masterDataTab === "lookup" && (
+                <div className="card stack">
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <strong>Customer Lookup</strong>
+                      <small className="payments-subtext" style={{ display: "block" }}>
+                        Lookup and maintain phone to sub-area mapping.
+                      </small>
+                    </div>
+                    <button className="btn secondary btn-compact" onClick={exportCustomerLookupCsv}>
+                      Export to Excel
+                    </button>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact owner-assignment-table">
+                      <thead>
+                        <tr>
+                          <th>Phone</th>
+                          <th>Customer</th>
+                          <th>Area</th>
+                          <th>Sub Area</th>
+                          <th>Address</th>
+                          <th>Status</th>
+                          <th>Action</th>
+                        </tr>
+                        <tr className="table-filter-row">
+                          <th>
+                            <input className="input" placeholder="Filter" value={lookupMasterFilters.phone} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, phone: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={lookupMasterFilters.customer} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, customer: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={lookupMasterFilters.area} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, area: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={lookupMasterFilters.subArea} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, subArea: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={lookupMasterFilters.address} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, address: e.target.value }))} />
+                          </th>
+                          <th>
+                            <select className="select" value={lookupMasterFilters.status} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, status: e.target.value }))}>
+                              <option value="All">All</option>
+                              <option value="Mapped">Mapped</option>
+                              <option value="Pending">Pending</option>
+                            </select>
+                          </th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCustomerMasterRecords.length === 0 ? (
                           <tr>
-                            <td>{record.phone}</td>
-                            <td>{record.customerName || "-"}</td>
-                            <td>{record.area || "-"}</td>
-                            <td>{record.subArea || "-"}</td>
-                            <td>{record.address || "-"}</td>
-                            <td>{record.subArea ? "Mapped" : "Pending"}</td>
-                            <td>
-                              <button
-                                className="btn secondary btn-compact"
-                                onClick={() => openCustomerMasterEditor(record)}
-                              >
-                                Edit
-                              </button>
+                            <td colSpan={7}>
+                              <small className="payments-subtext">No customer records found.</small>
                             </td>
                           </tr>
-                          {editingCustomerMasterId === record.id && (
-                            <tr>
-                              <td colSpan={7} className="owner-assignment-editor-cell">
-                                <div className="owner-assignment-editor">
-                                  <div className="row">
-                                    <input
-                                      className="input"
-                                      placeholder="Customer name"
-                                      value={customerMasterEditForm.customerName}
-                                      onChange={(e) =>
-                                        setCustomerMasterEditForm({
-                                          ...customerMasterEditForm,
-                                          customerName: e.target.value,
-                                        })
-                                      }
-                                    />
-                                    <select
-                                      className="select"
-                                      value={customerMasterEditForm.area}
-                                      onChange={(e) =>
-                                        setCustomerMasterEditForm({
-                                          ...customerMasterEditForm,
-                                          area: e.target.value,
-                                        })
-                                      }
-                                    >
-                                      <option value="">Select area</option>
-                                      {areaOptions.map((area) => (
-                                        <option key={area} value={area}>
-                                          {area}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <input
-                                      className="input"
-                                      placeholder="Sub area"
-                                      value={customerMasterEditForm.subArea}
-                                      onChange={(e) =>
-                                        setCustomerMasterEditForm({
-                                          ...customerMasterEditForm,
-                                          subArea: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  <input
-                                    className="input"
-                                    placeholder="Address"
-                                    value={customerMasterEditForm.address}
-                                    onChange={(e) =>
-                                      setCustomerMasterEditForm({
-                                        ...customerMasterEditForm,
-                                        address: e.target.value,
-                                      })
-                                    }
-                                  />
-                                  <div className="row">
-                                    <button className="btn btn-compact" onClick={() => saveCustomerMasterRecord(record)}>
-                                      Save
-                                    </button>
-                                    <button
-                                      className="btn secondary btn-compact"
-                                      onClick={() => setEditingCustomerMasterId(null)}
-                                    >
-                                      Close
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </tbody>
-                  </table>
+                        ) : (
+                          filteredCustomerMasterRecords.map((record) => (
+                            <Fragment key={`customer-master-${record.id}`}>
+                              <tr>
+                                <td>{record.phone}</td>
+                                <td>{record.customerName || "-"}</td>
+                                <td>{record.area || "-"}</td>
+                                <td>{record.subArea || "-"}</td>
+                                <td>{record.address || "-"}</td>
+                                <td>{record.subArea ? "Mapped" : "Pending"}</td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => openCustomerMasterEditor(record)}
+                                  >
+                                    Edit
+                                  </button>
+                                </td>
+                              </tr>
+                              {editingCustomerMasterId === record.id && (
+                                <tr>
+                                  <td colSpan={7} className="owner-assignment-editor-cell">
+                                    <div className="owner-assignment-editor">
+                                      <div className="row">
+                                        <input
+                                          className="input"
+                                          placeholder="Customer name"
+                                          value={customerMasterEditForm.customerName}
+                                          onChange={(e) =>
+                                            setCustomerMasterEditForm({
+                                              ...customerMasterEditForm,
+                                              customerName: e.target.value,
+                                            })
+                                          }
+                                        />
+                                        <select
+                                          className="select"
+                                          value={customerMasterEditForm.area}
+                                          onChange={(e) =>
+                                            setCustomerMasterEditForm({
+                                              ...customerMasterEditForm,
+                                              area: e.target.value,
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select area</option>
+                                          {areaOptions.map((area) => (
+                                            <option key={area} value={area}>
+                                              {area}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <input
+                                          className="input"
+                                          placeholder="Sub area"
+                                          value={customerMasterEditForm.subArea}
+                                          onChange={(e) =>
+                                            setCustomerMasterEditForm({
+                                              ...customerMasterEditForm,
+                                              subArea: e.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                      <input
+                                        className="input"
+                                        placeholder="Address"
+                                        value={customerMasterEditForm.address}
+                                        onChange={(e) =>
+                                          setCustomerMasterEditForm({
+                                            ...customerMasterEditForm,
+                                            address: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <div className="row">
+                                        <button className="btn btn-compact" onClick={() => saveCustomerMasterRecord(record)}>
+                                          Save
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => setEditingCustomerMasterId(null)}
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="card stack">
-                <strong>Sub Area Master</strong>
-                <div className="row">
-                  <input
-                    className="input"
-                    placeholder="Sub area name"
-                    value={masterSubAreaCreateForm.name}
-                    onChange={(e) =>
-                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, name: e.target.value })
-                    }
-                  />
-                  <select
-                    className="select"
-                    value={masterSubAreaCreateForm.parentArea}
-                    onChange={(e) =>
-                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, parentArea: e.target.value })
-                    }
-                  >
-                    <option value="">Select area</option>
-                    {areaOptions.map((area) => (
-                      <option key={area} value={area}>
-                        {area}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    placeholder="Delivery fee"
-                    value={masterSubAreaCreateForm.deliveryFee}
-                    onChange={(e) =>
-                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryFee: e.target.value })
-                    }
-                  />
-                  <select
-                    className="select"
-                    value={masterSubAreaCreateForm.deliveryAgentId}
-                    onChange={(e) =>
-                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryAgentId: e.target.value })
-                    }
-                  >
-                    <option value="">Select delivery agent</option>
-                    {deliveryAgents
-                      .filter((agent) => agent.active)
-                      .map((agent) => (
-                        <option key={agent.id} value={agent.id}>
-                          {agent.name}
+              {masterDataTab === "subAreas" && (
+                <div className="card stack">
+                  <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <strong>Sub Area Master</strong>
+                      <small className="payments-subtext" style={{ display: "block" }}>
+                        Maintain sub-area to delivery-agent and fee mapping.
+                      </small>
+                    </div>
+                    <button className="btn secondary btn-compact" onClick={exportSubAreaMasterCsv}>
+                      Export to Excel
+                    </button>
+                  </div>
+                  <div className="card stack">
+                    <div className="owner-summary-grid">
+                      <div className="card stack">
+                        <strong>Import Sheet 2: Delivery Agent</strong>
+                        <small className="payments-subtext">Columns: Sub Area, Delivery Agent</small>
+                        <textarea
+                          className="input"
+                          rows={6}
+                          placeholder={"Paste two Excel columns here:\nSub Area\tDelivery Agent"}
+                          value={masterPasteData.deliveryAgent}
+                          onChange={(e) =>
+                            setMasterPasteData((prev) => ({ ...prev, deliveryAgent: e.target.value }))
+                          }
+                          disabled={masterImportingSheet !== ""}
+                        />
+                        <div className="row">
+                          <button
+                            className="btn secondary"
+                            onClick={() => importMasterPaste("deliveryAgent")}
+                            disabled={masterImportingSheet !== ""}
+                          >
+                            Paste Import
+                          </button>
+                          <input
+                            className="input"
+                            type="file"
+                            accept=".csv,text/csv"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                await importMasterSheet(file, "deliveryAgent");
+                              }
+                              e.currentTarget.value = "";
+                            }}
+                            disabled={masterImportingSheet !== ""}
+                          />
+                        </div>
+                      </div>
+                      <div className="card stack">
+                        <strong>Import Sheet 3: Delivery Charge</strong>
+                        <small className="payments-subtext">Columns: Sub Area, Delivery Fee</small>
+                        <textarea
+                          className="input"
+                          rows={6}
+                          placeholder={"Paste two Excel columns here:\nSub Area\tDelivery Fee"}
+                          value={masterPasteData.deliveryCharge}
+                          onChange={(e) =>
+                            setMasterPasteData((prev) => ({ ...prev, deliveryCharge: e.target.value }))
+                          }
+                          disabled={masterImportingSheet !== ""}
+                        />
+                        <div className="row">
+                          <button
+                            className="btn secondary"
+                            onClick={() => importMasterPaste("deliveryCharge")}
+                            disabled={masterImportingSheet !== ""}
+                          >
+                            Paste Import
+                          </button>
+                          <input
+                            className="input"
+                            type="file"
+                            accept=".csv,text/csv"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                await importMasterSheet(file, "deliveryCharge");
+                              }
+                              e.currentTarget.value = "";
+                            }}
+                            disabled={masterImportingSheet !== ""}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="row">
+                    <input
+                      className="input"
+                      placeholder="Sub area name"
+                      value={masterSubAreaCreateForm.name}
+                      onChange={(e) =>
+                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, name: e.target.value })
+                      }
+                    />
+                    <select
+                      className="select"
+                      value={masterSubAreaCreateForm.parentArea}
+                      onChange={(e) =>
+                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, parentArea: e.target.value })
+                      }
+                    >
+                      <option value="">Select area</option>
+                      {areaOptions.map((area) => (
+                        <option key={area} value={area}>
+                          {area}
                         </option>
                       ))}
-                  </select>
-                  <button className="btn" onClick={addMasterSubAreaRecord}>
-                    Add Sub Area
-                  </button>
-                </div>
-                <div className="table-scroll">
-                  <table className="payments-table payments-table-compact owner-assignment-table">
-                    <thead>
-                      <tr>
-                        <th>Sub Area</th>
-                        <th>Area</th>
-                        <th>Delivery Fee</th>
-                        <th>Delivery Agent</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredMasterSubAreaRecords.map((record) => (
-                        <Fragment key={`sub-master-${record.id}`}>
+                    </select>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      placeholder="Delivery fee"
+                      value={masterSubAreaCreateForm.deliveryFee}
+                      onChange={(e) =>
+                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryFee: e.target.value })
+                      }
+                    />
+                    <select
+                      className="select"
+                      value={masterSubAreaCreateForm.deliveryAgentId}
+                      onChange={(e) =>
+                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryAgentId: e.target.value })
+                      }
+                    >
+                      <option value="">Select delivery agent</option>
+                      {deliveryAgents
+                        .filter((agent) => agent.active)
+                        .map((agent) => (
+                          <option key={agent.id} value={agent.id}>
+                            {agent.name}
+                          </option>
+                        ))}
+                    </select>
+                    <button className="btn" onClick={addMasterSubAreaRecord}>
+                      Add Sub Area
+                    </button>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact owner-assignment-table">
+                      <thead>
+                        <tr>
+                          <th>Sub Area</th>
+                          <th>Area</th>
+                          <th>Delivery Fee</th>
+                          <th>Delivery Agent</th>
+                          <th>Action</th>
+                        </tr>
+                        <tr className="table-filter-row">
+                          <th>
+                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.subArea} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, subArea: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.area} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, area: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.fee} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, fee: e.target.value }))} />
+                          </th>
+                          <th>
+                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.agent} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, agent: e.target.value }))} />
+                          </th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredMasterSubAreaRecords.length === 0 ? (
                           <tr>
-                            <td>{record.name}</td>
-                            <td>{record.parentArea || "-"}</td>
-                            <td>Rs. {Number(record.deliveryFee || 0)}</td>
-                            <td>{record.deliveryAgentName || "-"}</td>
-                            <td>
-                              <button
-                                className="btn secondary btn-compact"
-                                onClick={() => openMasterSubAreaEditor(record)}
-                              >
-                                Edit
-                              </button>
+                            <td colSpan={5}>
+                              <small className="payments-subtext">No sub area records found.</small>
                             </td>
                           </tr>
-                          {editingMasterSubAreaId === record.id && (
-                            <tr>
-                              <td colSpan={5} className="owner-assignment-editor-cell">
-                                <div className="owner-assignment-editor">
-                                  <div className="row">
-                                    <input
-                                      className="input"
-                                      placeholder="Sub area"
-                                      value={masterSubAreaEditForm.name}
-                                      onChange={(e) =>
-                                        setMasterSubAreaEditForm({
-                                          ...masterSubAreaEditForm,
-                                          name: e.target.value,
-                                        })
-                                      }
-                                    />
-                                    <select
-                                      className="select"
-                                      value={masterSubAreaEditForm.parentArea}
-                                      onChange={(e) =>
-                                        setMasterSubAreaEditForm({
-                                          ...masterSubAreaEditForm,
-                                          parentArea: e.target.value,
-                                        })
-                                      }
-                                    >
-                                      <option value="">Select area</option>
-                                      {areaOptions.map((area) => (
-                                        <option key={area} value={area}>
-                                          {area}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <input
-                                      className="input"
-                                      type="number"
-                                      min="0"
-                                      placeholder="Delivery fee"
-                                      value={masterSubAreaEditForm.deliveryFee}
-                                      onChange={(e) =>
-                                        setMasterSubAreaEditForm({
-                                          ...masterSubAreaEditForm,
-                                          deliveryFee: e.target.value,
-                                        })
-                                      }
-                                    />
-                                    <select
-                                      className="select"
-                                      value={masterSubAreaEditForm.deliveryAgentId}
-                                      onChange={(e) =>
-                                        setMasterSubAreaEditForm({
-                                          ...masterSubAreaEditForm,
-                                          deliveryAgentId: e.target.value,
-                                        })
-                                      }
-                                    >
-                                      <option value="">Select delivery agent</option>
-                                      {deliveryAgents
-                                        .filter((agent) => agent.active)
-                                        .map((agent) => (
-                                          <option key={agent.id} value={agent.id}>
-                                            {agent.name}
-                                          </option>
-                                        ))}
-                                    </select>
-                                  </div>
-                                  <div className="row">
-                                    <button className="btn btn-compact" onClick={() => saveMasterSubAreaRecord(record)}>
-                                      Save
-                                    </button>
-                                    <button
-                                      className="btn secondary btn-compact"
-                                      onClick={() => setEditingMasterSubAreaId(null)}
-                                    >
-                                      Close
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </tbody>
-                  </table>
+                        ) : (
+                          filteredMasterSubAreaRecords.map((record) => (
+                            <Fragment key={`sub-master-${record.id}`}>
+                              <tr>
+                                <td>{record.name}</td>
+                                <td>{record.parentArea || "-"}</td>
+                                <td>Rs. {Number(record.deliveryFee || 0)}</td>
+                                <td>{record.deliveryAgentName || "-"}</td>
+                                <td>
+                                  <button
+                                    className="btn secondary btn-compact"
+                                    onClick={() => openMasterSubAreaEditor(record)}
+                                  >
+                                    Edit
+                                  </button>
+                                </td>
+                              </tr>
+                              {editingMasterSubAreaId === record.id && (
+                                <tr>
+                                  <td colSpan={5} className="owner-assignment-editor-cell">
+                                    <div className="owner-assignment-editor">
+                                      <div className="row">
+                                        <input
+                                          className="input"
+                                          placeholder="Sub area"
+                                          value={masterSubAreaEditForm.name}
+                                          onChange={(e) =>
+                                            setMasterSubAreaEditForm({
+                                              ...masterSubAreaEditForm,
+                                              name: e.target.value,
+                                            })
+                                          }
+                                        />
+                                        <select
+                                          className="select"
+                                          value={masterSubAreaEditForm.parentArea}
+                                          onChange={(e) =>
+                                            setMasterSubAreaEditForm({
+                                              ...masterSubAreaEditForm,
+                                              parentArea: e.target.value,
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select area</option>
+                                          {areaOptions.map((area) => (
+                                            <option key={area} value={area}>
+                                              {area}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <input
+                                          className="input"
+                                          type="number"
+                                          min="0"
+                                          placeholder="Delivery fee"
+                                          value={masterSubAreaEditForm.deliveryFee}
+                                          onChange={(e) =>
+                                            setMasterSubAreaEditForm({
+                                              ...masterSubAreaEditForm,
+                                              deliveryFee: e.target.value,
+                                            })
+                                          }
+                                        />
+                                        <select
+                                          className="select"
+                                          value={masterSubAreaEditForm.deliveryAgentId}
+                                          onChange={(e) =>
+                                            setMasterSubAreaEditForm({
+                                              ...masterSubAreaEditForm,
+                                              deliveryAgentId: e.target.value,
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select delivery agent</option>
+                                          {deliveryAgents
+                                            .filter((agent) => agent.active)
+                                            .map((agent) => (
+                                              <option key={agent.id} value={agent.id}>
+                                                {agent.name}
+                                              </option>
+                                            ))}
+                                        </select>
+                                      </div>
+                                      <div className="row">
+                                        <button className="btn btn-compact" onClick={() => saveMasterSubAreaRecord(record)}>
+                                          Save
+                                        </button>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => setEditingMasterSubAreaId(null)}
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
