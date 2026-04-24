@@ -894,6 +894,7 @@ export default function OwnerPage() {
   const [editingAreaSubAreaKey, setEditingAreaSubAreaKey] = useState<string | null>(null);
   const [areaSubAreaEditDrafts, setAreaSubAreaEditDrafts] = useState<Record<string, string>>({});
   const [masterDataTab, setMasterDataTab] = useState<"lookup" | "subAreas" | "pending">("lookup");
+  const [openMasterFilterKey, setOpenMasterFilterKey] = useState<string | null>(null);
   const [pendingMasterFilters, setPendingMasterFilters] = useState({
     phone: "",
     customer: "",
@@ -1015,6 +1016,25 @@ export default function OwnerPage() {
       document.removeEventListener("mousedown", handleOutsideOrderActions);
     };
   }, [openActiveOrderActionsId]);
+
+  useEffect(() => {
+    if (!openMasterFilterKey) {
+      return;
+    }
+
+    const handleOutsideMasterFilter = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-master-filter]")) {
+        return;
+      }
+      setOpenMasterFilterKey(null);
+    };
+
+    document.addEventListener("mousedown", handleOutsideMasterFilter);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideMasterFilter);
+    };
+  }, [openMasterFilterKey]);
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>({});
   const [editPublishPrice, setEditPublishPrice] = useState<Record<string, number>>({});
   const [pickupPaymentFilters, setPickupPaymentFilters] = useState({
@@ -3821,6 +3841,42 @@ export default function OwnerPage() {
           !placedNotificationSentIds.includes(order.id)
       ),
     [filteredPastOrders, placedNotificationSentIds]
+  );
+
+  const isMasterFilterActive = (value: string) =>
+    value.trim() !== "" && value.trim().toLowerCase() !== "all";
+
+  const renderMasterFilterHeader = (
+    key: string,
+    label: string,
+    control: React.ReactNode,
+    active = false
+  ) => (
+    <div className="table-header-filter" data-master-filter>
+      <span className="table-header-filter-label">{label}</span>
+      <button
+        type="button"
+        className={`table-header-filter-trigger ${active ? "active" : ""}`}
+        onClick={() => setOpenMasterFilterKey(openMasterFilterKey === key ? null : key)}
+        aria-label={`Filter ${label}`}
+      >
+        ▼
+      </button>
+      {openMasterFilterKey === key && (
+        <div className="table-header-filter-menu">
+          {control}
+          <div className="table-header-filter-actions">
+            <button
+              type="button"
+              className="btn secondary btn-compact"
+              onClick={() => setOpenMasterFilterKey(null)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 
   return (
@@ -7924,54 +7980,67 @@ export default function OwnerPage() {
                     <table className="payments-table payments-table-compact owner-assignment-table">
                       <thead>
                         <tr>
-                          <th>Phone</th>
-                          <th>Customer</th>
-                          <th>Area</th>
-                          <th>Address</th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "pending-phone",
+                              "Phone",
+                              <input
+                                className="input"
+                                placeholder="Contains phone"
+                                value={pendingMasterFilters.phone}
+                                onChange={(e) =>
+                                  setPendingMasterFilters((prev) => ({ ...prev, phone: e.target.value }))
+                                }
+                              />,
+                              isMasterFilterActive(pendingMasterFilters.phone)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "pending-customer",
+                              "Customer",
+                              <input
+                                className="input"
+                                placeholder="Contains customer"
+                                value={pendingMasterFilters.customer}
+                                onChange={(e) =>
+                                  setPendingMasterFilters((prev) => ({ ...prev, customer: e.target.value }))
+                                }
+                              />,
+                              isMasterFilterActive(pendingMasterFilters.customer)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "pending-area",
+                              "Area",
+                              <input
+                                className="input"
+                                placeholder="Contains area"
+                                value={pendingMasterFilters.area}
+                                onChange={(e) =>
+                                  setPendingMasterFilters((prev) => ({ ...prev, area: e.target.value }))
+                                }
+                              />,
+                              isMasterFilterActive(pendingMasterFilters.area)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "pending-address",
+                              "Address",
+                              <input
+                                className="input"
+                                placeholder="Contains address"
+                                value={pendingMasterFilters.address}
+                                onChange={(e) =>
+                                  setPendingMasterFilters((prev) => ({ ...prev, address: e.target.value }))
+                                }
+                              />,
+                              isMasterFilterActive(pendingMasterFilters.address)
+                            )}
+                          </th>
                           <th>Action</th>
-                        </tr>
-                        <tr className="table-filter-row">
-                          <th>
-                            <input
-                              className="input"
-                              placeholder="Filter"
-                              value={pendingMasterFilters.phone}
-                              onChange={(e) =>
-                                setPendingMasterFilters((prev) => ({ ...prev, phone: e.target.value }))
-                              }
-                            />
-                          </th>
-                          <th>
-                            <input
-                              className="input"
-                              placeholder="Filter"
-                              value={pendingMasterFilters.customer}
-                              onChange={(e) =>
-                                setPendingMasterFilters((prev) => ({ ...prev, customer: e.target.value }))
-                              }
-                            />
-                          </th>
-                          <th>
-                            <input
-                              className="input"
-                              placeholder="Filter"
-                              value={pendingMasterFilters.area}
-                              onChange={(e) =>
-                                setPendingMasterFilters((prev) => ({ ...prev, area: e.target.value }))
-                              }
-                            />
-                          </th>
-                          <th>
-                            <input
-                              className="input"
-                              placeholder="Filter"
-                              value={pendingMasterFilters.address}
-                              onChange={(e) =>
-                                setPendingMasterFilters((prev) => ({ ...prev, address: e.target.value }))
-                              }
-                            />
-                          </th>
-                          <th />
                         </tr>
                       </thead>
                       <tbody>
@@ -8095,38 +8164,88 @@ export default function OwnerPage() {
                     <table className="payments-table payments-table-compact owner-assignment-table">
                       <thead>
                         <tr>
-                          <th>Phone</th>
-                          <th>Customer</th>
-                          <th>Area</th>
-                          <th>Sub Area</th>
-                          <th>Address</th>
-                          <th>Status</th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "lookup-phone",
+                              "Phone",
+                              <input
+                                className="input"
+                                placeholder="Contains phone"
+                                value={lookupMasterFilters.phone}
+                                onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, phone: e.target.value }))}
+                              />,
+                              isMasterFilterActive(lookupMasterFilters.phone)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "lookup-customer",
+                              "Customer",
+                              <input
+                                className="input"
+                                placeholder="Contains customer"
+                                value={lookupMasterFilters.customer}
+                                onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, customer: e.target.value }))}
+                              />,
+                              isMasterFilterActive(lookupMasterFilters.customer)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "lookup-area",
+                              "Area",
+                              <input
+                                className="input"
+                                placeholder="Contains area"
+                                value={lookupMasterFilters.area}
+                                onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, area: e.target.value }))}
+                              />,
+                              isMasterFilterActive(lookupMasterFilters.area)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "lookup-sub-area",
+                              "Sub Area",
+                              <input
+                                className="input"
+                                placeholder="Contains sub area"
+                                value={lookupMasterFilters.subArea}
+                                onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, subArea: e.target.value }))}
+                              />,
+                              isMasterFilterActive(lookupMasterFilters.subArea)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "lookup-address",
+                              "Address",
+                              <input
+                                className="input"
+                                placeholder="Contains address"
+                                value={lookupMasterFilters.address}
+                                onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, address: e.target.value }))}
+                              />,
+                              isMasterFilterActive(lookupMasterFilters.address)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "lookup-status",
+                              "Status",
+                              <select
+                                className="select"
+                                value={lookupMasterFilters.status}
+                                onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, status: e.target.value }))}
+                              >
+                                <option value="All">All</option>
+                                <option value="Mapped">Mapped</option>
+                                <option value="Pending">Pending</option>
+                              </select>,
+                              isMasterFilterActive(lookupMasterFilters.status)
+                            )}
+                          </th>
                           <th>Action</th>
-                        </tr>
-                        <tr className="table-filter-row">
-                          <th>
-                            <input className="input" placeholder="Filter" value={lookupMasterFilters.phone} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, phone: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={lookupMasterFilters.customer} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, customer: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={lookupMasterFilters.area} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, area: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={lookupMasterFilters.subArea} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, subArea: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={lookupMasterFilters.address} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, address: e.target.value }))} />
-                          </th>
-                          <th>
-                            <select className="select" value={lookupMasterFilters.status} onChange={(e) => setLookupMasterFilters((prev) => ({ ...prev, status: e.target.value }))}>
-                              <option value="All">All</option>
-                              <option value="Mapped">Mapped</option>
-                              <option value="Pending">Pending</option>
-                            </select>
-                          </th>
-                          <th />
                         </tr>
                       </thead>
                       <tbody>
@@ -8381,26 +8500,59 @@ export default function OwnerPage() {
                     <table className="payments-table payments-table-compact owner-assignment-table">
                       <thead>
                         <tr>
-                          <th>Sub Area</th>
-                          <th>Area</th>
-                          <th>Delivery Fee</th>
-                          <th>Delivery Agent</th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "sub-area-name",
+                              "Sub Area",
+                              <input
+                                className="input"
+                                placeholder="Contains sub area"
+                                value={subAreaMasterFilters.subArea}
+                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, subArea: e.target.value }))}
+                              />,
+                              isMasterFilterActive(subAreaMasterFilters.subArea)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "sub-area-parent",
+                              "Area",
+                              <input
+                                className="input"
+                                placeholder="Contains area"
+                                value={subAreaMasterFilters.area}
+                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, area: e.target.value }))}
+                              />,
+                              isMasterFilterActive(subAreaMasterFilters.area)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "sub-area-fee",
+                              "Delivery Fee",
+                              <input
+                                className="input"
+                                placeholder="Contains fee"
+                                value={subAreaMasterFilters.fee}
+                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, fee: e.target.value }))}
+                              />,
+                              isMasterFilterActive(subAreaMasterFilters.fee)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "sub-area-agent",
+                              "Delivery Agent",
+                              <input
+                                className="input"
+                                placeholder="Contains agent"
+                                value={subAreaMasterFilters.agent}
+                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, agent: e.target.value }))}
+                              />,
+                              isMasterFilterActive(subAreaMasterFilters.agent)
+                            )}
+                          </th>
                           <th>Action</th>
-                        </tr>
-                        <tr className="table-filter-row">
-                          <th>
-                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.subArea} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, subArea: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.area} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, area: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.fee} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, fee: e.target.value }))} />
-                          </th>
-                          <th>
-                            <input className="input" placeholder="Filter" value={subAreaMasterFilters.agent} onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, agent: e.target.value }))} />
-                          </th>
-                          <th />
                         </tr>
                       </thead>
                       <tbody>
