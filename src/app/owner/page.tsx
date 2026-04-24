@@ -160,6 +160,21 @@ type AreaAssignment = {
   subAreaMealLastIndex?: Record<string, Record<string, number>>;
 };
 
+type OrdersSummaryData = {
+  totalOrders: number;
+  totalItems: number;
+  totalValue: number;
+  upiValue: number;
+  codValue: number;
+  selfPickupValue: number;
+  codOrders: number;
+  itemCounts: Record<string, number>;
+  itemPairCounts: Record<string, number>;
+  byArea: Record<string, number>;
+  byDelivery: Record<string, number>;
+  byAgent: Record<string, number>;
+};
+
 const mealTypes = ["Breakfast", "Lunch", "Snacks", "Dinner"];
 const deliveryAssignmentMeals = ["Lunch", "Dinner"] as const;
 const fallbackAreas = ["Madipakkam", "Medavakkam", "Velachery"];
@@ -372,6 +387,159 @@ function getPaymentMethodLabel(order: Order) {
   return order.paymentMethod || "-";
 }
 
+function buildOrdersSummary(operationalOrders: Order[]): OrdersSummaryData {
+  const summary: OrdersSummaryData = {
+    totalOrders: 0,
+    totalItems: 0,
+    totalValue: 0,
+    upiValue: 0,
+    codValue: 0,
+    selfPickupValue: 0,
+    codOrders: 0,
+    itemCounts: {},
+    itemPairCounts: {},
+    byArea: {},
+    byDelivery: {},
+    byAgent: {},
+  };
+
+  operationalOrders.forEach((order) => {
+    summary.totalOrders += 1;
+    summary.totalItems += (order.items || []).reduce((sum, item) => sum + item.qty, 0);
+    const orderTotal = order.total || 0;
+    summary.totalValue += orderTotal;
+    if (order.deliveryType === "pickup") {
+      summary.selfPickupValue += orderTotal;
+    } else if (isCashOnDeliveryOrder(order)) {
+      summary.codValue += orderTotal;
+    } else {
+      summary.upiValue += orderTotal;
+    }
+    if (isCashOnDeliveryOrder(order)) {
+      summary.codOrders += 1;
+    }
+    (order.items || []).forEach((item) => {
+      summary.itemCounts[item.name] = (summary.itemCounts[item.name] || 0) + item.qty;
+      const pairKey = `${item.name}__${item.qty}`;
+      summary.itemPairCounts[pairKey] = (summary.itemPairCounts[pairKey] || 0) + 1;
+    });
+    const area = order.area || "Unknown";
+    summary.byArea[area] = (summary.byArea[area] || 0) + 1;
+    const deliveryType = order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery";
+    summary.byDelivery[deliveryType] = (summary.byDelivery[deliveryType] || 0) + 1;
+    const agent =
+      order.deliveryType === "delivery" ? order.assignedAgentName || "Unassigned" : "Pickup";
+    summary.byAgent[agent] = (summary.byAgent[agent] || 0) + 1;
+  });
+
+  return summary;
+}
+
+function buildAreaRows(summary: OrdersSummaryData) {
+  return Object.entries(summary.byArea)
+    .map(([area, count]) => ({ key: area, area, count }))
+    .sort((a, b) => b.count - a.count || a.area.localeCompare(b.area));
+}
+
+function buildItemRows(summary: OrdersSummaryData) {
+  return Object.entries(summary.itemCounts)
+    .map(([itemName, count]) => ({ key: itemName, itemName, count }))
+    .sort((a, b) => b.count - a.count || a.itemName.localeCompare(b.itemName));
+}
+
+function buildPackingMatrix(summary: OrdersSummaryData) {
+  const packQtySet = new Set<number>();
+  const grouped: Record<string, Record<number, number>> = {};
+
+  Object.entries(summary.itemPairCounts).forEach(([pairKey, count]) => {
+    const [itemName, packQtyRaw] = pairKey.split("__");
+    const packQty = Number(packQtyRaw || 0);
+    if (!itemName || !packQty) return;
+    packQtySet.add(packQty);
+    if (!grouped[itemName]) {
+      grouped[itemName] = {};
+    }
+    grouped[itemName][packQty] = count;
+  });
+
+  const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
+  const rows = Object.entries(grouped)
+    .map(([itemName, buckets]) => ({
+      key: itemName,
+      itemName,
+      buckets,
+    }))
+    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+
+  return { packQtyColumns, rows };
+}
+
+function buildDeliveryTypeRows(summary: OrdersSummaryData) {
+  return Object.entries(summary.byDelivery)
+    .map(([deliveryType, count]) => ({ key: deliveryType, deliveryType, count }))
+    .sort((a, b) => b.count - a.count || a.deliveryType.localeCompare(b.deliveryType));
+}
+
+function buildAgentDetailRows(operationalOrders: Order[]) {
+  const grouped: Record<
+    string,
+    {
+      key: string;
+      agent: string;
+      orders: number;
+      totalItems: number;
+      totalValue: number;
+      areas: Record<string, number>;
+      itemCounts: Record<string, number>;
+    }
+  > = {};
+
+  operationalOrders.forEach((order) => {
+    const agent =
+      order.deliveryType === "delivery" ? order.assignedAgentName || "Unassigned" : "Pickup";
+
+    if (!grouped[agent]) {
+      grouped[agent] = {
+        key: agent,
+        agent,
+        orders: 0,
+        totalItems: 0,
+        totalValue: 0,
+        areas: {},
+        itemCounts: {},
+      };
+    }
+
+    grouped[agent].orders += 1;
+    grouped[agent].totalItems += (order.items || []).reduce((sum, item) => sum + item.qty, 0);
+    grouped[agent].totalValue += order.total || 0;
+    const area = order.area || "Unknown";
+    grouped[agent].areas[area] = (grouped[agent].areas[area] || 0) + 1;
+    (order.items || []).forEach((item) => {
+      grouped[agent].itemCounts[item.name] = (grouped[agent].itemCounts[item.name] || 0) + item.qty;
+    });
+  });
+
+  return Object.values(grouped).sort((a, b) => b.orders - a.orders || a.agent.localeCompare(b.agent));
+}
+
+function buildCancelledOrderRows(cancelledOrders: Order[]) {
+  return cancelledOrders
+    .map((order) => ({
+      id: order.id,
+      orderId: order.orderId || order.id,
+      customerName: order.customerName || "Customer",
+      deliveryType: order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery",
+      paymentMethod: getPaymentMethodLabel(order),
+      paymentStatus:
+        order.paymentStatus === "refund_pending" ? "Refund Pending" : order.paymentStatus || "-",
+      total: order.total || 0,
+      remarks: order.cancellationRemarks || "-",
+      cancelledAt: order.cancelledAt || order.createdAt || order.publishedDate,
+    }))
+    .sort((a, b) => String(b.orderId).localeCompare(String(a.orderId)));
+}
+
 function getAssignmentMealKey(mealType?: string) {
   const normalized = String(mealType || "").trim().toLowerCase();
   if (normalized === "lunch") return "Lunch";
@@ -541,9 +709,7 @@ export default function OwnerPage() {
   const [pastOrderAreaFilter, setPastOrderAreaFilter] = useState("All");
   const [pastOrderDeliveryFilter, setPastOrderDeliveryFilter] = useState("All");
   const [pastOrderStatusFilter, setPastOrderStatusFilter] = useState("All");
-  const [pastOrderMealFilter, setPastOrderMealFilter] = useState("All");
-  const [pastOrderStartDate, setPastOrderStartDate] = useState("");
-  const [pastOrderEndDate, setPastOrderEndDate] = useState("");
+  const [selectedPastMenuKey, setSelectedPastMenuKey] = useState("");
   const [placedNotificationSentIds, setPlacedNotificationSentIds] = useState<string[]>([]);
   const [openActiveOrderActionsId, setOpenActiveOrderActionsId] = useState<string | null>(null);
   const [editingActiveOrderId, setEditingActiveOrderId] = useState<string | null>(
@@ -2309,59 +2475,10 @@ export default function OwnerPage() {
     [currentMenuOrders]
   );
 
-  const currentOrdersSummary = useMemo(() => {
-    const summary = {
-      totalOrders: 0,
-      totalItems: 0,
-      totalValue: 0,
-      upiValue: 0,
-      codValue: 0,
-      selfPickupValue: 0,
-      codOrders: 0,
-      itemCounts: {} as Record<string, number>,
-      itemPairCounts: {} as Record<string, number>,
-      byArea: {} as Record<string, number>,
-      byDelivery: {} as Record<string, number>,
-      byAgent: {} as Record<string, number>,
-    };
-
-    currentOperationalOrders.forEach((order) => {
-      summary.totalOrders += 1;
-      summary.totalItems += (order.items || []).reduce(
-        (sum, item) => sum + item.qty,
-        0
-      );
-      const orderTotal = order.total || 0;
-      summary.totalValue += orderTotal;
-      if (order.deliveryType === "pickup") {
-        summary.selfPickupValue += orderTotal;
-      } else if (isCashOnDeliveryOrder(order)) {
-        summary.codValue += orderTotal;
-      } else {
-        summary.upiValue += orderTotal;
-      }
-      if (isCashOnDeliveryOrder(order)) {
-        summary.codOrders += 1;
-      }
-      (order.items || []).forEach((item) => {
-        summary.itemCounts[item.name] = (summary.itemCounts[item.name] || 0) + item.qty;
-        const pairKey = `${item.name}__${item.qty}`;
-        summary.itemPairCounts[pairKey] = (summary.itemPairCounts[pairKey] || 0) + 1;
-      });
-      const area = order.area || "Unknown";
-      summary.byArea[area] = (summary.byArea[area] || 0) + 1;
-      const deliveryType =
-        order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery";
-      summary.byDelivery[deliveryType] = (summary.byDelivery[deliveryType] || 0) + 1;
-      const agent =
-        order.deliveryType === "delivery"
-          ? order.assignedAgentName || "Unassigned"
-          : "Pickup";
-      summary.byAgent[agent] = (summary.byAgent[agent] || 0) + 1;
-    });
-
-    return summary;
-  }, [currentOperationalOrders]);
+  const currentOrdersSummary = useMemo(
+    () => buildOrdersSummary(currentOperationalOrders),
+    [currentOperationalOrders]
+  );
 
   const currentCancelledOrders = useMemo(
     () => currentMenuOrders.filter((order) => order.status === "cancelled"),
@@ -2369,24 +2486,7 @@ export default function OwnerPage() {
   );
 
   const currentCancelledOrderRows = useMemo(
-    () =>
-      currentCancelledOrders
-        .map((order) => ({
-          id: order.id,
-          orderId: order.orderId || order.id,
-          customerName: order.customerName || "Customer",
-          deliveryType:
-            order.deliveryType === "pickup" ? "Self Pickup" : "Home Delivery",
-          paymentMethod: getPaymentMethodLabel(order),
-          paymentStatus:
-            order.paymentStatus === "refund_pending"
-              ? "Refund Pending"
-              : order.paymentStatus || "-",
-          total: order.total || 0,
-          remarks: order.cancellationRemarks || "-",
-          cancelledAt: order.cancelledAt || order.createdAt || order.publishedDate,
-        }))
-        .sort((a, b) => String(b.orderId).localeCompare(String(a.orderId))),
+    () => buildCancelledOrderRows(currentCancelledOrders),
     [currentCancelledOrders]
   );
 
@@ -2418,60 +2518,14 @@ export default function OwnerPage() {
       .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
   }, [currentMenuOrders, pickupPaymentFilters]);
 
-  const activeAreaRows = useMemo(
-    () =>
-      Object.entries(currentOrdersSummary.byArea)
-        .map(([area, count]) => ({
-          key: area,
-          area,
-          count,
-        }))
-        .sort((a, b) => b.count - a.count || a.area.localeCompare(b.area)),
+  const activeAreaRows = useMemo(() => buildAreaRows(currentOrdersSummary), [currentOrdersSummary]);
+
+  const activeItemRows = useMemo(() => buildItemRows(currentOrdersSummary), [currentOrdersSummary]);
+
+  const activeItemPackingMatrix = useMemo(
+    () => buildPackingMatrix(currentOrdersSummary),
     [currentOrdersSummary]
   );
-
-  const activeItemRows = useMemo(
-    () =>
-      Object.entries(currentOrdersSummary.itemCounts)
-        .map(([itemName, count]) => ({
-          key: itemName,
-          itemName,
-          count,
-        }))
-        .sort((a, b) => b.count - a.count || a.itemName.localeCompare(b.itemName)),
-    [currentOrdersSummary]
-  );
-
-  const activeItemPackingMatrix = useMemo(() => {
-    const packQtySet = new Set<number>();
-    const grouped: Record<string, Record<number, number>> = {};
-
-    Object.entries(currentOrdersSummary.itemPairCounts).forEach(([pairKey, count]) => {
-      const [itemName, packQtyRaw] = pairKey.split("__");
-      const packQty = Number(packQtyRaw || 0);
-      if (!itemName || !packQty) return;
-
-      packQtySet.add(packQty);
-      if (!grouped[itemName]) {
-        grouped[itemName] = {};
-      }
-      grouped[itemName][packQty] = count;
-    });
-
-    const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
-    const rows = Object.entries(grouped)
-      .map(([itemName, buckets]) => ({
-        key: itemName,
-        itemName,
-        buckets,
-      }))
-      .sort((a, b) => a.itemName.localeCompare(b.itemName));
-
-    return {
-      packQtyColumns,
-      rows,
-    };
-  }, [currentOrdersSummary]);
 
   const activeAgentRows = useMemo(
     () =>
@@ -2485,66 +2539,13 @@ export default function OwnerPage() {
     [currentOrdersSummary]
   );
 
-  const activeAgentDetailRows = useMemo(() => {
-    const grouped: Record<
-      string,
-      {
-        key: string;
-        agent: string;
-        orders: number;
-        totalItems: number;
-        totalValue: number;
-        areas: Record<string, number>;
-        itemCounts: Record<string, number>;
-      }
-    > = {};
-
-    currentOperationalOrders.forEach((order) => {
-      const agent =
-        order.deliveryType === "delivery"
-          ? order.assignedAgentName || "Unassigned"
-          : "Pickup";
-
-      if (!grouped[agent]) {
-        grouped[agent] = {
-          key: agent,
-          agent,
-          orders: 0,
-          totalItems: 0,
-          totalValue: 0,
-          areas: {},
-          itemCounts: {},
-        };
-      }
-
-      grouped[agent].orders += 1;
-      grouped[agent].totalItems += (order.items || []).reduce(
-        (sum, item) => sum + item.qty,
-        0
-      );
-      grouped[agent].totalValue += order.total || 0;
-      const area = order.area || "Unknown";
-      grouped[agent].areas[area] = (grouped[agent].areas[area] || 0) + 1;
-      (order.items || []).forEach((item) => {
-        grouped[agent].itemCounts[item.name] =
-          (grouped[agent].itemCounts[item.name] || 0) + item.qty;
-      });
-    });
-
-    return Object.values(grouped).sort(
-      (a, b) => b.orders - a.orders || a.agent.localeCompare(b.agent)
-    );
-  }, [currentOperationalOrders]);
+  const activeAgentDetailRows = useMemo(
+    () => buildAgentDetailRows(currentOperationalOrders),
+    [currentOperationalOrders]
+  );
 
   const activeDeliveryTypeRows = useMemo(
-    () =>
-      Object.entries(currentOrdersSummary.byDelivery)
-        .map(([deliveryType, count]) => ({
-          key: deliveryType,
-          deliveryType,
-          count,
-        }))
-        .sort((a, b) => b.count - a.count || a.deliveryType.localeCompare(b.deliveryType)),
+    () => buildDeliveryTypeRows(currentOrdersSummary),
     [currentOrdersSummary]
   );
 
@@ -2612,14 +2613,106 @@ export default function OwnerPage() {
     [filteredActiveOrders, placedNotificationSentIds]
   );
 
+  const pastPublishedMenuOptions = useMemo(() => {
+    const seen = new Map<
+      string,
+      { key: string; date: string; mealType: string; menuId: string }
+    >();
+    publishedMenus.forEach((menu) => {
+      const dateKey = formatDateKey(menu.date);
+      const mealType = menu.mealType || "Unknown";
+      const key = `${dateKey}__${mealType}`;
+      if (key === currentPublishedMenuKey) {
+        return;
+      }
+      if (!seen.has(key)) {
+        seen.set(key, {
+          key,
+          date: dateKey,
+          mealType,
+          menuId: menu.id,
+        });
+      }
+    });
+    return Array.from(seen.values()).sort(
+      (a, b) => b.date.localeCompare(a.date) || a.mealType.localeCompare(b.mealType)
+    );
+  }, [publishedMenus, currentPublishedMenuKey]);
+
+  useEffect(() => {
+    if (!pastPublishedMenuOptions.length) {
+      setSelectedPastMenuKey("");
+      return;
+    }
+    if (!pastPublishedMenuOptions.some((option) => option.key === selectedPastMenuKey)) {
+      setSelectedPastMenuKey(pastPublishedMenuOptions[0].key);
+    }
+  }, [pastPublishedMenuOptions, selectedPastMenuKey]);
+
+  const selectedPastMenuOption = useMemo(
+    () => pastPublishedMenuOptions.find((option) => option.key === selectedPastMenuKey) || null,
+    [pastPublishedMenuOptions, selectedPastMenuKey]
+  );
+
+  const pastMenuOrders = useMemo(() => {
+    if (!selectedPastMenuOption) {
+      return [];
+    }
+    return orders.filter(
+      (order) =>
+        `${formatDateKey(order.publishedDate)}__${order.mealType || "Unknown"}` ===
+        selectedPastMenuOption.key
+    );
+  }, [orders, selectedPastMenuOption]);
+
+  const pastOperationalOrders = useMemo(
+    () =>
+      pastMenuOrders.filter((order) => {
+        if (order.deliveryType === "pickup") {
+          return true;
+        }
+        if (order.orderSource === "owner") {
+          return true;
+        }
+        return order.paymentStatus === "paid" || order.paymentStatus === "cash_on_delivery";
+      }),
+    [pastMenuOrders]
+  );
+
+  const pastOrdersSummary = useMemo(
+    () => buildOrdersSummary(pastOperationalOrders),
+    [pastOperationalOrders]
+  );
+
+  const pastCancelledOrders = useMemo(
+    () => pastMenuOrders.filter((order) => order.status === "cancelled"),
+    [pastMenuOrders]
+  );
+
+  const pastCancelledOrderRows = useMemo(
+    () => buildCancelledOrderRows(pastCancelledOrders),
+    [pastCancelledOrders]
+  );
+
+  const pastAreaRows = useMemo(() => buildAreaRows(pastOrdersSummary), [pastOrdersSummary]);
+  const pastItemRows = useMemo(() => buildItemRows(pastOrdersSummary), [pastOrdersSummary]);
+  const pastItemPackingMatrix = useMemo(
+    () => buildPackingMatrix(pastOrdersSummary),
+    [pastOrdersSummary]
+  );
+  const pastDeliveryTypeRows = useMemo(
+    () => buildDeliveryTypeRows(pastOrdersSummary),
+    [pastOrdersSummary]
+  );
+  const pastAgentDetailRows = useMemo(
+    () => buildAgentDetailRows(pastOperationalOrders),
+    [pastOperationalOrders]
+  );
+
   const filteredPastOrders = useMemo(() => {
     const search = pastOrderSearch.toLowerCase();
-    return orders
-      .filter((order) => order.status !== "cancelled")
+    return pastOperationalOrders
       .filter((order) => {
-        if (currentPublishedMenu && order.publishedMenuId === currentPublishedMenu.id) {
-          return false;
-        }
         if (
           pastOrderDeliveryFilter !== "All" &&
           (order.deliveryType || "Unknown") !== pastOrderDeliveryFilter
@@ -2632,16 +2725,6 @@ export default function OwnerPage() {
         if (pastOrderStatusFilter !== "All" && getOrderStatusLabel(order) !== pastOrderStatusFilter) {
           return false;
         }
-        if (pastOrderMealFilter !== "All" && (order.mealType || "Unknown") !== pastOrderMealFilter) {
-          return false;
-        }
-        const dateKey = formatDateKey(order.createdAt || order.publishedDate);
-        if (pastOrderStartDate && dateKey < pastOrderStartDate) {
-          return false;
-        }
-        if (pastOrderEndDate && dateKey > pastOrderEndDate) {
-          return false;
-        }
         if (!search) return true;
         const haystack = `${order.orderId || ""} ${order.phone || ""} ${
           order.customerName || ""
@@ -2652,16 +2735,22 @@ export default function OwnerPage() {
       })
       .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
   }, [
-    orders,
-    currentPublishedMenu,
+    pastOperationalOrders,
     pastOrderSearch,
     pastOrderAreaFilter,
     pastOrderDeliveryFilter,
     pastOrderStatusFilter,
-    pastOrderMealFilter,
-    pastOrderStartDate,
-    pastOrderEndDate,
   ]);
+
+  const pendingPastPlacedNotificationOrders = useMemo(
+    () =>
+      filteredPastOrders.filter(
+        (order) =>
+          Boolean(getWhatsAppPhone(order.phone)) &&
+          !placedNotificationSentIds.includes(order.id)
+      ),
+    [filteredPastOrders, placedNotificationSentIds]
+  );
 
   return (
     <main className="container owner-shell">
@@ -4822,73 +4911,333 @@ export default function OwnerPage() {
 
               {historyTab === "pastOrders" && (
                 <div className="stack">
-                  <div className="owner-filters-grid">
-                    <input
-                      className="input"
-                      placeholder="Search by order ID / customer / phone / item"
-                      value={pastOrderSearch}
-                      onChange={(e) => setPastOrderSearch(e.target.value)}
-                    />
-                    <select
-                      className="select"
-                      value={pastOrderMealFilter}
-                      onChange={(e) => setPastOrderMealFilter(e.target.value)}
-                    >
-                      <option value="All">All meal types</option>
-                      {mealTypes.map((meal) => (
-                        <option key={meal} value={meal}>
-                          {meal}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="select"
-                      value={pastOrderDeliveryFilter}
-                      onChange={(e) => setPastOrderDeliveryFilter(e.target.value)}
-                    >
-                      <option value="All">All delivery types</option>
-                      <option value="delivery">Home Delivery</option>
-                      <option value="pickup">Self Pickup</option>
-                    </select>
-                    <select
-                      className="select"
-                      value={pastOrderAreaFilter}
-                      onChange={(e) => setPastOrderAreaFilter(e.target.value)}
-                    >
-                      <option value="All">All areas</option>
-                      {areaOptions.map((area) => (
-                        <option key={area} value={area}>
-                          {area}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="select"
-                      value={pastOrderStatusFilter}
-                      onChange={(e) => setPastOrderStatusFilter(e.target.value)}
-                    >
-                      <option value="All">All statuses</option>
-                      <option value="Active">Active</option>
-                      <option value="Delivered">Delivered</option>
-                      <option value="Picked Up">Picked Up</option>
-                      <option value="Undelivered">Undelivered</option>
-                      <option value="Payment Pending">Payment Pending</option>
-                    </select>
-                    <input
-                      className="input"
-                      type="date"
-                      value={pastOrderStartDate}
-                      onChange={(e) => setPastOrderStartDate(e.target.value)}
-                    />
-                    <input
-                      className="input"
-                      type="date"
-                      value={pastOrderEndDate}
-                      onChange={(e) => setPastOrderEndDate(e.target.value)}
-                    />
+                  <div className="card stack">
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                      <div>
+                        <strong>Past Menu Workspace</strong>
+                        <small className="payments-subtext" style={{ display: "block" }}>
+                          Select a previously published menu to manage its unfinished orders.
+                        </small>
+                      </div>
+                      <button
+                        className="btn secondary"
+                        onClick={() => {
+                          if (!pendingPastPlacedNotificationOrders.length) {
+                            window.alert("No pending WhatsApp notifications in the current list.");
+                            return;
+                          }
+                          openPlacedNotification(pendingPastPlacedNotificationOrders[0]);
+                        }}
+                      >
+                        Open Next
+                      </button>
+                    </div>
+                    <div className="owner-filters-grid">
+                      <select
+                        className="select"
+                        value={selectedPastMenuKey}
+                        onChange={(e) => setSelectedPastMenuKey(e.target.value)}
+                      >
+                        <option value="">Select published menu</option>
+                        {pastPublishedMenuOptions.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {formatDateLabel(option.date)} - {option.mealType}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="input"
+                        placeholder="Search by order ID / customer / phone / item"
+                        value={pastOrderSearch}
+                        onChange={(e) => setPastOrderSearch(e.target.value)}
+                      />
+                      <select
+                        className="select"
+                        value={pastOrderDeliveryFilter}
+                        onChange={(e) => setPastOrderDeliveryFilter(e.target.value)}
+                      >
+                        <option value="All">All delivery types</option>
+                        <option value="delivery">Home Delivery</option>
+                        <option value="pickup">Self Pickup</option>
+                      </select>
+                      <select
+                        className="select"
+                        value={pastOrderAreaFilter}
+                        onChange={(e) => setPastOrderAreaFilter(e.target.value)}
+                      >
+                        <option value="All">All areas</option>
+                        {areaOptions.map((area) => (
+                          <option key={area} value={area}>
+                            {area}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        className="select"
+                        value={pastOrderStatusFilter}
+                        onChange={(e) => setPastOrderStatusFilter(e.target.value)}
+                      >
+                        <option value="All">All statuses</option>
+                        <option value="Active">Active</option>
+                        <option value="Delivered">Delivered</option>
+                        <option value="Picked Up">Picked Up</option>
+                        <option value="Undelivered">Undelivered</option>
+                        <option value="Payment Pending">Payment Pending</option>
+                      </select>
+                    </div>
+                    <small className="payments-subtext">
+                      Pending notifications: {pendingPastPlacedNotificationOrders.length}
+                    </small>
                   </div>
-                  {filteredPastOrders.length === 0 && <p>No past orders found for the selected filters.</p>}
-                  {filteredPastOrders.length > 0 && (
+
+                  {!selectedPastMenuOption && <p>No past published menu available.</p>}
+
+                  {selectedPastMenuOption && (
+                    <>
+                      <div className="card owner-summary-hero stack">
+                        <div className="owner-summary-header">
+                          <div>
+                            <small className="payments-subtext">Selected past menu</small>
+                            <h3>
+                              {formatDateLabel(selectedPastMenuOption.date)} - {selectedPastMenuOption.mealType}
+                            </h3>
+                          </div>
+                          <span className="status-chip">Past</span>
+                        </div>
+                        <div className="owner-summary-metrics">
+                          <div className="card">
+                            <small className="payments-subtext">Total orders</small>
+                            <strong>{pastOrdersSummary.totalOrders}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">Items count</small>
+                            <strong>{pastOrdersSummary.totalItems}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">Total value</small>
+                            <strong>Rs. {pastOrdersSummary.totalValue}</strong>
+                            <small className="payments-subtext">
+                              UPI: Rs. {pastOrdersSummary.upiValue} | COD: Rs. {pastOrdersSummary.codValue} | SP: Rs. {pastOrdersSummary.selfPickupValue}
+                            </small>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">COD orders</small>
+                            <strong>{pastOrdersSummary.codOrders}</strong>
+                          </div>
+                          <div className="card">
+                            <small className="payments-subtext">Cancelled orders</small>
+                            <strong>{pastCancelledOrderRows.length}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="row summary-tables-row">
+                        <div className="card" style={{ flex: 1 }}>
+                          <h3>Orders by Area</h3>
+                          <div className="table-scroll">
+                            <table className="payments-table payments-table-compact owner-summary-table">
+                              <thead>
+                                <tr>
+                                  <th>Area</th>
+                                  <th>Orders</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pastAreaRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={2}>No area data</td>
+                                  </tr>
+                                )}
+                                {pastAreaRows.map((row) => (
+                                  <tr key={row.key}>
+                                    <td>{row.area}</td>
+                                    <td>{row.count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        <div className="card" style={{ flex: 1 }}>
+                          <h3>Items Count</h3>
+                          <div className="table-scroll">
+                            <table className="payments-table payments-table-compact owner-summary-table">
+                              <thead>
+                                <tr>
+                                  <th>Item</th>
+                                  <th>Qty</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pastItemRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={2}>No item data</td>
+                                  </tr>
+                                )}
+                                {pastItemRows.map((row) => (
+                                  <tr key={row.key}>
+                                    <td>{row.itemName}</td>
+                                    <td>{row.count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="card">
+                        <h3>Item Packing Pairs</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact owner-summary-packing-table">
+                            <thead>
+                              <tr>
+                                <th>Item</th>
+                                {pastItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                  <th key={packQty}>{packQty} Pack</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pastItemPackingMatrix.rows.length === 0 && (
+                                <tr>
+                                  <td colSpan={Math.max(pastItemPackingMatrix.packQtyColumns.length + 1, 2)}>
+                                    No packing data
+                                  </td>
+                                </tr>
+                              )}
+                              {pastItemPackingMatrix.rows.map((row) => (
+                                <tr key={row.key}>
+                                  <td>{row.itemName}</td>
+                                  {pastItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                    <td key={`${row.key}-${packQty}`}>
+                                      {row.buckets[packQty] || "-"}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="card">
+                        <h3>Cancelled Orders</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact owner-summary-table">
+                            <thead>
+                              <tr>
+                                <th>Cancelled On</th>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Remarks</th>
+                                <th>Type</th>
+                                <th>Payment</th>
+                                <th>Refund Status</th>
+                                <th>Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pastCancelledOrderRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={8}>No cancelled orders for this menu</td>
+                                </tr>
+                              )}
+                              {pastCancelledOrderRows.map((row) => (
+                                <tr key={row.id}>
+                                  <td>{formatDateLabel(row.cancelledAt)}</td>
+                                  <td>#{row.orderId}</td>
+                                  <td>{row.customerName}</td>
+                                  <td>{row.remarks}</td>
+                                  <td>{row.deliveryType}</td>
+                                  <td>{row.paymentMethod}</td>
+                                  <td>{row.paymentStatus}</td>
+                                  <td>Rs. {row.total}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="card">
+                        <h3>Orders by Delivery Type</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact owner-summary-table">
+                            <thead>
+                              <tr>
+                                <th>Delivery Type</th>
+                                <th>Orders</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pastDeliveryTypeRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={2}>No delivery type data</td>
+                                </tr>
+                              )}
+                              {pastDeliveryTypeRows.map((row) => (
+                                <tr key={row.key}>
+                                  <td>{row.deliveryType}</td>
+                                  <td>{row.count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="card">
+                        <h3>Orders by Delivery Agent</h3>
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact owner-summary-table">
+                            <thead>
+                              <tr>
+                                <th>Delivery Agent</th>
+                                <th>Orders</th>
+                                <th>Items Count</th>
+                                <th>Areas</th>
+                                <th>Items</th>
+                                <th>Total Value</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pastAgentDetailRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={6}>No delivery agent data</td>
+                                </tr>
+                              )}
+                              {pastAgentDetailRows.map((row) => (
+                                <tr key={row.key}>
+                                  <td>{row.agent}</td>
+                                  <td>{row.orders}</td>
+                                  <td>{row.totalItems}</td>
+                                  <td>
+                                    {Object.keys(row.areas).length === 0
+                                      ? "-"
+                                      : Object.entries(row.areas)
+                                          .map(([area, count]) => `${area} (${count})`)
+                                          .join(", ")}
+                                  </td>
+                                  <td>
+                                    {Object.keys(row.itemCounts).length === 0
+                                      ? "-"
+                                      : Object.entries(row.itemCounts)
+                                          .map(([itemName, count]) => `${itemName} x${count}`)
+                                          .join(", ")}
+                                  </td>
+                                  <td>Rs. {row.totalValue}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {selectedPastMenuOption && filteredPastOrders.length === 0 && <p>No orders found for the selected menu and filters.</p>}
+                  {selectedPastMenuOption && filteredPastOrders.length > 0 && (
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
@@ -4905,6 +5254,7 @@ export default function OwnerPage() {
                             <th>Payment</th>
                             <th>Status</th>
                             <th>Total Value</th>
+                            <th>WhatsApp</th>
                             <th>Action</th>
                           </tr>
                         </thead>
@@ -4957,6 +5307,20 @@ export default function OwnerPage() {
                                   <div className="stack" style={{ gap: 6 }}>
                                     <button
                                       className="btn secondary btn-compact"
+                                      onClick={() => openPlacedNotification(order)}
+                                      disabled={!getWhatsAppPhone(order.phone)}
+                                    >
+                                      WhatsApp
+                                    </button>
+                                    {placedNotificationSentIds.includes(order.id) && (
+                                      <small className="payments-subtext">Opened</small>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="stack" style={{ gap: 6 }}>
+                                    <button
+                                      className="btn secondary btn-compact"
                                       onClick={() =>
                                         setOpenActiveOrderActionsId(
                                           openActiveOrderActionsId === order.id ? null : order.id
@@ -4988,7 +5352,7 @@ export default function OwnerPage() {
                               </tr>
                               {cancellingOwnerOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={13}>
+                                  <td colSpan={14}>
                                     <div className="stack" style={{ gap: 10 }}>
                                       <strong>Cancel Order #{order.orderId || order.id}</strong>
                                       <input
@@ -5021,7 +5385,7 @@ export default function OwnerPage() {
                               )}
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={13}>
+                                  <td colSpan={14}>
                                     <div className="order-edit-grid">
                                       <input
                                         className="input"
