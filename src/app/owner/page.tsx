@@ -144,6 +144,7 @@ type DeliveryAgent = {
 type ServiceArea = {
   id: string;
   name: string;
+  deliveryFee?: number;
   subAreas?: string[];
   subAreaFees?: Record<string, number>;
 };
@@ -1037,12 +1038,13 @@ export default function OwnerPage() {
         setServiceAreas(
           snap.docs.map((docSnap) => {
             const data = docSnap.data() as any;
-            return {
-              id: docSnap.id,
-              ...data,
-              subAreas: Array.isArray(data.subAreas) ? data.subAreas.filter(Boolean) : [],
-              subAreaFees:
-                typeof data.subAreaFees === "object" && data.subAreaFees
+        return {
+          id: docSnap.id,
+          ...data,
+          deliveryFee: Number(data.deliveryFee || 0),
+          subAreas: Array.isArray(data.subAreas) ? data.subAreas.filter(Boolean) : [],
+          subAreaFees:
+            typeof data.subAreaFees === "object" && data.subAreaFees
                   ? Object.fromEntries(
                       Object.entries(data.subAreaFees).map(([key, value]) => [
                         key,
@@ -1270,6 +1272,7 @@ export default function OwnerPage() {
     if (!areaForm.trim()) return;
     await addDoc(collection(db, "service_areas"), {
       name: areaForm.trim(),
+      deliveryFee: 0,
       subAreas: [],
       subAreaFees: {},
       createdAt: serverTimestamp(),
@@ -1290,6 +1293,13 @@ export default function OwnerPage() {
     };
     await updateDoc(doc(db, "service_areas", area.id), {
       subAreaFees: nextSubAreaFees,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  async function updateServiceAreaFee(area: ServiceArea, fee: number) {
+    await updateDoc(doc(db, "service_areas", area.id), {
+      deliveryFee: Number.isFinite(fee) ? Math.max(0, fee) : 0,
       updatedAt: serverTimestamp(),
     });
   }
@@ -6663,6 +6673,7 @@ export default function OwnerPage() {
                     <thead>
                       <tr>
                         <th>Area</th>
+                        <th>Area Fee</th>
                         <th>Mapped Sub Areas</th>
                         <th>Added Sub Areas</th>
                         <th>Action</th>
@@ -6681,6 +6692,19 @@ export default function OwnerPage() {
                             <tr>
                               <td>
                                 <strong>{area.name}</strong>
+                              </td>
+                              <td>
+                                <input
+                                  className="input"
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  defaultValue={String(Number(area.deliveryFee || 0))}
+                                  onBlur={(e) =>
+                                    updateServiceAreaFee(area, Number(e.target.value || 0))
+                                  }
+                                  style={{ width: 120 }}
+                                />
                               </td>
                               <td>
                                 {previewMapped || "None"}
@@ -6717,7 +6741,7 @@ export default function OwnerPage() {
                             </tr>
                             {openManagedAreaId === area.id && (
                               <tr>
-                                <td colSpan={4} className="owner-assignment-editor-cell">
+                                <td colSpan={5} className="owner-assignment-editor-cell">
                                   <div className="owner-assignment-editor">
                                     <strong>{area.name}</strong>
                                     <small className="payments-subtext">

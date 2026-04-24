@@ -64,6 +64,7 @@ type PaymentSummary = {
 type ServiceAreaOption = {
   id: string;
   name: string;
+  deliveryFee?: number;
   subAreas?: string[];
   subAreaFees?: Record<string, number>;
 };
@@ -98,9 +99,10 @@ function getApplicableDeliveryFee(params: {
   deliveryType: string;
   isLunchMenu: boolean;
   itemsTotal: number;
-  subAreaFee: number;
+  areaFee: number;
+  subAreaFee?: number;
 }) {
-  const { deliveryType, isLunchMenu, itemsTotal, subAreaFee } = params;
+  const { deliveryType, isLunchMenu, itemsTotal, subAreaFee, areaFee } = params;
   if (deliveryType !== "delivery") {
     return 0;
   }
@@ -110,7 +112,7 @@ function getApplicableDeliveryFee(params: {
   if (itemsTotal > 199) {
     return 0;
   }
-  return subAreaFee;
+  return typeof subAreaFee === "number" ? subAreaFee : areaFee;
 }
 
 function normalizePhoneForOtp(raw: string) {
@@ -791,6 +793,7 @@ export default function CustomerPage() {
             return {
               id: docSnap.id,
               name: data.name || "",
+              deliveryFee: Number(data.deliveryFee || 0),
               subAreas: Array.isArray(data.subAreas) ? data.subAreas.filter(Boolean) : [],
               subAreaFees:
                 typeof data.subAreaFees === "object" && data.subAreaFees
@@ -818,11 +821,16 @@ export default function CustomerPage() {
     () => serviceAreas.find((area) => area.name === form.area) || null,
     [serviceAreas, form.area]
   );
+  const selectedAreaFee = useMemo(
+    () => Number(selectedAreaConfig?.deliveryFee || 0),
+    [selectedAreaConfig]
+  );
   const selectedSubAreaFee = useMemo(() => {
     if (!form.subArea || !selectedAreaConfig) {
-      return 0;
+      return undefined;
     }
-    return Number(selectedAreaConfig.subAreaFees?.[form.subArea] || 0);
+    const fee = selectedAreaConfig.subAreaFees?.[form.subArea];
+    return typeof fee === "number" ? fee : undefined;
   }, [form.subArea, selectedAreaConfig]);
   const subAreaOptions = useMemo(() => {
     const saved =
@@ -842,6 +850,7 @@ export default function CustomerPage() {
     deliveryType,
     isLunchMenu,
     itemsTotal,
+    areaFee: selectedAreaFee,
     subAreaFee: selectedSubAreaFee,
   });
 
@@ -1307,6 +1316,7 @@ export default function CustomerPage() {
           deliveryType,
           isLunchMenu: mealIsLunch,
           itemsTotal,
+          areaFee: Number(selectedAreaConfig?.deliveryFee || 0),
           subAreaFee: selectedSubAreaFee,
         });
         effectiveOrderTotal = itemsTotal + effectiveDeliveryFee;
