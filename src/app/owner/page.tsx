@@ -234,6 +234,32 @@ function formatDateLabel(value: any) {
   return `${day}-${monthLabel}-${year}`;
 }
 
+function formatDateTimeLabel(value: any) {
+  let ms = 0;
+  if (!value) {
+    ms = 0;
+  } else if (value?.toDate) {
+    ms = value.toDate().getTime();
+  } else if (typeof value === "object" && "seconds" in value) {
+    ms = value.seconds * 1000;
+  } else if (value instanceof Date) {
+    ms = value.getTime();
+  } else if (typeof value === "number") {
+    ms = value;
+  } else {
+    const parsed = Date.parse(String(value));
+    ms = Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (!ms) return "";
+  return new Date(ms).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function splitAddress(address: string) {
   const [addressLine1, ...rest] = String(address || "")
     .split(",")
@@ -2614,30 +2640,43 @@ export default function OwnerPage() {
   );
 
   const pastPublishedMenuOptions = useMemo(() => {
-    const seen = new Map<
-      string,
-      { key: string; date: string; mealType: string; menuId: string }
-    >();
-    publishedMenus.forEach((menu) => {
-      const dateKey = formatDateKey(menu.date);
-      const mealType = menu.mealType || "Unknown";
-      const key = `${dateKey}__${mealType}`;
-      if (key === currentPublishedMenuKey) {
-        return;
-      }
-      if (!seen.has(key)) {
-        seen.set(key, {
-          key,
+    const duplicateCounts = publishedMenus.reduce<Record<string, number>>((acc, menu) => {
+      const signature = `${formatDateKey(menu.date)}__${menu.mealType || "Unknown"}`;
+      acc[signature] = (acc[signature] || 0) + 1;
+      return acc;
+    }, {});
+
+    return publishedMenus
+      .filter((menu) => menu.id !== currentPublishedMenu?.id)
+      .map((menu) => {
+        const dateKey = formatDateKey(menu.date);
+        const mealType = menu.mealType || "Unknown";
+        const signature = `${dateKey}__${mealType}`;
+        return {
+          key: menu.id,
           date: dateKey,
           mealType,
           menuId: menu.id,
-        });
-      }
-    });
-    return Array.from(seen.values()).sort(
-      (a, b) => b.date.localeCompare(a.date) || a.mealType.localeCompare(b.mealType)
-    );
-  }, [publishedMenus, currentPublishedMenuKey]);
+          label:
+            duplicateCounts[signature] > 1
+              ? `${formatDateLabel(dateKey)} - ${mealType} (${formatDateTimeLabel(
+                  menu.createdAt
+                )})`
+              : `${formatDateLabel(dateKey)} - ${mealType}`,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.date.localeCompare(a.date) ||
+          getCreatedAtMs(
+            publishedMenus.find((menu) => menu.id === b.menuId)?.createdAt
+          ) -
+            getCreatedAtMs(
+              publishedMenus.find((menu) => menu.id === a.menuId)?.createdAt
+            ) ||
+          a.mealType.localeCompare(b.mealType)
+      );
+  }, [publishedMenus, currentPublishedMenu]);
 
   useEffect(() => {
     if (!pastPublishedMenuOptions.length) {
@@ -2658,11 +2697,15 @@ export default function OwnerPage() {
     if (!selectedPastMenuOption) {
       return [];
     }
-    return orders.filter(
-      (order) =>
-        `${formatDateKey(order.publishedDate)}__${order.mealType || "Unknown"}` ===
-        selectedPastMenuOption.key
-    );
+    return orders.filter((order) => {
+      if (order.publishedMenuId) {
+        return order.publishedMenuId === selectedPastMenuOption.menuId;
+      }
+      return (
+        formatDateKey(order.publishedDate) === selectedPastMenuOption.date &&
+        (order.mealType || "Unknown") === selectedPastMenuOption.mealType
+      );
+    });
   }, [orders, selectedPastMenuOption]);
 
   const pastOperationalOrders = useMemo(
@@ -4941,7 +4984,7 @@ export default function OwnerPage() {
                         <option value="">Select published menu</option>
                         {pastPublishedMenuOptions.map((option) => (
                           <option key={option.key} value={option.key}>
-                            {formatDateLabel(option.date)} - {option.mealType}
+                            {option.label}
                           </option>
                         ))}
                       </select>
