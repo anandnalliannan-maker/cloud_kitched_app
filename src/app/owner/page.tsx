@@ -757,6 +757,25 @@ export default function OwnerPage() {
     assignedAgentId: "",
     status: "active",
   });
+
+  useEffect(() => {
+    if (!openActiveOrderActionsId) {
+      return;
+    }
+
+    const handleOutsideOrderActions = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-owner-order-actions]")) {
+        return;
+      }
+      setOpenActiveOrderActionsId(null);
+    };
+
+    document.addEventListener("mousedown", handleOutsideOrderActions);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideOrderActions);
+    };
+  }, [openActiveOrderActionsId]);
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>({});
   const [editPublishPrice, setEditPublishPrice] = useState<Record<string, number>>({});
   const [pickupPaymentFilters, setPickupPaymentFilters] = useState({
@@ -4772,7 +4791,11 @@ export default function OwnerPage() {
                                 </td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>
-                                  <div className="stack owner-orders-actions-cell" style={{ gap: 6 }}>
+                                  <div
+                                    className="stack owner-orders-actions-cell"
+                                    style={{ gap: 6 }}
+                                    data-owner-order-actions
+                                  >
                                     <button
                                       className="btn secondary btn-compact"
                                       onClick={() => openPlacedNotification(order)}
@@ -5433,7 +5456,11 @@ export default function OwnerPage() {
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>
-                                  <div className="stack owner-orders-actions-cell" style={{ gap: 6 }}>
+                                  <div
+                                    className="stack owner-orders-actions-cell"
+                                    style={{ gap: 6 }}
+                                    data-owner-order-actions
+                                  >
                                     <button
                                       className="btn secondary btn-compact"
                                       onClick={() => openPlacedNotification(order)}
