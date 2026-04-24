@@ -22,6 +22,7 @@ import {
   setDoc,
   where,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
@@ -45,7 +46,8 @@ type Tab =
   | "history"
   | "delivery"
   | "areas"
-  | "createOrder";
+  | "createOrder"
+  | "masterData";
 
 type MenuItem = {
   id: string;
@@ -84,7 +86,7 @@ type PublishedMenu = {
   ordersStopped?: boolean;
 };
 
-type OrderItem = { name: string; qty: number; price: number };
+type OrderItem = { itemId?: string; name: string; qty: number; price: number };
 
 type Order = {
   id: string;
@@ -147,6 +149,30 @@ type ServiceArea = {
   deliveryFee?: number;
   subAreas?: string[];
   subAreaFees?: Record<string, number>;
+};
+
+type CustomerMasterRecord = {
+  id: string;
+  phone: string;
+  normalizedPhone: string;
+  customerName?: string;
+  area?: string;
+  subArea?: string;
+  address?: string;
+  status?: "pending" | "mapped";
+  updatedAt?: any;
+  lastOrderAt?: any;
+};
+
+type MasterSubAreaRecord = {
+  id: string;
+  name: string;
+  normalizedName: string;
+  parentArea?: string;
+  deliveryFee?: number;
+  deliveryAgentId?: string;
+  deliveryAgentName?: string;
+  updatedAt?: any;
 };
 
 type AreaAssignment = {
@@ -319,26 +345,28 @@ function isAttentionPaymentOrder(order: Order) {
   );
 }
 
+function isUpiPaymentOrder(order: Order) {
+  return (
+    order.paymentMethod === "upi" ||
+    order.paymentMethod === "online" ||
+    order.paymentStatus === "paid" ||
+    order.paymentStatus === "pending" ||
+    order.paymentStatus === "failed" ||
+    order.paymentStatus === "payment_failed"
+  );
+}
+
 function shouldShowInOperationalWorkspace(order: Order) {
   if (order.status === "cancelled" || order.status === "closed" || order.status === "undelivered") {
     return false;
   }
-  if (order.deliveryType === "pickup") {
-    return (
-      order.paymentStatus === "paid" ||
-      order.paymentMethod === "upi" ||
-      order.paymentMethod === "online" ||
-      order.pickupPaymentStatus === "paid"
-    );
-  }
   if (order.orderSource === "owner") {
     return true;
   }
-  return (
-    order.paymentStatus === "paid" ||
-    order.paymentStatus === "cash_on_delivery" ||
-    isAttentionPaymentOrder(order)
-  );
+  if (order.deliveryType === "pickup") {
+    return order.paymentStatus === "paid" || order.paymentMethod === "upi" || order.paymentMethod === "online";
+  }
+  return order.paymentStatus === "paid" || order.paymentStatus === "cash_on_delivery";
 }
 
 function isCashOnDeliveryOrder(order: Order) {
@@ -358,10 +386,9 @@ function isPaymentStatusOrder(order: Order) {
   return (
     isOwnerManualPaymentOrder(order) ||
     (order.deliveryType === "pickup" &&
-      (order.paymentMethod === "pay_at_outlet" ||
-        order.paymentStatus === "pay_at_outlet" ||
-        Boolean(order.pickupPaymentStatus))) ||
-    isCashOnDeliveryOrder(order)
+      (Boolean(order.pickupPaymentStatus) || isUpiPaymentOrder(order))) ||
+    isCashOnDeliveryOrder(order) ||
+    (order.orderSource !== "owner" && order.deliveryType === "delivery" && isUpiPaymentOrder(order))
   );
 }
 
@@ -374,6 +401,9 @@ function getPaymentStatusLabel(order: Order) {
   }
   if (isCashOnDeliveryOrder(order)) {
     return order.codPaymentStatus || "unpaid";
+  }
+  if (isUpiPaymentOrder(order)) {
+    return order.paymentStatus || "pending";
   }
   return order.paymentStatus || "pending";
 }
@@ -391,6 +421,9 @@ function getPaymentAmountPaid(order: Order) {
   if (isCashOnDeliveryOrder(order)) {
     return order.codAmountCollected || 0;
   }
+  if (isUpiPaymentOrder(order)) {
+    return order.paymentStatus === "paid" ? order.total || 0 : 0;
+  }
   return 0;
 }
 
@@ -405,6 +438,9 @@ function getPaymentBalance(order: Order) {
   }
   if (isCashOnDeliveryOrder(order)) {
     return typeof order.codBalance === "number" ? order.codBalance : order.total || 0;
+  }
+  if (isUpiPaymentOrder(order)) {
+    return order.paymentStatus === "paid" ? 0 : order.total || 0;
   }
   return 0;
 }
@@ -443,6 +479,17 @@ function getPaymentMethodLabel(order: Order) {
     return "UPI";
   }
   return order.paymentMethod || "-";
+}
+
+function canUpdatePaymentStatus(order: Order) {
+  return (
+    isOwnerManualPaymentOrder(order) ||
+    isCashOnDeliveryOrder(order) ||
+    (order.deliveryType === "pickup" &&
+      (order.paymentMethod === "pay_at_outlet" ||
+        order.paymentStatus === "pay_at_outlet" ||
+        Boolean(order.pickupPaymentStatus)))
+  );
 }
 
 function buildOrdersSummary(operationalOrders: Order[]): OrdersSummaryData {
@@ -605,6 +652,97 @@ function getAssignmentMealKey(mealType?: string) {
   return "";
 }
 
+function normalizeSubAreaName(raw: string) {
+  return raw.trim().replace(/\s+/g, " ");
+}
+
+function getSubAreaDocId(raw: string) {
+  return normalizeSubAreaName(raw).toLowerCase();
+}
+
+function normalizeLookupLabel(raw: string) {
+  return normalizeSubAreaName(raw).toLowerCase();
+}
+
+function parseCsvRows(text: string) {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = "";
+  let inQuotes = false;
+  const source = text.replace(/^\uFEFF/, "");
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        currentCell += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === ",") {
+      currentRow.push(currentCell.trim());
+      currentCell = "";
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") {
+        index += 1;
+      }
+      currentRow.push(currentCell.trim());
+      if (currentRow.some((cell) => cell.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = "";
+      continue;
+    }
+
+    currentCell += char;
+  }
+
+  currentRow.push(currentCell.trim());
+  if (currentRow.some((cell) => cell.length > 0)) {
+    rows.push(currentRow);
+  }
+
+  return rows;
+}
+
+function inferAreaForSubArea(
+  rawSubArea: string,
+  serviceAreas: ServiceArea[],
+  masterSubAreas: MasterSubAreaRecord[]
+) {
+  const normalized = normalizeLookupLabel(rawSubArea);
+  if (!normalized) return "";
+
+  const existingMaster = masterSubAreas.find(
+    (record) =>
+      normalizeLookupLabel(record.name) === normalized && record.parentArea
+  );
+  if (existingMaster?.parentArea) {
+    return existingMaster.parentArea;
+  }
+
+  const matchedArea = serviceAreas.find((area) => {
+    if (normalizeLookupLabel(area.name) === normalized) {
+      return true;
+    }
+    return (area.subAreas || []).some(
+      (subArea) => normalizeLookupLabel(subArea) === normalized
+    );
+  });
+
+  return matchedArea?.name || "";
+}
+
 function getAreaAgentIdsForMeal(assignmentData: any, mealType?: string) {
   const mealKey = getAssignmentMealKey(mealType);
   return mealKey
@@ -657,6 +795,8 @@ export default function OwnerPage() {
   const [deliveryAgents, setDeliveryAgents] = useState<DeliveryAgent[]>([]);
   const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
   const [areaAssignments, setAreaAssignments] = useState<AreaAssignment[]>([]);
+  const [customerMasterRecords, setCustomerMasterRecords] = useState<CustomerMasterRecord[]>([]);
+  const [masterSubAreas, setMasterSubAreas] = useState<MasterSubAreaRecord[]>([]);
   const [selectedMenuIds, setSelectedMenuIds] = useState<string[]>([]);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [editMenuForm, setEditMenuForm] = useState({
@@ -738,6 +878,32 @@ export default function OwnerPage() {
   const [openManagedAreaId, setOpenManagedAreaId] = useState<string | null>(null);
   const [editingAreaSubAreaKey, setEditingAreaSubAreaKey] = useState<string | null>(null);
   const [areaSubAreaEditDrafts, setAreaSubAreaEditDrafts] = useState<Record<string, string>>({});
+  const [masterDataSearch, setMasterDataSearch] = useState("");
+  const [editingCustomerMasterId, setEditingCustomerMasterId] = useState<string | null>(null);
+  const [customerMasterEditForm, setCustomerMasterEditForm] = useState({
+    customerName: "",
+    area: "",
+    subArea: "",
+    address: "",
+  });
+  const [editingMasterSubAreaId, setEditingMasterSubAreaId] = useState<string | null>(null);
+  const [masterSubAreaEditForm, setMasterSubAreaEditForm] = useState({
+    name: "",
+    parentArea: "",
+    deliveryFee: "",
+    deliveryAgentId: "",
+  });
+  const [masterSubAreaCreateForm, setMasterSubAreaCreateForm] = useState({
+    name: "",
+    parentArea: "",
+    deliveryFee: "",
+    deliveryAgentId: "",
+  });
+  const [masterImportStatus, setMasterImportStatus] = useState("");
+  const [masterImportError, setMasterImportError] = useState("");
+  const [masterImportingSheet, setMasterImportingSheet] = useState<
+    "" | "subArea" | "deliveryAgent" | "deliveryCharge"
+  >("");
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
     "summary" | "activeOrders" | "pastOrders" | "paymentStatus"
@@ -775,6 +941,7 @@ export default function OwnerPage() {
   );
   const [cancellingOwnerOrderId, setCancellingOwnerOrderId] = useState<string | null>(null);
   const [activeOrderEditError, setActiveOrderEditError] = useState("");
+  const [activeOrderItemQty, setActiveOrderItemQty] = useState<Record<string, number>>({});
   const [ownerCancelError, setOwnerCancelError] = useState("");
   const [ownerCancelRemarks, setOwnerCancelRemarks] = useState("");
   const [activeOrderEditForm, setActiveOrderEditForm] = useState({
@@ -905,6 +1072,33 @@ export default function OwnerPage() {
     });
     return map;
   }, [areaAssignments]);
+  const masterSubAreaMap = useMemo(() => {
+    const map: Record<string, MasterSubAreaRecord> = {};
+    masterSubAreas.forEach((record) => {
+      map[record.id] = record;
+    });
+    return map;
+  }, [masterSubAreas]);
+  const pendingCustomerMasterRecords = useMemo(
+    () => customerMasterRecords.filter((record) => !record.subArea),
+    [customerMasterRecords]
+  );
+  const filteredCustomerMasterRecords = useMemo(() => {
+    const search = masterDataSearch.trim().toLowerCase();
+    if (!search) return customerMasterRecords;
+    return customerMasterRecords.filter((record) => {
+      const haystack = `${record.phone || ""} ${record.customerName || ""} ${record.area || ""} ${record.subArea || ""} ${record.address || ""}`.toLowerCase();
+      return haystack.includes(search);
+    });
+  }, [customerMasterRecords, masterDataSearch]);
+  const filteredMasterSubAreaRecords = useMemo(() => {
+    const search = masterDataSearch.trim().toLowerCase();
+    if (!search) return masterSubAreas;
+    return masterSubAreas.filter((record) => {
+      const haystack = `${record.name || ""} ${record.parentArea || ""} ${record.deliveryAgentName || ""}`.toLowerCase();
+      return haystack.includes(search);
+    });
+  }, [masterSubAreas, masterDataSearch]);
   const unassignedCustomSubAreas = useMemo(() => {
     const mealKey = getAssignmentMealKey(assignmentMeal);
     return serviceAreas.flatMap((area) =>
@@ -1073,6 +1267,29 @@ export default function OwnerPage() {
         );
       }
     );
+    const unsubCustomerMaster = onSnapshot(
+      query(collection(db, "customer_master"), orderBy("normalizedPhone", "asc")),
+      (snap) => {
+        setCustomerMasterRecords(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+          })) as CustomerMasterRecord[]
+        );
+      }
+    );
+    const unsubMasterSubAreas = onSnapshot(
+      query(collection(db, "master_sub_areas"), orderBy("name", "asc")),
+      (snap) => {
+        setMasterSubAreas(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+            deliveryFee: Number((docSnap.data() as any).deliveryFee || 0),
+          })) as MasterSubAreaRecord[]
+        );
+      }
+    );
     return () => {
       unsubMenu();
       unsubPublished();
@@ -1080,6 +1297,8 @@ export default function OwnerPage() {
       unsubAgents();
       unsubAreas();
       unsubAssignments();
+      unsubCustomerMaster();
+      unsubMasterSubAreas();
     };
   }, [mode]);
 
@@ -1768,6 +1987,277 @@ export default function OwnerPage() {
     }
   }
 
+  function openCustomerMasterEditor(record: CustomerMasterRecord) {
+    setEditingCustomerMasterId(record.id);
+    setCustomerMasterEditForm({
+      customerName: record.customerName || "",
+      area: record.area || "",
+      subArea: record.subArea || "",
+      address: record.address || "",
+    });
+  }
+
+  async function saveCustomerMasterRecord(record: CustomerMasterRecord) {
+    const nextSubArea = normalizeSubAreaName(customerMasterEditForm.subArea);
+    await updateDoc(doc(db, "customer_master", record.id), {
+      customerName: customerMasterEditForm.customerName.trim(),
+      area: customerMasterEditForm.area.trim(),
+      subArea: nextSubArea,
+      address: customerMasterEditForm.address.trim(),
+      status: nextSubArea ? "mapped" : "pending",
+      updatedAt: serverTimestamp(),
+    });
+    if (nextSubArea) {
+      const subAreaId = getSubAreaDocId(nextSubArea);
+      const existing = masterSubAreaMap[subAreaId];
+      if (!existing) {
+        await setDoc(
+          doc(db, "master_sub_areas", subAreaId),
+          {
+            name: nextSubArea,
+            normalizedName: nextSubArea.toLowerCase(),
+            parentArea: customerMasterEditForm.area.trim(),
+            deliveryFee: 0,
+            deliveryAgentId: "",
+            deliveryAgentName: "",
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } else if (!existing.parentArea && customerMasterEditForm.area.trim()) {
+        await updateDoc(doc(db, "master_sub_areas", subAreaId), {
+          parentArea: customerMasterEditForm.area.trim(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+    setEditingCustomerMasterId(null);
+  }
+
+  async function addMasterSubAreaRecord() {
+    const nextName = normalizeSubAreaName(masterSubAreaCreateForm.name);
+    if (!nextName) return;
+    const agentId = masterSubAreaCreateForm.deliveryAgentId;
+    const agentName = agentId ? agentNameMap[agentId] || "" : "";
+    const subAreaId = getSubAreaDocId(nextName);
+    await setDoc(
+      doc(db, "master_sub_areas", subAreaId),
+      {
+        name: nextName,
+        normalizedName: nextName.toLowerCase(),
+        parentArea: masterSubAreaCreateForm.parentArea.trim(),
+        deliveryFee: Math.max(0, Number(masterSubAreaCreateForm.deliveryFee || 0)),
+        deliveryAgentId: agentId,
+        deliveryAgentName: agentName,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    setMasterSubAreaCreateForm({
+      name: "",
+      parentArea: "",
+      deliveryFee: "",
+      deliveryAgentId: "",
+    });
+  }
+
+  function openMasterSubAreaEditor(record: MasterSubAreaRecord) {
+    setEditingMasterSubAreaId(record.id);
+    setMasterSubAreaEditForm({
+      name: record.name || "",
+      parentArea: record.parentArea || "",
+      deliveryFee: String(Number(record.deliveryFee || 0)),
+      deliveryAgentId: record.deliveryAgentId || "",
+    });
+  }
+
+  async function saveMasterSubAreaRecord(record: MasterSubAreaRecord) {
+    const nextName = normalizeSubAreaName(masterSubAreaEditForm.name);
+    if (!nextName) return;
+    const nextId = getSubAreaDocId(nextName);
+    const agentId = masterSubAreaEditForm.deliveryAgentId;
+    const agentName = agentId ? agentNameMap[agentId] || "" : "";
+
+    await setDoc(
+      doc(db, "master_sub_areas", nextId),
+      {
+        name: nextName,
+        normalizedName: nextName.toLowerCase(),
+        parentArea: masterSubAreaEditForm.parentArea.trim(),
+        deliveryFee: Math.max(0, Number(masterSubAreaEditForm.deliveryFee || 0)),
+        deliveryAgentId: agentId,
+        deliveryAgentName: agentName,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    if (nextId !== record.id) {
+      await deleteDoc(doc(db, "master_sub_areas", record.id));
+      const matchingCustomerDocs = await getDocs(
+        query(collection(db, "customer_master"), where("subArea", "==", record.name))
+      );
+      await Promise.all(
+        matchingCustomerDocs.docs.map((docSnap) =>
+          updateDoc(doc(db, "customer_master", docSnap.id), {
+            subArea: nextName,
+            updatedAt: serverTimestamp(),
+          })
+        )
+      );
+      const matchingOrders = await getDocs(
+        query(collection(db, "orders"), where("subArea", "==", record.name))
+      );
+      await Promise.all(
+        matchingOrders.docs.map((docSnap) =>
+          updateDoc(doc(db, "orders", docSnap.id), {
+            subArea: nextName,
+            updatedAt: serverTimestamp(),
+          })
+        )
+      );
+    }
+    setEditingMasterSubAreaId(null);
+  }
+
+  async function importMasterSheet(
+    file: File,
+    sheetName: "subArea" | "deliveryAgent" | "deliveryCharge"
+  ) {
+    setMasterImportError("");
+    setMasterImportStatus("");
+    setMasterImportingSheet(sheetName);
+    try {
+      const text = await file.text();
+      const rows = parseCsvRows(text);
+      if (rows.length <= 1) {
+        throw new Error("The selected file is empty.");
+      }
+
+      if (sheetName === "subArea") {
+        let batch = writeBatch(db);
+        let ops = 0;
+        let imported = 0;
+        for (const row of rows.slice(1)) {
+          const rawPhone = String(row[0] || "").trim();
+          const rawSubArea = normalizeSubAreaName(String(row[1] || ""));
+          const normalizedPhone = normalizePhone(rawPhone);
+          if (!normalizedPhone || !rawSubArea) {
+            continue;
+          }
+          const inferredArea = inferAreaForSubArea(rawSubArea, serviceAreas, masterSubAreas);
+          const customerRef = doc(db, "customer_master", normalizedPhone);
+          batch.set(
+            customerRef,
+            {
+              phone: normalizedPhone,
+              normalizedPhone,
+              area: inferredArea,
+              subArea: rawSubArea,
+              status: rawSubArea ? "mapped" : "pending",
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+          ops += 1;
+          imported += 1;
+          if (ops >= 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            ops = 0;
+          }
+        }
+        if (ops > 0) {
+          await batch.commit();
+        }
+        setMasterImportStatus(`Imported ${imported} phone-to-sub-area rows.`);
+      }
+
+      if (sheetName === "deliveryAgent") {
+        const agentByName = new Map(
+          deliveryAgents.map((agent) => [normalizeLookupLabel(agent.name), agent])
+        );
+        let batch = writeBatch(db);
+        let ops = 0;
+        let imported = 0;
+        for (const row of rows.slice(1)) {
+          const rawSubArea = normalizeSubAreaName(String(row[0] || ""));
+          const rawAgentName = normalizeSubAreaName(String(row[1] || ""));
+          if (!rawSubArea || !rawAgentName) {
+            continue;
+          }
+          const agent = agentByName.get(normalizeLookupLabel(rawAgentName));
+          const subAreaRef = doc(db, "master_sub_areas", getSubAreaDocId(rawSubArea));
+          const inferredArea = inferAreaForSubArea(rawSubArea, serviceAreas, masterSubAreas);
+          const payload: Record<string, any> = {
+            name: rawSubArea,
+            normalizedName: rawSubArea.toLowerCase(),
+            deliveryAgentName: agent?.name || rawAgentName,
+            updatedAt: serverTimestamp(),
+          };
+          if (agent?.id) {
+            payload.deliveryAgentId = agent.id;
+          }
+          if (inferredArea) {
+            payload.parentArea = inferredArea;
+          }
+          batch.set(subAreaRef, payload, { merge: true });
+          ops += 1;
+          imported += 1;
+          if (ops >= 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            ops = 0;
+          }
+        }
+        if (ops > 0) {
+          await batch.commit();
+        }
+        setMasterImportStatus(`Imported ${imported} delivery-agent mappings.`);
+      }
+
+      if (sheetName === "deliveryCharge") {
+        let batch = writeBatch(db);
+        let ops = 0;
+        let imported = 0;
+        for (const row of rows.slice(1)) {
+          const rawSubArea = normalizeSubAreaName(String(row[0] || ""));
+          const fee = Math.max(0, Number(String(row[1] || "").trim() || 0));
+          if (!rawSubArea) {
+            continue;
+          }
+          const subAreaRef = doc(db, "master_sub_areas", getSubAreaDocId(rawSubArea));
+          const inferredArea = inferAreaForSubArea(rawSubArea, serviceAreas, masterSubAreas);
+          const payload: Record<string, any> = {
+            name: rawSubArea,
+            normalizedName: rawSubArea.toLowerCase(),
+            deliveryFee: fee,
+            updatedAt: serverTimestamp(),
+          };
+          if (inferredArea) {
+            payload.parentArea = inferredArea;
+          }
+          batch.set(subAreaRef, payload, { merge: true });
+          ops += 1;
+          imported += 1;
+          if (ops >= 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            ops = 0;
+          }
+        }
+        if (ops > 0) {
+          await batch.commit();
+        }
+        setMasterImportStatus(`Imported ${imported} delivery-fee rows.`);
+      }
+    } catch (error: any) {
+      setMasterImportError(error?.message || "Failed to import master data.");
+    } finally {
+      setMasterImportingSheet("");
+    }
+  }
+
   async function reassignOrdersForArea(
     areaName: string,
     assignment?: AreaAssignment,
@@ -1912,12 +2402,32 @@ export default function OwnerPage() {
 
   function openActiveOrderEditor(order: Order) {
     const savedAddress = splitAddress(order.address || "");
+    const linkedMenu =
+      publishedMenus.find((menu) => menu.id === order.publishedMenuId) ||
+      publishedMenus.find(
+        (menu) =>
+          formatDateKey(menu.date) === formatDateKey(order.publishedDate) &&
+          (menu.mealType || "Unknown") === (order.mealType || "Unknown")
+      ) ||
+      null;
+    const nextItemQty: Record<string, number> = {};
+    if (order.orderSource === "owner" && linkedMenu) {
+      (linkedMenu.remaining || linkedMenu.items || [])
+        .filter((item) => item.active !== false)
+        .forEach((item) => {
+          const orderedItem = (order.items || []).find(
+            (existing) => existing.itemId === item.itemId || existing.name === item.name
+          );
+          nextItemQty[item.itemId] = orderedItem?.qty || 0;
+        });
+    }
     setOpenActiveOrderActionsId(null);
     setCancellingOwnerOrderId(null);
     setOwnerCancelRemarks("");
     setOwnerCancelError("");
     setEditingActiveOrderId(order.id);
     setActiveOrderEditError("");
+    setActiveOrderItemQty(nextItemQty);
     setActiveOrderEditForm({
       customerName: order.customerName || "",
       phone: order.phone || "",
@@ -1936,7 +2446,10 @@ export default function OwnerPage() {
   }
 
   function canOwnerCancelOrder(order: Order) {
-    return order.orderSource !== "owner" && (order.status === "active" || order.status === "payment_pending");
+    return (
+      order.status === "active" ||
+      order.status === "payment_pending"
+    );
   }
 
   function openOwnerCancelOrder(order: Order) {
@@ -2105,34 +2618,149 @@ export default function OwnerPage() {
       activeOrderEditForm.deliveryType === "delivery"
         ? activeOrderEditForm.assignedAgentId
         : "";
-    await updateDoc(doc(db, "orders", order.id), {
-      customerName: activeOrderEditForm.customerName.trim(),
-      phone: normalizePhone(activeOrderEditForm.phone),
-      deliveryType: activeOrderEditForm.deliveryType,
-      address:
-        activeOrderEditForm.deliveryType === "delivery"
-          ? `${activeOrderEditForm.addressLine1.trim()}, ${activeOrderEditForm.street.trim()}`
-          : "",
-      area:
-        activeOrderEditForm.deliveryType === "delivery"
-          ? activeOrderEditForm.area
-          : "",
-      subArea:
-        activeOrderEditForm.deliveryType === "delivery"
-          ? activeOrderEditForm.subArea
-          : "",
-      location:
-        activeOrderEditForm.deliveryType === "delivery"
-          ? activeOrderEditForm.location.trim() || null
-          : null,
-      assignedAgentId: nextAssignedAgentId,
-      assignedAgentName: nextAssignedAgentId ? agentNameMap[nextAssignedAgentId] || "" : "",
-      status:
-        order.status === "payment_pending"
-          ? "payment_pending"
-          : activeOrderEditForm.status,
-    });
+
+    if (order.orderSource === "owner" && order.publishedMenuId) {
+      await runTransaction(db, async (tx) => {
+        const orderRef = doc(db, "orders", order.id);
+        const menuRef = doc(db, "published_menus", order.publishedMenuId!);
+        const orderSnap = await tx.get(orderRef);
+        const menuSnap = await tx.get(menuRef);
+
+        if (!orderSnap.exists()) {
+          throw new Error("Order not found.");
+        }
+        if (!menuSnap.exists()) {
+          throw new Error("Published menu not found.");
+        }
+
+        const currentOrder = orderSnap.data() as any;
+        const menuData = menuSnap.data() as any;
+        const effectiveMenuItems = (menuData.remaining || menuData.items || []).map((item: any) => ({
+          ...item,
+        }));
+
+        const previousItems = Array.isArray(currentOrder.items) ? currentOrder.items : [];
+        const previousQtyByKey = new Map<string, number>();
+        previousItems.forEach((item: any) => {
+          const key = String(item.itemId || item.name || "");
+          previousQtyByKey.set(key, Number(item.qty || 0));
+        });
+
+        const nextItems: OrderItem[] = effectiveMenuItems
+          .map((item: any) => ({
+            itemId: item.itemId,
+            name: item.name,
+            price: Number(item.price || 0),
+            qty: Number(activeOrderItemQty[item.itemId] || 0),
+          }))
+          .filter((item: OrderItem) => item.qty > 0);
+
+        if (!nextItems.length) {
+          throw new Error("Select quantity for at least one item.");
+        }
+
+        nextItems.forEach((item: OrderItem) => {
+          const previousQty = previousQtyByKey.get(String(item.itemId || item.name)) || 0;
+          const additionalRequired = item.qty - previousQty;
+          if (additionalRequired > 0) {
+            const remainingItem = effectiveMenuItems.find(
+              (menuItem: any) => menuItem.itemId === item.itemId || menuItem.name === item.name
+            );
+            if (!remainingItem || remainingItem.active === false) {
+              throw new Error(`${item.name} is not available.`);
+            }
+            if (Number(remainingItem.qty || 0) < additionalRequired) {
+              throw new Error(`${item.name} is sold out or insufficient.`);
+            }
+          }
+        });
+
+        effectiveMenuItems.forEach((menuItem: any) => {
+          const key = String(menuItem.itemId || menuItem.name || "");
+          const previousQty = previousQtyByKey.get(key) || 0;
+          const nextQty =
+            nextItems.find((item: OrderItem) => String(item.itemId || item.name) === key)?.qty || 0;
+          menuItem.qty = Number(menuItem.qty || 0) + previousQty - nextQty;
+        });
+
+        const nextTotal = nextItems.reduce(
+          (sum: number, item: OrderItem) => sum + Number(item.price || 0) * Number(item.qty || 0),
+          0
+        );
+        const nextPaid = currentOrder.manualAmountPaid || 0;
+        const nextBalance = Math.max(0, nextTotal - nextPaid);
+        const nextManualStatus =
+          nextBalance === 0 ? "paid" : nextPaid > 0 ? "partial" : currentOrder.manualPaymentStatus || "unpaid";
+
+        tx.update(orderRef, {
+          customerName: activeOrderEditForm.customerName.trim(),
+          phone: normalizePhone(activeOrderEditForm.phone),
+          deliveryType: activeOrderEditForm.deliveryType,
+          address:
+            activeOrderEditForm.deliveryType === "delivery"
+              ? `${activeOrderEditForm.addressLine1.trim()}, ${activeOrderEditForm.street.trim()}`
+              : "",
+          area:
+            activeOrderEditForm.deliveryType === "delivery"
+              ? activeOrderEditForm.area
+              : "",
+          subArea:
+            activeOrderEditForm.deliveryType === "delivery"
+              ? activeOrderEditForm.subArea
+              : "",
+          location:
+            activeOrderEditForm.deliveryType === "delivery"
+              ? activeOrderEditForm.location.trim() || null
+              : null,
+          assignedAgentId: nextAssignedAgentId,
+          assignedAgentName: nextAssignedAgentId ? agentNameMap[nextAssignedAgentId] || "" : "",
+          status:
+            currentOrder.status === "payment_pending"
+              ? "payment_pending"
+              : activeOrderEditForm.status,
+          items: nextItems,
+          total: nextTotal,
+          manualBalance: nextBalance,
+          manualPaymentStatus: nextManualStatus,
+          updatedAt: serverTimestamp(),
+        });
+        tx.update(menuRef, {
+          remaining: effectiveMenuItems,
+          updatedAt: serverTimestamp(),
+        });
+      });
+    } else {
+      await updateDoc(doc(db, "orders", order.id), {
+        customerName: activeOrderEditForm.customerName.trim(),
+        phone: normalizePhone(activeOrderEditForm.phone),
+        deliveryType: activeOrderEditForm.deliveryType,
+        address:
+          activeOrderEditForm.deliveryType === "delivery"
+            ? `${activeOrderEditForm.addressLine1.trim()}, ${activeOrderEditForm.street.trim()}`
+            : "",
+        area:
+          activeOrderEditForm.deliveryType === "delivery"
+            ? activeOrderEditForm.area
+            : "",
+        subArea:
+          activeOrderEditForm.deliveryType === "delivery"
+            ? activeOrderEditForm.subArea
+            : "",
+        location:
+          activeOrderEditForm.deliveryType === "delivery"
+            ? activeOrderEditForm.location.trim() || null
+            : null,
+        assignedAgentId: nextAssignedAgentId,
+        assignedAgentName: nextAssignedAgentId ? agentNameMap[nextAssignedAgentId] || "" : "",
+        status:
+          order.status === "payment_pending"
+            ? "payment_pending"
+            : activeOrderEditForm.status,
+        updatedAt: serverTimestamp(),
+      });
+    }
     setEditingActiveOrderId(null);
+    setActiveOrderItemQty({});
     setActiveOrderEditError("");
   }
 
@@ -2325,6 +2953,7 @@ export default function OwnerPage() {
               ? ownerOrderLocation || null
               : null,
           items: selectedItems.map((item) => ({
+            itemId: item.itemId,
             name: item.name,
             qty: item.qty,
             price: item.price,
@@ -2546,6 +3175,33 @@ export default function OwnerPage() {
       null,
     [activePublishedMenusForOwnerOrder, ownerOrderMenuId]
   );
+  const selectedOwnerOrderItems = useMemo(
+    () =>
+      (selectedOwnerMenu?.remaining || selectedOwnerMenu?.items || [])
+        .filter((item) => item.active !== false)
+        .map((item) => ({
+          ...item,
+          selectedQty: Number(ownerOrderQty[item.itemId] || 0),
+        }))
+        .filter((item) => item.selectedQty > 0),
+    [selectedOwnerMenu, ownerOrderQty]
+  );
+  const selectedOwnerOrderTotal = useMemo(
+    () =>
+      selectedOwnerOrderItems.reduce(
+        (sum, item) => sum + Number(item.price || 0) * Number(item.selectedQty || 0),
+        0
+      ),
+    [selectedOwnerOrderItems]
+  );
+  const getEditableMenuForOrder = (order: Order) =>
+    publishedMenus.find((menu) => menu.id === order.publishedMenuId) ||
+    publishedMenus.find(
+      (menu) =>
+        formatDateKey(menu.date) === formatDateKey(order.publishedDate) &&
+        (menu.mealType || "Unknown") === (order.mealType || "Unknown")
+    ) ||
+    null;
 
   useEffect(() => {
     if (!selectedOwnerMenu) {
@@ -3081,6 +3737,7 @@ export default function OwnerPage() {
               { id: "history", label: "Orders" },
               { id: "delivery", label: "Delivery Agents" },
               { id: "areas", label: "Manage Areas" },
+              { id: "masterData", label: "Master Data" },
             ].map((item) => (
               <button
                 key={item.id}
@@ -3107,7 +3764,8 @@ export default function OwnerPage() {
                 { id: "dashboard", label: "Report/Dashboard" },
                 { id: "history", label: "Orders" },
                 { id: "delivery", label: "Delivery Agents" },
-                  { id: "areas", label: "Manage Areas" },
+                { id: "areas", label: "Manage Areas" },
+                { id: "masterData", label: "Master Data" },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -3849,6 +4507,31 @@ export default function OwnerPage() {
                           />
                         </div>
                       )
+                    )}
+                  </div>
+
+                  <div className="card stack">
+                    <div className="owner-create-order-intro">
+                      <strong>Order Summary</strong>
+                      <small>Review selected items before creating the adhoc order.</small>
+                    </div>
+                    {selectedOwnerOrderItems.length === 0 ? (
+                      <small className="payments-subtext">No items selected yet.</small>
+                    ) : (
+                      <div className="stack" style={{ gap: 10 }}>
+                        {selectedOwnerOrderItems.map((item) => (
+                          <div key={`owner-summary-${item.itemId}`} className="row" style={{ justifyContent: "space-between" }}>
+                            <span>
+                              {item.name} x{item.selectedQty}
+                            </span>
+                            <strong>Rs. {Number(item.price || 0) * Number(item.selectedQty || 0)}</strong>
+                          </div>
+                        ))}
+                        <div className="row" style={{ justifyContent: "space-between" }}>
+                          <strong>Total</strong>
+                          <strong>Rs. {selectedOwnerOrderTotal}</strong>
+                        </div>
+                      </div>
                     )}
                   </div>
 
@@ -5079,6 +5762,42 @@ export default function OwnerPage() {
                                           />
                                         </>
                                       )}
+                                      {order.orderSource === "owner" && getEditableMenuForOrder(order) && (
+                                        <div className="card stack" style={{ gridColumn: "1 / -1" }}>
+                                          <strong>Edit menu items</strong>
+                                          {(getEditableMenuForOrder(order)?.remaining ||
+                                            getEditableMenuForOrder(order)?.items ||
+                                            [])
+                                            .filter((item) => item.active !== false)
+                                            .map((item) => (
+                                              <div
+                                                key={`owner-edit-active-${order.id}-${item.itemId}`}
+                                                className="row"
+                                                style={{ justifyContent: "space-between", gap: 12 }}
+                                              >
+                                                <div style={{ flex: 1 }}>
+                                                  {item.name}
+                                                  <small className="payments-subtext" style={{ display: "block" }}>
+                                                    Rs. {item.price} | Available: {item.qty}
+                                                  </small>
+                                                </div>
+                                                <input
+                                                  className="input"
+                                                  type="number"
+                                                  min={0}
+                                                  value={activeOrderItemQty[item.itemId] || 0}
+                                                  onChange={(e) =>
+                                                    setActiveOrderItemQty({
+                                                      ...activeOrderItemQty,
+                                                      [item.itemId]: Math.max(0, Number(e.target.value || 0)),
+                                                    })
+                                                  }
+                                                  style={{ width: 120 }}
+                                                />
+                                              </div>
+                                            ))}
+                                        </div>
+                                      )}
                                       {activeOrderEditError && (
                                         <small style={{ color: "crimson" }}>
                                           {activeOrderEditError}
@@ -5741,6 +6460,42 @@ export default function OwnerPage() {
                                           />
                                         </>
                                       )}
+                                      {order.orderSource === "owner" && getEditableMenuForOrder(order) && (
+                                        <div className="card stack" style={{ gridColumn: "1 / -1" }}>
+                                          <strong>Edit menu items</strong>
+                                          {(getEditableMenuForOrder(order)?.remaining ||
+                                            getEditableMenuForOrder(order)?.items ||
+                                            [])
+                                            .filter((item) => item.active !== false)
+                                            .map((item) => (
+                                              <div
+                                                key={`owner-edit-past-${order.id}-${item.itemId}`}
+                                                className="row"
+                                                style={{ justifyContent: "space-between", gap: 12 }}
+                                              >
+                                                <div style={{ flex: 1 }}>
+                                                  {item.name}
+                                                  <small className="payments-subtext" style={{ display: "block" }}>
+                                                    Rs. {item.price} | Available: {item.qty}
+                                                  </small>
+                                                </div>
+                                                <input
+                                                  className="input"
+                                                  type="number"
+                                                  min={0}
+                                                  value={activeOrderItemQty[item.itemId] || 0}
+                                                  onChange={(e) =>
+                                                    setActiveOrderItemQty({
+                                                      ...activeOrderItemQty,
+                                                      [item.itemId]: Math.max(0, Number(e.target.value || 0)),
+                                                    })
+                                                  }
+                                                  style={{ width: 120 }}
+                                                />
+                                              </div>
+                                            ))}
+                                        </div>
+                                      )}
                                       {activeOrderEditError && (
                                         <small style={{ color: "crimson" }}>{activeOrderEditError}</small>
                                       )}
@@ -5860,9 +6615,13 @@ export default function OwnerPage() {
                                 <td>
                                   {isOwnerManualPaymentOrder(order)
                                     ? "Manual Collection"
+                                    : isCashOnDeliveryOrder(order)
+                                    ? "Cash on Delivery"
+                                    : isUpiPaymentOrder(order)
+                                    ? "UPI"
                                     : order.deliveryType === "pickup"
-                                    ? "Pay at Outlet"
-                                    : "Cash on Delivery"}
+                                    ? "Self Pickup"
+                                    : "Payment"}
                                 </td>
                                 <td>
                                   {(order.items || []).map((item) => (
@@ -5884,23 +6643,25 @@ export default function OwnerPage() {
                                         ? "Paid"
                                         : getPaymentStatusLabel(order)}
                                     </span>
-                                    <button
-                                      className="btn secondary btn-compact"
-                                      onClick={() => {
-                                        setEditingPickupPaymentId(order.id);
-                                        setPickupPaymentForm({
-                                          amount: "",
-                                          notes: getPaymentNotes(order),
-                                        });
-                                      }}
-                                    >
-                                      Update
-                                    </button>
+                                    {canUpdatePaymentStatus(order) ? (
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => {
+                                          setEditingPickupPaymentId(order.id);
+                                          setPickupPaymentForm({
+                                            amount: "",
+                                            notes: getPaymentNotes(order),
+                                          });
+                                        }}
+                                      >
+                                        Update
+                                      </button>
+                                    ) : null}
                                   </div>
                                 </td>
                                 <td>{getPaymentNotes(order) || "-"}</td>
                               </tr>
-                              {editingPickupPaymentId === order.id && (
+                              {editingPickupPaymentId === order.id && canUpdatePaymentStatus(order) && (
                                 <tr className="payments-edit-row">
                                   <td colSpan={13}>
                                     <div className="payments-edit-grid">
@@ -6856,6 +7617,500 @@ export default function OwnerPage() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === "masterData" && (
+            <div className="card stack">
+              <h2>Master Data</h2>
+              <small className="payments-subtext">
+                Maintain phone to sub-area lookup, sub-area delivery agent mapping, and sub-area delivery fees.
+              </small>
+              <input
+                className="input"
+                placeholder="Search phone / customer / sub area / agent"
+                value={masterDataSearch}
+                onChange={(e) => setMasterDataSearch(e.target.value)}
+              />
+              <div className="card stack">
+                <strong>Import Master Data</strong>
+                <small className="payments-subtext">
+                  Export each Excel sheet as CSV, then upload them here one by one.
+                </small>
+                <div className="owner-summary-grid">
+                  <div className="card stack">
+                    <strong>Sheet 1: Sub Area</strong>
+                    <small className="payments-subtext">
+                      Columns: Mobile, Sub Area
+                    </small>
+                    <input
+                      className="input"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          await importMasterSheet(file, "subArea");
+                        }
+                        e.currentTarget.value = "";
+                      }}
+                      disabled={masterImportingSheet !== ""}
+                    />
+                  </div>
+                  <div className="card stack">
+                    <strong>Sheet 2: Delivery Agent</strong>
+                    <small className="payments-subtext">
+                      Columns: Sub Area, Delivery Agent
+                    </small>
+                    <input
+                      className="input"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          await importMasterSheet(file, "deliveryAgent");
+                        }
+                        e.currentTarget.value = "";
+                      }}
+                      disabled={masterImportingSheet !== ""}
+                    />
+                  </div>
+                  <div className="card stack">
+                    <strong>Sheet 3: Delivery Charge</strong>
+                    <small className="payments-subtext">
+                      Columns: Sub Area, Delivery Fee
+                    </small>
+                    <input
+                      className="input"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          await importMasterSheet(file, "deliveryCharge");
+                        }
+                        e.currentTarget.value = "";
+                      }}
+                      disabled={masterImportingSheet !== ""}
+                    />
+                  </div>
+                </div>
+                {masterImportingSheet && (
+                  <small className="payments-subtext">
+                    Importing {masterImportingSheet} data...
+                  </small>
+                )}
+                {masterImportStatus && (
+                  <small className="customer-success-text">{masterImportStatus}</small>
+                )}
+                {masterImportError && (
+                  <small className="customer-error-text">{masterImportError}</small>
+                )}
+              </div>
+
+              <div className="card stack">
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <div>
+                    <strong>New Customers Pending Mapping</strong>
+                    <small className="payments-subtext" style={{ display: "block" }}>
+                      Orders from unknown phones are captured here for sub-area mapping.
+                    </small>
+                  </div>
+                  <span className="badge">{pendingCustomerMasterRecords.length}</span>
+                </div>
+                {pendingCustomerMasterRecords.length === 0 ? (
+                  <small className="payments-subtext">No pending customer mappings.</small>
+                ) : (
+                  <div className="table-scroll">
+                    <table className="payments-table payments-table-compact owner-assignment-table">
+                      <thead>
+                        <tr>
+                          <th>Phone</th>
+                          <th>Customer</th>
+                          <th>Area</th>
+                          <th>Address</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingCustomerMasterRecords.map((record) => (
+                          <Fragment key={`pending-master-${record.id}`}>
+                            <tr>
+                              <td>{record.phone}</td>
+                              <td>{record.customerName || "-"}</td>
+                              <td>{record.area || "-"}</td>
+                              <td>{record.address || "-"}</td>
+                              <td>
+                                <button
+                                  className="btn secondary btn-compact"
+                                  onClick={() => openCustomerMasterEditor(record)}
+                                >
+                                  Map Sub Area
+                                </button>
+                              </td>
+                            </tr>
+                            {editingCustomerMasterId === record.id && (
+                              <tr>
+                                <td colSpan={5} className="owner-assignment-editor-cell">
+                                  <div className="owner-assignment-editor">
+                                    <div className="row">
+                                      <input
+                                        className="input"
+                                        placeholder="Customer name"
+                                        value={customerMasterEditForm.customerName}
+                                        onChange={(e) =>
+                                          setCustomerMasterEditForm({
+                                            ...customerMasterEditForm,
+                                            customerName: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <select
+                                        className="select"
+                                        value={customerMasterEditForm.area}
+                                        onChange={(e) =>
+                                          setCustomerMasterEditForm({
+                                            ...customerMasterEditForm,
+                                            area: e.target.value,
+                                          })
+                                        }
+                                      >
+                                        <option value="">Select area</option>
+                                        {areaOptions.map((area) => (
+                                          <option key={area} value={area}>
+                                            {area}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <input
+                                        className="input"
+                                        placeholder="Sub area"
+                                        value={customerMasterEditForm.subArea}
+                                        onChange={(e) =>
+                                          setCustomerMasterEditForm({
+                                            ...customerMasterEditForm,
+                                            subArea: e.target.value,
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                    <input
+                                      className="input"
+                                      placeholder="Address"
+                                      value={customerMasterEditForm.address}
+                                      onChange={(e) =>
+                                        setCustomerMasterEditForm({
+                                          ...customerMasterEditForm,
+                                          address: e.target.value,
+                                        })
+                                      }
+                                    />
+                                    <div className="row">
+                                      <button className="btn btn-compact" onClick={() => saveCustomerMasterRecord(record)}>
+                                        Save
+                                      </button>
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => setEditingCustomerMasterId(null)}
+                                      >
+                                        Close
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="card stack">
+                <strong>Customer Lookup</strong>
+                <div className="table-scroll">
+                  <table className="payments-table payments-table-compact owner-assignment-table">
+                    <thead>
+                      <tr>
+                        <th>Phone</th>
+                        <th>Customer</th>
+                        <th>Area</th>
+                        <th>Sub Area</th>
+                        <th>Address</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCustomerMasterRecords.map((record) => (
+                        <Fragment key={`customer-master-${record.id}`}>
+                          <tr>
+                            <td>{record.phone}</td>
+                            <td>{record.customerName || "-"}</td>
+                            <td>{record.area || "-"}</td>
+                            <td>{record.subArea || "-"}</td>
+                            <td>{record.address || "-"}</td>
+                            <td>{record.subArea ? "Mapped" : "Pending"}</td>
+                            <td>
+                              <button
+                                className="btn secondary btn-compact"
+                                onClick={() => openCustomerMasterEditor(record)}
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                          {editingCustomerMasterId === record.id && (
+                            <tr>
+                              <td colSpan={7} className="owner-assignment-editor-cell">
+                                <div className="owner-assignment-editor">
+                                  <div className="row">
+                                    <input
+                                      className="input"
+                                      placeholder="Customer name"
+                                      value={customerMasterEditForm.customerName}
+                                      onChange={(e) =>
+                                        setCustomerMasterEditForm({
+                                          ...customerMasterEditForm,
+                                          customerName: e.target.value,
+                                        })
+                                      }
+                                    />
+                                    <select
+                                      className="select"
+                                      value={customerMasterEditForm.area}
+                                      onChange={(e) =>
+                                        setCustomerMasterEditForm({
+                                          ...customerMasterEditForm,
+                                          area: e.target.value,
+                                        })
+                                      }
+                                    >
+                                      <option value="">Select area</option>
+                                      {areaOptions.map((area) => (
+                                        <option key={area} value={area}>
+                                          {area}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      className="input"
+                                      placeholder="Sub area"
+                                      value={customerMasterEditForm.subArea}
+                                      onChange={(e) =>
+                                        setCustomerMasterEditForm({
+                                          ...customerMasterEditForm,
+                                          subArea: e.target.value,
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                  <input
+                                    className="input"
+                                    placeholder="Address"
+                                    value={customerMasterEditForm.address}
+                                    onChange={(e) =>
+                                      setCustomerMasterEditForm({
+                                        ...customerMasterEditForm,
+                                        address: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  <div className="row">
+                                    <button className="btn btn-compact" onClick={() => saveCustomerMasterRecord(record)}>
+                                      Save
+                                    </button>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() => setEditingCustomerMasterId(null)}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="card stack">
+                <strong>Sub Area Master</strong>
+                <div className="row">
+                  <input
+                    className="input"
+                    placeholder="Sub area name"
+                    value={masterSubAreaCreateForm.name}
+                    onChange={(e) =>
+                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, name: e.target.value })
+                    }
+                  />
+                  <select
+                    className="select"
+                    value={masterSubAreaCreateForm.parentArea}
+                    onChange={(e) =>
+                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, parentArea: e.target.value })
+                    }
+                  >
+                    <option value="">Select area</option>
+                    {areaOptions.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    placeholder="Delivery fee"
+                    value={masterSubAreaCreateForm.deliveryFee}
+                    onChange={(e) =>
+                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryFee: e.target.value })
+                    }
+                  />
+                  <select
+                    className="select"
+                    value={masterSubAreaCreateForm.deliveryAgentId}
+                    onChange={(e) =>
+                      setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryAgentId: e.target.value })
+                    }
+                  >
+                    <option value="">Select delivery agent</option>
+                    {deliveryAgents
+                      .filter((agent) => agent.active)
+                      .map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button className="btn" onClick={addMasterSubAreaRecord}>
+                    Add Sub Area
+                  </button>
+                </div>
+                <div className="table-scroll">
+                  <table className="payments-table payments-table-compact owner-assignment-table">
+                    <thead>
+                      <tr>
+                        <th>Sub Area</th>
+                        <th>Area</th>
+                        <th>Delivery Fee</th>
+                        <th>Delivery Agent</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMasterSubAreaRecords.map((record) => (
+                        <Fragment key={`sub-master-${record.id}`}>
+                          <tr>
+                            <td>{record.name}</td>
+                            <td>{record.parentArea || "-"}</td>
+                            <td>Rs. {Number(record.deliveryFee || 0)}</td>
+                            <td>{record.deliveryAgentName || "-"}</td>
+                            <td>
+                              <button
+                                className="btn secondary btn-compact"
+                                onClick={() => openMasterSubAreaEditor(record)}
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                          {editingMasterSubAreaId === record.id && (
+                            <tr>
+                              <td colSpan={5} className="owner-assignment-editor-cell">
+                                <div className="owner-assignment-editor">
+                                  <div className="row">
+                                    <input
+                                      className="input"
+                                      placeholder="Sub area"
+                                      value={masterSubAreaEditForm.name}
+                                      onChange={(e) =>
+                                        setMasterSubAreaEditForm({
+                                          ...masterSubAreaEditForm,
+                                          name: e.target.value,
+                                        })
+                                      }
+                                    />
+                                    <select
+                                      className="select"
+                                      value={masterSubAreaEditForm.parentArea}
+                                      onChange={(e) =>
+                                        setMasterSubAreaEditForm({
+                                          ...masterSubAreaEditForm,
+                                          parentArea: e.target.value,
+                                        })
+                                      }
+                                    >
+                                      <option value="">Select area</option>
+                                      {areaOptions.map((area) => (
+                                        <option key={area} value={area}>
+                                          {area}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      className="input"
+                                      type="number"
+                                      min="0"
+                                      placeholder="Delivery fee"
+                                      value={masterSubAreaEditForm.deliveryFee}
+                                      onChange={(e) =>
+                                        setMasterSubAreaEditForm({
+                                          ...masterSubAreaEditForm,
+                                          deliveryFee: e.target.value,
+                                        })
+                                      }
+                                    />
+                                    <select
+                                      className="select"
+                                      value={masterSubAreaEditForm.deliveryAgentId}
+                                      onChange={(e) =>
+                                        setMasterSubAreaEditForm({
+                                          ...masterSubAreaEditForm,
+                                          deliveryAgentId: e.target.value,
+                                        })
+                                      }
+                                    >
+                                      <option value="">Select delivery agent</option>
+                                      {deliveryAgents
+                                        .filter((agent) => agent.active)
+                                        .map((agent) => (
+                                          <option key={agent.id} value={agent.id}>
+                                            {agent.name}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </div>
+                                  <div className="row">
+                                    <button className="btn btn-compact" onClick={() => saveMasterSubAreaRecord(record)}>
+                                      Save
+                                    </button>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() => setEditingMasterSubAreaId(null)}
+                                    >
+                                      Close
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </div>

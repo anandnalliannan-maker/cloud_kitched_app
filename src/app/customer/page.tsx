@@ -10,13 +10,6 @@ import {
   signOut,
 } from "firebase/auth";
 import {
-  Autocomplete,
-  GoogleMap,
-  LoadScript,
-  Marker,
-} from "@react-google-maps/api";
-import {
-  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -31,7 +24,7 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase";
-import { getSubAreasForArea, isMappedSubArea } from "@/lib/subareas";
+import { isMappedSubArea } from "@/lib/subareas";
 
 type CartItem = {
   id: string;
@@ -69,6 +62,27 @@ type ServiceAreaOption = {
   subAreaFees?: Record<string, number>;
 };
 
+type CustomerMasterRecord = {
+  id: string;
+  phone: string;
+  normalizedPhone: string;
+  customerName?: string;
+  area?: string;
+  subArea?: string;
+  address?: string;
+  status?: string;
+};
+
+type MasterSubAreaRecord = {
+  id: string;
+  name: string;
+  normalizedName: string;
+  parentArea?: string;
+  deliveryFee?: number;
+  deliveryAgentId?: string;
+  deliveryAgentName?: string;
+};
+
 type CustomerOrder = {
   id: string;
   orderId: string;
@@ -89,8 +103,6 @@ type CustomerOrder = {
   items: { name: string; qty: number; price?: number }[];
 };
 
-const mapContainerStyle = { width: "100%", height: "320px" };
-const defaultCenter = { lat: 12.9716, lng: 80.2214 };
 const pendingPaymentStorageKey = "msk_pending_payment";
 const customerProfileStorageKeyPrefix = "msk_customer_profile";
 const MIN_HOME_DELIVERY_ORDER = 60;
@@ -144,13 +156,20 @@ type LocalCustomerProfile = {
   addressLine1: string;
   street: string;
   area: string;
-  subArea: string;
   location: { lat: number; lng: number } | null;
 };
 
 function getLocalCustomerProfileKey(rawPhone: string) {
   const digits = rawPhone.replace(/\D/g, "");
   return digits ? `${customerProfileStorageKeyPrefix}:${digits}` : "";
+}
+
+function normalizeSubAreaName(raw: string) {
+  return raw.trim().replace(/\s+/g, " ");
+}
+
+function getSubAreaDocId(raw: string) {
+  return normalizeSubAreaName(raw).toLowerCase();
 }
 
 function readLocalCustomerProfile(rawPhone: string): LocalCustomerProfile | null {
@@ -241,6 +260,8 @@ export default function CustomerPage() {
     (CartItem & { description: string; remaining: number })[]
   >([]);
   const [serviceAreas, setServiceAreas] = useState<ServiceAreaOption[]>([]);
+  const [customerMasterRecords, setCustomerMasterRecords] = useState<CustomerMasterRecord[]>([]);
+  const [masterSubAreas, setMasterSubAreas] = useState<MasterSubAreaRecord[]>([]);
   const [menuDateLabel, setMenuDateLabel] = useState("");
   const [menuMealLabel, setMenuMealLabel] = useState("");
   const [publishedMenuId, setPublishedMenuId] = useState<string | null>(null);
@@ -257,13 +278,7 @@ export default function CustomerPage() {
     addressLine1: "",
     street: "",
     area: "",
-    subArea: "",
   });
-  const [customSubAreaDraft, setCustomSubAreaDraft] = useState("");
-  const [showCustomSubAreaInput, setShowCustomSubAreaInput] = useState(false);
-  const [customSubAreaError, setCustomSubAreaError] = useState("");
-  const [isSavingCustomSubArea, setIsSavingCustomSubArea] = useState(false);
-  const [localSubAreasByArea, setLocalSubAreasByArea] = useState<Record<string, string[]>>({});
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null
   );
@@ -314,8 +329,6 @@ export default function CustomerPage() {
   const lastPrefilledPhoneRef = useRef("");
   const cancelConfirmationRef = useRef<ConfirmationResult | null>(null);
   const cancelRecaptchaRef = useRef<RecaptchaVerifier | null>(null);
-
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   function clearPendingPaymentResume() {
     setPendingPaymentResume(null);
@@ -748,10 +761,6 @@ export default function CustomerPage() {
             latestOrder.deliveryType === "delivery"
               ? latestOrder.area || prev.area
               : prev.area,
-          subArea:
-            latestOrder.deliveryType === "delivery"
-              ? latestOrder.subArea || prev.subArea
-              : prev.subArea,
         }));
 
         if (latestOrder.deliveryType === "delivery") {
@@ -812,34 +821,89 @@ export default function CustomerPage() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const unsubCustomerMaster = onSnapshot(
+      query(collection(db, "customer_master"), orderBy("normalizedPhone", "asc")),
+      (snap) => {
+        setCustomerMasterRecords(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+          })) as CustomerMasterRecord[]
+        );
+      }
+    );
+    const unsubMasterSubAreas = onSnapshot(
+      query(collection(db, "master_sub_areas"), orderBy("name", "asc")),
+      (snap) => {
+        setMasterSubAreas(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+            deliveryFee: Number((docSnap.data() as any).deliveryFee || 0),
+          })) as MasterSubAreaRecord[]
+        );
+      }
+    );
+    return () => {
+      unsubCustomerMaster();
+      unsubMasterSubAreas();
+    };
+  }, []);
+
   const itemsTotal = useMemo(
     () => items.reduce((sum, item) => sum + item.price * item.qty, 0),
     [items]
   );
 
+  const matchedCustomerMaster = useMemo(() => {
+    const digits = form.phone.replace(/\D/g, "");
+    if (!digits) return null;
+    return (
+      customerMasterRecords.find(
+        (record) => (record.normalizedPhone || "").replace(/\D/g, "") === digits
+      ) || null
+    );
+  }, [customerMasterRecords, form.phone]);
+  const resolvedSubArea = useMemo(
+    () => normalizeSubAreaName(matchedCustomerMaster?.subArea || ""),
+    [matchedCustomerMaster]
+  );
+  const resolvedMasterSubArea = useMemo(() => {
+    if (!resolvedSubArea) return null;
+    return masterSubAreas.find((record) => record.id === getSubAreaDocId(resolvedSubArea)) || null;
+  }, [masterSubAreas, resolvedSubArea]);
+  const resolvedArea = useMemo(
+    () =>
+      String(
+        matchedCustomerMaster?.area ||
+          resolvedMasterSubArea?.parentArea ||
+          form.area
+      ).trim(),
+    [form.area, matchedCustomerMaster, resolvedMasterSubArea]
+  );
   const selectedAreaConfig = useMemo(
-    () => serviceAreas.find((area) => area.name === form.area) || null,
-    [serviceAreas, form.area]
+    () => serviceAreas.find((area) => area.name === resolvedArea) || null,
+    [resolvedArea, serviceAreas]
   );
   const selectedAreaFee = useMemo(
     () => Number(selectedAreaConfig?.deliveryFee || 0),
     [selectedAreaConfig]
   );
   const selectedSubAreaFee = useMemo(() => {
-    if (!form.subArea || !selectedAreaConfig) {
+    if (!resolvedSubArea || !selectedAreaConfig) {
       return undefined;
     }
-    const fee = selectedAreaConfig.subAreaFees?.[form.subArea];
-    return typeof fee === "number" ? fee : undefined;
-  }, [form.subArea, selectedAreaConfig]);
-  const subAreaOptions = useMemo(() => {
-    const saved =
-      serviceAreas.find((area) => area.name === form.area)?.subAreas?.filter(Boolean) || [];
-    const local = localSubAreasByArea[form.area] || [];
-    return Array.from(new Set([...getSubAreasForArea(form.area), ...saved, ...local])).sort(
-      (a, b) => a.localeCompare(b)
-    );
-  }, [serviceAreas, form.area, localSubAreasByArea]);
+    const ownerSetFee =
+      resolvedMasterSubArea && typeof resolvedMasterSubArea.deliveryFee === "number"
+        ? resolvedMasterSubArea.deliveryFee
+        : undefined;
+    if (typeof ownerSetFee === "number" && ownerSetFee > 0) {
+      return ownerSetFee;
+    }
+    const fee = selectedAreaConfig.subAreaFees?.[resolvedSubArea];
+    return typeof fee === "number" && fee > 0 ? fee : undefined;
+  }, [resolvedSubArea, selectedAreaConfig, resolvedMasterSubArea]);
 
   const isLunchMenu = useMemo(
     () => (menuMealLabel || "").trim().toLowerCase() === "lunch",
@@ -884,11 +948,8 @@ export default function CustomerPage() {
       if (!form.area.trim()) {
         missing.push("Area");
       }
-      if (!form.subArea.trim()) {
-        missing.push("Sub Area");
-      }
       if (!location) {
-        missing.push("Exact Location on Map");
+        missing.push("Current Location");
       }
     }
 
@@ -904,24 +965,6 @@ export default function CustomerPage() {
       )
     );
   }
-
-  function onAutocompleteLoad(ac: google.maps.places.Autocomplete) {
-    autocompleteRef.current = ac;
-  }
-
-  function onPlaceChanged() {
-    const ac = autocompleteRef.current;
-    if (!ac) return;
-    const place = ac.getPlace();
-    if (!place.geometry?.location) return;
-    const lat = place.geometry.location.lat();
-    const lng = place.geometry.location.lng();
-    setLocError("");
-    setLocation({ lat, lng });
-    setLocLabel(place.formatted_address || place.name || "Location selected");
-  }
-
-  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   function useCurrentLocation() {
     setLocError("");
@@ -1078,63 +1121,6 @@ export default function CustomerPage() {
     }
   }
 
-  async function saveCustomSubArea() {
-    setCustomSubAreaError("");
-    if (!form.area) {
-      setCustomSubAreaError("Select area first.");
-      return;
-    }
-    const nextSubArea = customSubAreaDraft.trim();
-    if (!nextSubArea) {
-      setCustomSubAreaError("Enter sub area name.");
-      return;
-    }
-    const targetArea = serviceAreas.find((area) => area.name === form.area);
-    if (!targetArea) {
-      setCustomSubAreaError("Selected area is not available.");
-      return;
-    }
-    const alreadyExists = subAreaOptions.some(
-      (subArea) => subArea.toLowerCase() === nextSubArea.toLowerCase()
-    );
-    setForm((prev) => ({ ...prev, subArea: nextSubArea }));
-    setShowCustomSubAreaInput(false);
-    setCustomSubAreaDraft("");
-    setLocalSubAreasByArea((prev) => ({
-      ...prev,
-      [form.area]: Array.from(new Set([...(prev[form.area] || []), nextSubArea])).sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    }));
-    if (alreadyExists) {
-      return;
-    }
-
-    setIsSavingCustomSubArea(true);
-    try {
-      setServiceAreas((prev) =>
-        prev.map((area) =>
-          area.id === targetArea.id
-            ? {
-                ...area,
-                subAreas: Array.from(
-                  new Set([...(area.subAreas || []), nextSubArea])
-                ).sort((a, b) => a.localeCompare(b)),
-              }
-            : area
-        )
-      );
-      await updateDoc(doc(db, "service_areas", targetArea.id), {
-        subAreas: arrayUnion(nextSubArea),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error: any) {
-      setCustomSubAreaError(error?.message || "Failed to save sub area.");
-    } finally {
-      setIsSavingCustomSubArea(false);
-    }
-  }
-
   async function cancelCustomerOrder(order: CustomerOrder) {
     setCancelError("");
     setCancelStatus("");
@@ -1247,7 +1233,7 @@ export default function CustomerPage() {
       return;
     }
     if (deliveryType === "delivery" && !location) {
-      setPayError("Please select exact location on map.");
+      setPayError("Please use current location before proceeding.");
       return;
     }
     const selectedItems = items.filter((item) => item.qty > 0);
@@ -1272,8 +1258,7 @@ export default function CustomerPage() {
           ? [
               form.addressLine1.trim(),
               form.street.trim(),
-              form.subArea.trim(),
-              form.area.trim(),
+              resolvedArea || form.area.trim(),
             ]
               .filter(Boolean)
               .join(", ")
@@ -1338,75 +1323,104 @@ export default function CustomerPage() {
 
         let assignedAgentId = "";
         let assignedAgentName = "";
-        if (deliveryType === "delivery" && form.area) {
-          const assignmentRef = doc(db, "area_assignments", form.area);
-          const assignmentSnap = await tx.get(assignmentRef);
-          if (assignmentSnap.exists()) {
-            const assignmentData = assignmentSnap.data() as any;
-            const subAreaAgentIds: string[] =
-              mealKey
-                ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[form.subArea] ||
-                  assignmentData.subAreaAgentIds?.[form.subArea] ||
-                  []
-                : assignmentData.subAreaAgentIds?.[form.subArea] || [];
-            const requiresOwnerAssignment =
-              Boolean(form.subArea) &&
-              !isMappedSubArea(form.area, form.subArea) &&
-              subAreaAgentIds.length === 0;
-            const agentIds: string[] =
-              subAreaAgentIds.length > 0
-                ? subAreaAgentIds
-                : requiresOwnerAssignment
-                  ? []
-                  : mealKey
-                    ? assignmentData.mealAgentIds?.[mealKey] || assignmentData.agentIds || []
-                    : assignmentData.agentIds || [];
-            if (agentIds.length > 0) {
-              const usesSubAreaPool = subAreaAgentIds.length > 0;
-              const lastIndex = usesSubAreaPool
-                ? mealKey
-                  ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[form.subArea] === "number"
-                    ? assignmentData.subAreaMealLastIndex[mealKey][form.subArea]
-                    : typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
-                      ? assignmentData.subAreaLastIndex[form.subArea]
+        if (deliveryType === "delivery" && resolvedArea) {
+          const resolvedAgentId =
+            resolvedMasterSubArea?.deliveryAgentId || "";
+          const resolvedAgentName =
+            resolvedMasterSubArea?.deliveryAgentName || "";
+          if (resolvedAgentId) {
+            assignedAgentId = resolvedAgentId;
+            assignedAgentName = resolvedAgentName;
+          } else {
+            const assignmentRef = doc(db, "area_assignments", resolvedArea);
+            const assignmentSnap = await tx.get(assignmentRef);
+            if (assignmentSnap.exists()) {
+              const assignmentData = assignmentSnap.data() as any;
+              const subAreaAgentIds: string[] =
+                mealKey
+                  ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[resolvedSubArea] ||
+                    assignmentData.subAreaAgentIds?.[resolvedSubArea] ||
+                    []
+                  : assignmentData.subAreaAgentIds?.[resolvedSubArea] || [];
+              const requiresOwnerAssignment =
+                Boolean(resolvedSubArea) &&
+                !isMappedSubArea(resolvedArea, resolvedSubArea) &&
+                subAreaAgentIds.length === 0;
+              const agentIds: string[] =
+                subAreaAgentIds.length > 0
+                  ? subAreaAgentIds
+                  : requiresOwnerAssignment
+                    ? []
+                    : mealKey
+                      ? assignmentData.mealAgentIds?.[mealKey] || assignmentData.agentIds || []
+                      : assignmentData.agentIds || [];
+              if (agentIds.length > 0) {
+                const usesSubAreaPool = subAreaAgentIds.length > 0;
+                const lastIndex = usesSubAreaPool
+                  ? mealKey
+                    ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[resolvedSubArea] === "number"
+                      ? assignmentData.subAreaMealLastIndex[mealKey][resolvedSubArea]
+                      : typeof assignmentData.subAreaLastIndex?.[resolvedSubArea] === "number"
+                        ? assignmentData.subAreaLastIndex[resolvedSubArea]
+                        : -1
+                    : typeof assignmentData.subAreaLastIndex?.[resolvedSubArea] === "number"
+                      ? assignmentData.subAreaLastIndex[resolvedSubArea]
                       : -1
-                  : typeof assignmentData.subAreaLastIndex?.[form.subArea] === "number"
-                    ? assignmentData.subAreaLastIndex[form.subArea]
-                    : -1
-                : mealKey
-                  ? typeof assignmentData.mealLastIndex?.[mealKey] === "number"
-                    ? assignmentData.mealLastIndex[mealKey]
+                  : mealKey
+                    ? typeof assignmentData.mealLastIndex?.[mealKey] === "number"
+                      ? assignmentData.mealLastIndex[mealKey]
+                      : typeof assignmentData.lastIndex === "number"
+                        ? assignmentData.lastIndex
+                        : -1
                     : typeof assignmentData.lastIndex === "number"
                       ? assignmentData.lastIndex
-                      : -1
-                  : typeof assignmentData.lastIndex === "number"
-                    ? assignmentData.lastIndex
-                  : -1
-                ;
-              const nextIndex = (lastIndex + 1) % agentIds.length;
-              const agentId = agentIds[nextIndex];
-              const agentSnap = await tx.get(
-                doc(db, "delivery_agents", agentId)
-              );
-              if (agentSnap.exists()) {
-                const agentData = agentSnap.data() as any;
-                if (agentData.active !== false) {
-                  assignedAgentId = agentId;
-                  assignedAgentName = agentData.name || "";
+                      : -1;
+                const nextIndex = (lastIndex + 1) % agentIds.length;
+                const agentId = agentIds[nextIndex];
+                const agentSnap = await tx.get(doc(db, "delivery_agents", agentId));
+                if (agentSnap.exists()) {
+                  const agentData = agentSnap.data() as any;
+                  if (agentData.active !== false) {
+                    assignedAgentId = agentId;
+                    assignedAgentName = agentData.name || "";
                     tx.update(
                       assignmentRef,
                       usesSubAreaPool
                         ? mealKey
-                          ? { [`subAreaMealLastIndex.${mealKey}.${form.subArea}`]: nextIndex }
-                          : { [`subAreaLastIndex.${form.subArea}`]: nextIndex }
+                          ? { [`subAreaMealLastIndex.${mealKey}.${resolvedSubArea}`]: nextIndex }
+                          : { [`subAreaLastIndex.${resolvedSubArea}`]: nextIndex }
                         : mealKey
                           ? { [`mealLastIndex.${mealKey}`]: nextIndex }
                           : { lastIndex: nextIndex }
                     );
+                  }
                 }
               }
             }
           }
+        }
+
+        const customerMasterId = normalizePhoneForOtp(form.phone);
+        const customerMasterRef = doc(db, "customer_master", customerMasterId);
+        const customerMasterSnap = await tx.get(customerMasterRef);
+        const nextCustomerMaster = {
+          phone: customerMasterId,
+          normalizedPhone: customerMasterId,
+          customerName: form.name.trim(),
+          area: resolvedArea || form.area.trim(),
+          subArea: resolvedSubArea,
+          address: deliveryAddressText,
+          status: resolvedSubArea ? "mapped" : "pending",
+          lastOrderAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        if (customerMasterSnap.exists()) {
+          tx.update(customerMasterRef, nextCustomerMaster);
+        } else {
+          tx.set(customerMasterRef, {
+            ...nextCustomerMaster,
+            createdAt: serverTimestamp(),
+          });
         }
 
         tx.set(orderRef, {
@@ -1424,8 +1438,8 @@ export default function CustomerPage() {
             deliveryType === "delivery"
               ? `${form.addressLine1}, ${form.street}`
               : "",
-          area: deliveryType === "delivery" ? form.area : "",
-          subArea: deliveryType === "delivery" ? form.subArea : "",
+          area: deliveryType === "delivery" ? resolvedArea || form.area : "",
+          subArea: deliveryType === "delivery" ? resolvedSubArea : "",
           location: location || null,
           items: selectedItems.map((item) => ({
             name: item.name,
@@ -1445,8 +1459,7 @@ export default function CustomerPage() {
         deliveryType,
         addressLine1: deliveryType === "delivery" ? form.addressLine1.trim() : "",
         street: deliveryType === "delivery" ? form.street.trim() : "",
-        area: deliveryType === "delivery" ? form.area : "",
-        subArea: deliveryType === "delivery" ? form.subArea : "",
+        area: deliveryType === "delivery" ? resolvedArea || form.area : "",
         location: deliveryType === "delivery" ? location : null,
       });
       summaryForPayment.deliveryFee = effectiveDeliveryFee;
@@ -1469,7 +1482,6 @@ export default function CustomerPage() {
       addressLine1: "",
       street: "",
       area: "",
-      subArea: "",
     });
     setLocation(null);
     setLocLabel("");
@@ -2103,10 +2115,7 @@ export default function CustomerPage() {
                   className={`btn customer-toggle-btn ${
                     deliveryType === "pickup" ? "" : "secondary"
                   }`}
-                  onClick={() => {
-                    setDeliveryType("pickup");
-                    setForm((prev) => ({ ...prev, subArea: "" }));
-                  }}
+                  onClick={() => setDeliveryType("pickup")}
                 >
                   Self Pickup
                 </button>
@@ -2140,9 +2149,7 @@ export default function CustomerPage() {
                   <select
                     className="select"
                     value={form.area}
-                    onChange={(e) =>
-                      setForm({ ...form, area: e.target.value, subArea: "" })
-                    }
+                    onChange={(e) => setForm({ ...form, area: e.target.value })}
                   >
                     <option value="">Select area</option>
                     {serviceAreas.map((area) => (
@@ -2153,63 +2160,7 @@ export default function CustomerPage() {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Sub Area</label>
-                  <div className="row">
-                    <select
-                      className="select"
-                      value={form.subArea}
-                      onChange={(e) => setForm({ ...form, subArea: e.target.value })}
-                      disabled={!form.area}
-                      style={{ flex: 1 }}
-                    >
-                      <option value="">{form.area ? "Select sub area" : "Select area first"}</option>
-                      {subAreaOptions.map((subArea) => (
-                        <option key={subArea} value={subArea}>
-                          {subArea}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="btn secondary btn-compact"
-                      disabled={!form.area}
-                      onClick={() => {
-                        setShowCustomSubAreaInput((prev) => !prev);
-                        setCustomSubAreaError("");
-                      }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                  <small className="payments-subtext">
-                    Use sub area to help route your order more accurately.
-                  </small>
-                  {showCustomSubAreaInput && (
-                    <div className="row" style={{ marginTop: 8 }}>
-                      <input
-                        className="input"
-                        placeholder="Enter your sub area"
-                        value={customSubAreaDraft}
-                        onChange={(e) => setCustomSubAreaDraft(e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                      <button
-                        type="button"
-                        className="btn customer-primary-btn btn-compact"
-                        onClick={saveCustomSubArea}
-                        disabled={isSavingCustomSubArea}
-                      >
-                        {isSavingCustomSubArea ? "Saving..." : "Save"}
-                      </button>
-                    </div>
-                  )}
-                  {customSubAreaError && (
-                    <small className="customer-error-text">{customSubAreaError}</small>
-                  )}
-                </div>
-
-                <div className="field">
-                  <label>Exact Location (required)</label>
+                  <label>Current Location (required)</label>
                   {locLabel && <small>{locLabel}</small>}
                   {location && (
                     <small>
@@ -2219,54 +2170,16 @@ export default function CustomerPage() {
                   {locError && (
                     <small style={{ color: "crimson" }}>{locError}</small>
                   )}
-                </div>
-
-                {mapsKey && (
-                  <div className="card stack customer-map-card" style={{ marginTop: 12 }}>
-                    <div
-                      className="row"
-                      style={{ justifyContent: "space-between" }}
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="btn secondary customer-ghost-btn"
+                      onClick={useCurrentLocation}
                     >
-                      <strong>Select location on map</strong>
-                    </div>
-                    <LoadScript googleMapsApiKey={mapsKey} libraries={["places"]}>
-                      <Autocomplete
-                        onLoad={onAutocompleteLoad}
-                        onPlaceChanged={onPlaceChanged}
-                      >
-                        <div className="row" style={{ marginBottom: 12 }}>
-                          <input
-                            className="input"
-                            placeholder="Search apartment/landmark"
-                            style={{ flex: 1 }}
-                          />
-                          <button
-                            type="button"
-                            className="btn secondary customer-ghost-btn"
-                            onClick={useCurrentLocation}
-                          >
-                            Use current location
-                          </button>
-                        </div>
-                      </Autocomplete>
-                      <GoogleMap
-                        mapContainerStyle={mapContainerStyle}
-                        center={location ?? defaultCenter}
-                        zoom={location ? 16 : 13}
-                        onClick={(e) => {
-                          if (!e.latLng) return;
-                          setLocation({
-                            lat: e.latLng.lat(),
-                            lng: e.latLng.lng(),
-                          });
-                          setLocLabel("Location selected on map");
-                        }}
-                      >
-                        {location && <Marker position={location} />}
-                      </GoogleMap>
-                    </LoadScript>
+                      Use current location
+                    </button>
                   </div>
-                )}
+                </div>
               </>
             )}
 
