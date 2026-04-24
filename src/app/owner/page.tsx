@@ -1251,13 +1251,13 @@ export default function OwnerPage() {
     [customerMasterRecords]
   );
   const getOrderDisplaySubArea = (order: Order) => {
-    if (order.subArea && order.subArea.trim()) {
-      return order.subArea.trim();
-    }
     const normalizedOrderPhone = normalizePhone(order.phone || "");
     const matchedCustomer = customerMasterByPhone[normalizedOrderPhone];
     if (matchedCustomer?.subArea && matchedCustomer.subArea.trim()) {
       return matchedCustomer.subArea.trim();
+    }
+    if (order.subArea && order.subArea.trim()) {
+      return order.subArea.trim();
     }
     return "";
   };

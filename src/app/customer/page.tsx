@@ -1325,30 +1325,62 @@ export default function CustomerPage() {
         const customerMasterRef = doc(db, "customer_master", customerMasterId);
         const customerMasterSnap = await tx.get(customerMasterRef);
 
+        const currentCustomerMaster = customerMasterSnap.exists()
+          ? (customerMasterSnap.data() as CustomerMasterRecord)
+          : null;
+        const effectiveResolvedSubArea = normalizeSubAreaName(
+          currentCustomerMaster?.subArea || resolvedSubArea || ""
+        );
+        const effectiveResolvedMasterSubArea = effectiveResolvedSubArea
+          ? masterSubAreas.find((record) => record.id === getSubAreaDocId(effectiveResolvedSubArea)) ||
+            null
+          : null;
+        const effectiveResolvedArea = String(
+          currentCustomerMaster?.area ||
+            effectiveResolvedMasterSubArea?.parentArea ||
+            resolvedArea ||
+            form.area.trim()
+        ).trim();
+        effectiveDeliveryFee = getApplicableDeliveryFee({
+          deliveryType,
+          isLunchMenu: mealIsLunch,
+          itemsTotal,
+          areaFee: Number(
+            serviceAreas.find((area) => area.name === effectiveResolvedArea)?.deliveryFee || 0
+          ),
+          subAreaFee:
+            effectiveResolvedMasterSubArea &&
+            typeof effectiveResolvedMasterSubArea.deliveryFee === "number" &&
+            effectiveResolvedMasterSubArea.deliveryFee > 0
+              ? effectiveResolvedMasterSubArea.deliveryFee
+              : undefined,
+        });
+        effectiveOrderTotal = itemsTotal + effectiveDeliveryFee;
+
         let assignedAgentId = "";
         let assignedAgentName = "";
-        if (deliveryType === "delivery" && resolvedArea) {
+        if (deliveryType === "delivery" && effectiveResolvedArea) {
           const resolvedAgentId =
-            resolvedMasterSubArea?.deliveryAgentId || "";
+            effectiveResolvedMasterSubArea?.deliveryAgentId || "";
           const resolvedAgentName =
-            resolvedMasterSubArea?.deliveryAgentName || "";
+            effectiveResolvedMasterSubArea?.deliveryAgentName || "";
           if (resolvedAgentId) {
             assignedAgentId = resolvedAgentId;
             assignedAgentName = resolvedAgentName;
           } else {
-            const assignmentRef = doc(db, "area_assignments", resolvedArea);
+            const assignmentRef = doc(db, "area_assignments", effectiveResolvedArea);
             const assignmentSnap = await tx.get(assignmentRef);
             if (assignmentSnap.exists()) {
               const assignmentData = assignmentSnap.data() as any;
               const subAreaAgentIds: string[] =
                 mealKey
-                  ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[resolvedSubArea] ||
-                    assignmentData.subAreaAgentIds?.[resolvedSubArea] ||
+                  ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[effectiveResolvedSubArea] ||
+                    assignmentData.subAreaAgentIds?.[effectiveResolvedSubArea] ||
                     []
-                  : assignmentData.subAreaAgentIds?.[resolvedSubArea] || [];
+                  : assignmentData.subAreaAgentIds?.[effectiveResolvedSubArea] || [];
               const requiresOwnerAssignment =
-                Boolean(resolvedSubArea) &&
-                !isMappedSubArea(resolvedArea, resolvedSubArea) &&
+                Boolean(effectiveResolvedSubArea) &&
+                !isMappedSubArea(effectiveResolvedArea, effectiveResolvedSubArea) &&
                 subAreaAgentIds.length === 0;
               const agentIds: string[] =
                 subAreaAgentIds.length > 0
@@ -1362,13 +1394,13 @@ export default function CustomerPage() {
                 const usesSubAreaPool = subAreaAgentIds.length > 0;
                 const lastIndex = usesSubAreaPool
                   ? mealKey
-                    ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[resolvedSubArea] === "number"
-                      ? assignmentData.subAreaMealLastIndex[mealKey][resolvedSubArea]
-                      : typeof assignmentData.subAreaLastIndex?.[resolvedSubArea] === "number"
-                        ? assignmentData.subAreaLastIndex[resolvedSubArea]
+                    ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[effectiveResolvedSubArea] === "number"
+                      ? assignmentData.subAreaMealLastIndex[mealKey][effectiveResolvedSubArea]
+                      : typeof assignmentData.subAreaLastIndex?.[effectiveResolvedSubArea] === "number"
+                        ? assignmentData.subAreaLastIndex[effectiveResolvedSubArea]
                         : -1
-                    : typeof assignmentData.subAreaLastIndex?.[resolvedSubArea] === "number"
-                      ? assignmentData.subAreaLastIndex[resolvedSubArea]
+                    : typeof assignmentData.subAreaLastIndex?.[effectiveResolvedSubArea] === "number"
+                      ? assignmentData.subAreaLastIndex[effectiveResolvedSubArea]
                       : -1
                   : mealKey
                     ? typeof assignmentData.mealLastIndex?.[mealKey] === "number"
@@ -1391,8 +1423,8 @@ export default function CustomerPage() {
                       assignmentRef,
                       usesSubAreaPool
                         ? mealKey
-                          ? { [`subAreaMealLastIndex.${mealKey}.${resolvedSubArea}`]: nextIndex }
-                          : { [`subAreaLastIndex.${resolvedSubArea}`]: nextIndex }
+                          ? { [`subAreaMealLastIndex.${mealKey}.${effectiveResolvedSubArea}`]: nextIndex }
+                          : { [`subAreaLastIndex.${effectiveResolvedSubArea}`]: nextIndex }
                         : mealKey
                           ? { [`mealLastIndex.${mealKey}`]: nextIndex }
                           : { lastIndex: nextIndex }
@@ -1408,10 +1440,10 @@ export default function CustomerPage() {
           phone: customerMasterId,
           normalizedPhone: customerMasterId,
           customerName: form.name.trim(),
-          area: resolvedArea || form.area.trim(),
-          subArea: resolvedSubArea,
+          area: effectiveResolvedArea || form.area.trim(),
+          subArea: effectiveResolvedSubArea,
           address: deliveryAddressText,
-          status: resolvedSubArea ? "mapped" : "pending",
+          status: effectiveResolvedSubArea ? "mapped" : "pending",
           lastOrderAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };
@@ -1439,8 +1471,8 @@ export default function CustomerPage() {
             deliveryType === "delivery"
               ? `${form.addressLine1}, ${form.street}`
               : "",
-          area: deliveryType === "delivery" ? resolvedArea || form.area : "",
-          subArea: deliveryType === "delivery" ? resolvedSubArea : "",
+          area: deliveryType === "delivery" ? effectiveResolvedArea || form.area : "",
+          subArea: deliveryType === "delivery" ? effectiveResolvedSubArea : "",
           location: location || null,
           items: selectedItems.map((item) => ({
             name: item.name,
