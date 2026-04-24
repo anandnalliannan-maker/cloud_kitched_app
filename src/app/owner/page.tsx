@@ -4725,7 +4725,6 @@ export default function OwnerPage() {
                             <th>Items</th>
                               <th>Delivery Agent</th>
                               <th>Payment</th>
-                              <th>Status</th>
                               <th>Total Value</th>
                               <th>Actions</th>
                             </tr>
@@ -4771,7 +4770,6 @@ export default function OwnerPage() {
                                 <td>
                                   {getPaymentMethodLabel(order)}
                                 </td>
-                                <td>{getOrderStatusLabel(order)}</td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>
                                   <div className="stack owner-orders-actions-cell" style={{ gap: 6 }}>
@@ -4818,7 +4816,7 @@ export default function OwnerPage() {
                               </tr>
                               {cancellingOwnerOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={12}>
+                                  <td colSpan={11}>
                                     <div className="stack" style={{ gap: 10 }}>
                                       <strong>Cancel Order #{order.orderId || order.id}</strong>
                                       <input
@@ -4854,7 +4852,7 @@ export default function OwnerPage() {
                               )}
                               {editingActiveOrderId === order.id && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={12}>
+                                  <td colSpan={11}>
                                     <div className="order-edit-grid">
                                       <input
                                         className="input"
