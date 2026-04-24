@@ -5808,6 +5808,7 @@ export default function OwnerPage() {
                             <th>Order ID</th>
                             <th>Customer</th>
                             <th>Phone</th>
+                            <th>Address</th>
                             <th>Type</th>
                             <th>Items</th>
                             <th>Total</th>
@@ -5816,7 +5817,6 @@ export default function OwnerPage() {
                             <th>Order Status</th>
                             <th>Status</th>
                             <th>Notes</th>
-                            <th>Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5833,6 +5833,15 @@ export default function OwnerPage() {
                                 <td>#{order.orderId || order.id}</td>
                                 <td>{order.customerName || "Customer"}</td>
                                 <td>{order.phone || "-"}</td>
+                                <td>
+                                  {order.deliveryType === "delivery" ? order.address || "-" : "Store Pickup"}
+                                  {order.deliveryType === "delivery" && order.area ? (
+                                    <small className="payments-subtext">
+                                      {order.subArea ? `${order.subArea}, ` : ""}
+                                      {order.area}
+                                    </small>
+                                  ) : null}
+                                </td>
                                 <td>
                                   {isOwnerManualPaymentOrder(order)
                                     ? "Manual Collection"
@@ -5854,27 +5863,27 @@ export default function OwnerPage() {
                                 </td>
                                 <td>{getOrderStatusLabel(order)}</td>
                                 <td>
-                                  <span className="status-chip">
-                                    {getPaymentStatusLabel(order) === "paid"
-                                      ? "Paid"
-                                      : getPaymentStatusLabel(order)}
-                                  </span>
+                                  <div className="stack" style={{ gap: 8 }}>
+                                    <span className="status-chip">
+                                      {getPaymentStatusLabel(order) === "paid"
+                                        ? "Paid"
+                                        : getPaymentStatusLabel(order)}
+                                    </span>
+                                    <button
+                                      className="btn secondary btn-compact"
+                                      onClick={() => {
+                                        setEditingPickupPaymentId(order.id);
+                                        setPickupPaymentForm({
+                                          amount: "",
+                                          notes: getPaymentNotes(order),
+                                        });
+                                      }}
+                                    >
+                                      Update
+                                    </button>
+                                  </div>
                                 </td>
                                 <td>{getPaymentNotes(order) || "-"}</td>
-                                <td>
-                                  <button
-                                    className="btn secondary btn-compact"
-                                    onClick={() => {
-                                      setEditingPickupPaymentId(order.id);
-                                      setPickupPaymentForm({
-                                        amount: "",
-                                        notes: getPaymentNotes(order),
-                                      });
-                                    }}
-                                  >
-                                    Update
-                                  </button>
-                                </td>
                               </tr>
                               {editingPickupPaymentId === order.id && (
                                 <tr className="payments-edit-row">

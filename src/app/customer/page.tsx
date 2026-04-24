@@ -277,6 +277,9 @@ export default function CustomerPage() {
   );
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
   const [customerView, setCustomerView] = useState<"menu" | "history" | "cancel">("menu");
+  const customerHistoryReadyRef = useRef(false);
+  const customerHistoryNavKeyRef = useRef("");
+  const customerHistoryPopRef = useRef(false);
   const [historyPhone, setHistoryPhone] = useState("");
   const [historyOrders, setHistoryOrders] = useState<CustomerOrder[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -626,6 +629,64 @@ export default function CustomerPage() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, [step, customerView]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const navState = {
+      customerView,
+      step: customerView === "menu" ? step : "menu",
+    };
+    const navKey = `${navState.customerView}::${navState.step}`;
+
+    if (!customerHistoryReadyRef.current) {
+      window.history.replaceState(
+        { ...(window.history.state || {}), customerNav: navState },
+        "",
+        window.location.href
+      );
+      customerHistoryReadyRef.current = true;
+      customerHistoryNavKeyRef.current = navKey;
+      return;
+    }
+
+    if (customerHistoryPopRef.current) {
+      customerHistoryPopRef.current = false;
+      customerHistoryNavKeyRef.current = navKey;
+      return;
+    }
+
+    if (customerHistoryNavKeyRef.current !== navKey) {
+      window.history.pushState(
+        { ...(window.history.state || {}), customerNav: navState },
+        "",
+        window.location.href
+      );
+      customerHistoryNavKeyRef.current = navKey;
+    }
+  }, [customerView, step]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const nextNav = event.state?.customerNav;
+      if (!nextNav) {
+        return;
+      }
+      customerHistoryPopRef.current = true;
+      setCustomerDrawerOpen(false);
+      setCustomerView(nextNav.customerView || "menu");
+      setStep(nextNav.customerView === "menu" ? nextNav.step || "menu" : "menu");
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!customerPrefillPopup) {
@@ -2216,7 +2277,15 @@ export default function CustomerPage() {
                 <p className="payment-eyebrow">Secure Checkout</p>
                 <h2>Payment</h2>
               </div>
-              <span className="badge">Final Step</span>
+              <div className="row" style={{ gap: 10 }}>
+                <button
+                  className="btn secondary customer-ghost-btn"
+                  onClick={() => setStep("details")}
+                >
+                  Back
+                </button>
+                <span className="badge">Final Step</span>
+              </div>
             </div>
 
             <div className="payment-summary-box">
