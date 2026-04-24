@@ -715,6 +715,21 @@ function parseCsvRows(text: string) {
   return rows;
 }
 
+function parsePastedTableRows(text: string) {
+  const normalized = text.replace(/^\uFEFF/, "").trim();
+  if (!normalized) return [];
+  return normalized
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (line.includes("\t")) {
+        return line.split("\t").map((cell) => cell.trim());
+      }
+      return line.split(",").map((cell) => cell.trim());
+    });
+}
+
 function inferAreaForSubArea(
   rawSubArea: string,
   serviceAreas: ServiceArea[],
@@ -904,6 +919,11 @@ export default function OwnerPage() {
   const [masterImportingSheet, setMasterImportingSheet] = useState<
     "" | "subArea" | "deliveryAgent" | "deliveryCharge"
   >("");
+  const [masterPasteData, setMasterPasteData] = useState({
+    subArea: "",
+    deliveryAgent: "",
+    deliveryCharge: "",
+  });
   const [showNav, setShowNav] = useState(false);
   const [historyTab, setHistoryTab] = useState<
     "summary" | "activeOrders" | "pastOrders" | "paymentStatus"
@@ -2120,18 +2140,16 @@ export default function OwnerPage() {
     setEditingMasterSubAreaId(null);
   }
 
-  async function importMasterSheet(
-    file: File,
+  async function importMasterRows(
+    rows: string[][],
     sheetName: "subArea" | "deliveryAgent" | "deliveryCharge"
   ) {
     setMasterImportError("");
     setMasterImportStatus("");
     setMasterImportingSheet(sheetName);
     try {
-      const text = await file.text();
-      const rows = parseCsvRows(text);
       if (rows.length <= 1) {
-        throw new Error("The selected file is empty.");
+        throw new Error("No usable rows found.");
       }
 
       if (sheetName === "subArea") {
@@ -2256,6 +2274,23 @@ export default function OwnerPage() {
     } finally {
       setMasterImportingSheet("");
     }
+  }
+
+  async function importMasterSheet(
+    file: File,
+    sheetName: "subArea" | "deliveryAgent" | "deliveryCharge"
+  ) {
+    const text = await file.text();
+    const rows = parseCsvRows(text);
+    await importMasterRows(rows, sheetName);
+  }
+
+  async function importMasterPaste(
+    sheetName: "subArea" | "deliveryAgent" | "deliveryCharge"
+  ) {
+    const text = masterPasteData[sheetName];
+    const rows = parsePastedTableRows(text);
+    await importMasterRows(rows, sheetName);
   }
 
   async function reassignOrdersForArea(
@@ -7643,6 +7678,23 @@ export default function OwnerPage() {
                     <small className="payments-subtext">
                       Columns: Mobile, Sub Area
                     </small>
+                    <textarea
+                      className="input"
+                      rows={6}
+                      placeholder={"Paste two Excel columns here:\nMobile\tSub Area"}
+                      value={masterPasteData.subArea}
+                      onChange={(e) =>
+                        setMasterPasteData((prev) => ({ ...prev, subArea: e.target.value }))
+                      }
+                      disabled={masterImportingSheet !== ""}
+                    />
+                    <button
+                      className="btn secondary"
+                      onClick={() => importMasterPaste("subArea")}
+                      disabled={masterImportingSheet !== ""}
+                    >
+                      Paste Import
+                    </button>
                     <input
                       className="input"
                       type="file"
@@ -7662,6 +7714,23 @@ export default function OwnerPage() {
                     <small className="payments-subtext">
                       Columns: Sub Area, Delivery Agent
                     </small>
+                    <textarea
+                      className="input"
+                      rows={6}
+                      placeholder={"Paste two Excel columns here:\nSub Area\tDelivery Agent"}
+                      value={masterPasteData.deliveryAgent}
+                      onChange={(e) =>
+                        setMasterPasteData((prev) => ({ ...prev, deliveryAgent: e.target.value }))
+                      }
+                      disabled={masterImportingSheet !== ""}
+                    />
+                    <button
+                      className="btn secondary"
+                      onClick={() => importMasterPaste("deliveryAgent")}
+                      disabled={masterImportingSheet !== ""}
+                    >
+                      Paste Import
+                    </button>
                     <input
                       className="input"
                       type="file"
@@ -7681,6 +7750,23 @@ export default function OwnerPage() {
                     <small className="payments-subtext">
                       Columns: Sub Area, Delivery Fee
                     </small>
+                    <textarea
+                      className="input"
+                      rows={6}
+                      placeholder={"Paste two Excel columns here:\nSub Area\tDelivery Fee"}
+                      value={masterPasteData.deliveryCharge}
+                      onChange={(e) =>
+                        setMasterPasteData((prev) => ({ ...prev, deliveryCharge: e.target.value }))
+                      }
+                      disabled={masterImportingSheet !== ""}
+                    />
+                    <button
+                      className="btn secondary"
+                      onClick={() => importMasterPaste("deliveryCharge")}
+                      disabled={masterImportingSheet !== ""}
+                    >
+                      Paste Import
+                    </button>
                     <input
                       className="input"
                       type="file"
