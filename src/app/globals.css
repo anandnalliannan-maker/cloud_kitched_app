@@ -342,6 +342,15 @@ a {
   min-width: 1200px;
 }
 
+.owner-order-row-alert td {
+  background: #fff2f2 !important;
+  border-bottom-color: rgba(185, 28, 28, 0.12);
+}
+
+.owner-order-row-alert:hover td {
+  background: #ffe7e7 !important;
+}
+
 .owner-orders-actions-cell {
   min-width: 132px;
 }
@@ -1527,6 +1536,14 @@ a {
 
 .owner-assignment-table {
   min-width: 100%;
+}
+
+.owner-assignment-table tbody tr:nth-child(odd) td {
+  background: #fdfdfb;
+}
+
+.owner-assignment-table tbody tr:nth-child(even) td {
+  background: #f7faf9;
 }
 
 .owner-assignment-editor-cell {

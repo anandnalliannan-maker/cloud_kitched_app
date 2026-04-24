@@ -309,6 +309,32 @@ function getOrderStatusLabel(order: Order) {
   return "Active";
 }
 
+function isAttentionPaymentOrder(order: Order) {
+  return (
+    order.status === "payment_pending" ||
+    order.paymentStatus === "pending" ||
+    order.paymentStatus === "failed" ||
+    order.paymentStatus === "payment_failed"
+  );
+}
+
+function shouldShowInOperationalWorkspace(order: Order) {
+  if (order.status === "cancelled" || order.status === "closed" || order.status === "undelivered") {
+    return false;
+  }
+  if (order.deliveryType === "pickup") {
+    return true;
+  }
+  if (order.orderSource === "owner") {
+    return true;
+  }
+  return (
+    order.paymentStatus === "paid" ||
+    order.paymentStatus === "cash_on_delivery" ||
+    isAttentionPaymentOrder(order)
+  );
+}
+
 function isCashOnDeliveryOrder(order: Order) {
   return order.deliveryType === "delivery" && order.paymentMethod === "cash_on_delivery";
 }
@@ -2532,16 +2558,7 @@ export default function OwnerPage() {
   }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
 
   const currentOperationalOrders = useMemo(
-    () =>
-      currentMenuOrders.filter((order) => {
-        if (order.deliveryType === "pickup") {
-          return true;
-        }
-        if (order.orderSource === "owner") {
-          return true;
-        }
-        return order.paymentStatus === "paid" || order.paymentStatus === "cash_on_delivery";
-      }),
+    () => currentMenuOrders.filter((order) => shouldShowInOperationalWorkspace(order)),
     [currentMenuOrders]
   );
 
@@ -2846,16 +2863,7 @@ export default function OwnerPage() {
   }, [orders, selectedPastMenuOption]);
 
   const pastOperationalOrders = useMemo(
-    () =>
-      pastMenuOrders.filter((order) => {
-        if (order.deliveryType === "pickup") {
-          return true;
-        }
-        if (order.orderSource === "owner") {
-          return true;
-        }
-        return order.paymentStatus === "paid" || order.paymentStatus === "cash_on_delivery";
-      }),
+    () => pastMenuOrders.filter((order) => shouldShowInOperationalWorkspace(order)),
     [pastMenuOrders]
   );
 
