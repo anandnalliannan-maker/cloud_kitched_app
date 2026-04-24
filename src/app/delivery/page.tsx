@@ -243,12 +243,11 @@ export default function DeliveryPage() {
 
   const currentMenuOrders = useMemo(() => {
     if (!currentPublishedMenu) return [];
-    return orders.filter((order) => {
-      if (order.publishedMenuId) {
-        return order.publishedMenuId === currentPublishedMenu.id;
-      }
-      return `${getOrderDateKey(order)}__${order.mealType || "Unknown"}` === currentPublishedMenuKey;
-    });
+    return orders.filter(
+      (order) =>
+        `${getOrderDateKey(order)}__${order.mealType || "Unknown"}` ===
+        currentPublishedMenuKey
+    );
   }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
 
   const activeOrders = useMemo(
