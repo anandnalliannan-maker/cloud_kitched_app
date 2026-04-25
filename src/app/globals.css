@@ -365,22 +365,23 @@ a {
 }
 
 .owner-inline-mapper {
-  max-width: 170px;
+  max-width: 140px;
 }
 
 .owner-inline-mapper .select,
 .owner-inline-mapper .input {
-  min-height: 32px;
-  padding: 6px 8px;
-  font-size: 0.84rem;
-  border-radius: 10px;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  border-radius: 8px;
 }
 
 .owner-inline-mapper .btn {
-  min-height: 32px !important;
-  padding: 6px 10px !important;
-  font-size: 0.82rem !important;
-  border-radius: 10px !important;
+  min-height: 28px !important;
+  padding: 4px 8px !important;
+  font-size: 0.76rem !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
 }
 
 .owner-icon-btn {
