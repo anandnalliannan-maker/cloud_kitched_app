@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   doc,
@@ -201,6 +201,7 @@ export default function DeliveryPage() {
   const [masterSubAreas, setMasterSubAreas] = useState<MasterSubAreaRecord[]>([]);
   const [deliveryAgents, setDeliveryAgents] = useState<DeliveryAgentRecord[]>([]);
   const [openOrderActions, setOpenOrderActions] = useState<string | null>(null);
+  const navigationReadyRef = useRef(false);
 
   useEffect(() => {
     const session = getSession();
@@ -283,6 +284,82 @@ export default function DeliveryPage() {
     }
     window.localStorage.setItem(DELIVERY_AGENT_STORAGE_KEY, selectedAgentName);
   }, [selectedAgentName]);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || typeof window === "undefined") return;
+
+    const applyNavigationState = (state: any) => {
+      const nextView = state?.deliveryView;
+      if (nextView === "orders") {
+        setSelectedAgentName(state.agentName || "");
+        setTab("orders");
+        setOpenOrderActions(null);
+        return;
+      }
+      if (nextView === "summary") {
+        setSelectedAgentName(state.agentName || "");
+        setTab("summary");
+        setOpenOrderActions(null);
+        return;
+      }
+      setSelectedAgentName("");
+      setTab("summary");
+      setOpenOrderActions(null);
+    };
+
+    const handlePopState = (event: PopStateEvent) => {
+      applyNavigationState(event.state);
+    };
+
+    if (!navigationReadyRef.current) {
+      navigationReadyRef.current = true;
+      const initialState = selectedAgentName
+        ? { deliveryView: tab, agentName: selectedAgentName }
+        : { deliveryView: "picker" };
+      window.history.replaceState(initialState, "", window.location.href);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [mode, selectedAgentName, tab]);
+
+  function openAgent(agentName: string) {
+    setSelectedAgentName(agentName);
+    setTab("summary");
+    setOpenOrderActions(null);
+    if (typeof window !== "undefined") {
+      window.history.pushState(
+        { deliveryView: "summary", agentName },
+        "",
+        window.location.href
+      );
+    }
+  }
+
+  function openTab(nextTab: "summary" | "orders") {
+    setTab(nextTab);
+    setOpenOrderActions(null);
+    if (typeof window !== "undefined" && selectedAgentName) {
+      window.history.pushState(
+        { deliveryView: nextTab, agentName: selectedAgentName },
+        "",
+        window.location.href
+      );
+    }
+  }
+
+  function goToAgentPicker() {
+    setSelectedAgentName("");
+    setTab("summary");
+    setOpenOrderActions(null);
+    if (typeof window !== "undefined") {
+      window.history.pushState(
+        { deliveryView: "picker" },
+        "",
+        window.location.href
+      );
+    }
+  }
 
   async function handleLogin() {
     setError("");
@@ -526,44 +603,14 @@ export default function DeliveryPage() {
 
         {mode === "dashboard" && (
           <div className="stack">
-            <div className="card delivery-agent-bar">
-              <div className="delivery-agent-bar-copy">
-                <strong>Delivery Agent</strong>
-                <span>
-                  {selectedAgentName || "Select an agent"}{" "}
-                  {selectedAgentAreas.length
-                    ? `| ${selectedAgentAreas.join(", ")}`
-                    : ""}
-                </span>
-              </div>
-              <div className="row delivery-tab-actions">
-                <button
-                  className={`btn ${tab === "summary" ? "" : "secondary"}`}
-                  onClick={() => setTab("summary")}
-                >
-                  Summary
-                </button>
-                <button
-                  className={`btn ${tab === "orders" ? "" : "secondary"}`}
-                  onClick={() => setTab("orders")}
-                >
-                  Active Orders
-                </button>
-                <button
-                  className="btn secondary"
-                  onClick={() => setSelectedAgentName("")}
-                >
-                  Change Agent
-                </button>
-                <button className="btn secondary" onClick={handleLogout}>
-                  Logout
-                </button>
-              </div>
-            </div>
-
             {!selectedAgentName ? (
               <div className="card stack">
-                <strong>Select delivery agent</strong>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <strong>Select delivery agent</strong>
+                  <button className="btn secondary" onClick={handleLogout}>
+                    Logout
+                  </button>
+                </div>
                 {agentOptions.length === 0 ? (
                   <p>No delivery agents are currently available from master data.</p>
                 ) : (
@@ -572,7 +619,7 @@ export default function DeliveryPage() {
                       <button
                         key={agent.key}
                         className="btn secondary delivery-agent-option"
-                        onClick={() => setSelectedAgentName(agent.name)}
+                        onClick={() => openAgent(agent.name)}
                       >
                         {agent.name}
                       </button>
@@ -582,6 +629,37 @@ export default function DeliveryPage() {
               </div>
             ) : (
               <>
+                <div className="card delivery-agent-bar">
+                  <div className="delivery-agent-bar-copy">
+                    <strong>{selectedAgentName}</strong>
+                    <span>
+                      {selectedAgentAreas.length
+                        ? selectedAgentAreas.join(", ")
+                        : "No mapped areas"}
+                    </span>
+                  </div>
+                  <div className="row delivery-tab-actions">
+                    <button
+                      className={`btn ${tab === "summary" ? "" : "secondary"}`}
+                      onClick={() => openTab("summary")}
+                    >
+                      Summary
+                    </button>
+                    <button
+                      className={`btn ${tab === "orders" ? "" : "secondary"}`}
+                      onClick={() => openTab("orders")}
+                    >
+                      Active Orders
+                    </button>
+                    <button className="btn secondary" onClick={goToAgentPicker}>
+                      Back
+                    </button>
+                    <button className="btn secondary" onClick={handleLogout}>
+                      Logout
+                    </button>
+                  </div>
+                </div>
+
                 {tab === "summary" && (
                   <div className="stack delivery-summary-stack">
                     <div className="card delivery-summary-card">
