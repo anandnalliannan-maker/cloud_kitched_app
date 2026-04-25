@@ -285,11 +285,6 @@ export default function CustomerPage() {
     street: "",
     area: "",
   });
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
-    null
-  );
-  const [locLabel, setLocLabel] = useState("");
-  const [locError, setLocError] = useState("");
   const [payError, setPayError] = useState("");
   const [paymentNotice, setPaymentNotice] = useState("");
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
@@ -961,26 +956,6 @@ export default function CustomerPage() {
     );
   }
 
-  function useCurrentLocation() {
-    setLocError("");
-    if (!navigator.geolocation) {
-      setLocError("Geolocation is not supported on this device.");
-      return;
-    }
-    setLocLabel("Fetching current location...");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocLabel("Current location selected");
-      },
-      () => {
-        setLocError("Unable to fetch current location.");
-        setLocLabel("");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    );
-  }
-
   function formatDateLabel(value: string) {
     if (!value) return "";
     const [year, month, day] = value.split("-");
@@ -1355,7 +1330,7 @@ export default function CustomerPage() {
             effectiveResolvedMasterSubArea?.deliveryAgentId || "";
           const resolvedAgentName =
             effectiveResolvedMasterSubArea?.deliveryAgentName || "";
-          if (resolvedAgentId) {
+          if (resolvedAgentId || resolvedAgentName) {
             assignedAgentId = resolvedAgentId;
             assignedAgentName = resolvedAgentName;
           } else {
@@ -1509,8 +1484,6 @@ export default function CustomerPage() {
       street: "",
       area: "",
     });
-    setLocation(null);
-    setLocLabel("");
     setDeliveryType("");
     setPaymentSummary(null);
     setStep("menu");

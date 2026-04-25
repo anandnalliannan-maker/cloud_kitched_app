@@ -1800,33 +1800,58 @@ a {
   gap: 1rem;
 }
 
-.delivery-agent-header,
-.delivery-toolbar,
-.delivery-tabs,
-.delivery-dashboard-filters,
-.delivery-dashboard-metrics,
+.delivery-agent-bar,
+.delivery-tab-actions,
 .delivery-order-actions,
 .delivery-summary-row {
   flex-wrap: wrap;
 }
 
 .delivery-summary-stack,
-.delivery-orders-stack,
-.delivery-dashboard-stack {
+.delivery-orders-stack {
   gap: 0.85rem;
+}
+
+.delivery-agent-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.delivery-agent-bar-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.delivery-agent-bar-copy span {
+  color: var(--muted);
+}
+
+.delivery-agent-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.delivery-agent-option {
+  width: 100%;
+  justify-content: center;
 }
 
 .delivery-summary-card {
   min-width: 0;
 }
 
+.delivery-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+}
+
 .delivery-packing-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-}
-
-.delivery-packing-table {
-  min-width: 460px;
 }
 
 .delivery-order-card {
@@ -1837,12 +1862,26 @@ a {
   min-width: 0;
 }
 
-.delivery-order-menu {
-  width: min(280px, calc(100vw - 48px));
+.delivery-call-btn {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.delivery-dashboard-metric {
-  min-width: 160px;
+.delivery-call-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.delivery-order-menu {
+  position: absolute;
+  right: 12px;
+  top: calc(100% + 8px);
+  z-index: 10;
+  width: min(280px, calc(100vw - 48px));
 }
 
 @media (max-width: 768px) {
@@ -1854,26 +1893,20 @@ a {
     padding: 16px;
   }
 
-  .delivery-agent-header {
+  .delivery-agent-bar {
     gap: 8px;
     align-items: flex-start;
   }
 
-  .delivery-toolbar,
-  .delivery-tabs,
-  .delivery-dashboard-filters,
-  .delivery-dashboard-metrics,
+  .delivery-tab-actions,
   .delivery-order-actions {
     gap: 8px;
     align-items: stretch;
   }
 
-  .delivery-toolbar .btn,
-  .delivery-tabs .btn,
+  .delivery-tab-actions .btn,
   .delivery-order-actions .btn,
-  .delivery-dashboard-filters .btn,
-  .delivery-dashboard-filters .input,
-  .delivery-dashboard-filters .select {
+  .delivery-agent-option {
     width: 100%;
   }
 
@@ -1881,19 +1914,12 @@ a {
     padding: 14px;
   }
 
+  .delivery-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .delivery-summary-row {
     gap: 8px;
-  }
-
-  .delivery-packing-table {
-    min-width: 360px;
-    font-size: 0.82rem;
-  }
-
-  .delivery-packing-table th,
-  .delivery-packing-table td {
-    padding: 0.55rem 0.5rem;
-    white-space: nowrap;
   }
 
   .delivery-order-card {
@@ -1909,11 +1935,6 @@ a {
     left: 0;
     right: auto !important;
     width: calc(100% - 24px);
-    min-width: 0 !important;
-  }
-
-  .delivery-dashboard-metric {
-    width: 100%;
     min-width: 0 !important;
   }
 }

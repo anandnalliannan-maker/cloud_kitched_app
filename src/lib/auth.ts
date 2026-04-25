@@ -29,6 +29,8 @@ export type DeliveryAccount = {
 const OWNER_ADMIN_PHONES = ["9840146764", "9363969180"] as const;
 const OWNER_ADMIN_PASSWORD = "yummy@2026";
 const ALLOWED_OWNER_USERNAMES = OWNER_ADMIN_PHONES.map((phone) => normalizePhone(phone));
+const DELIVERY_PORTAL_USERNAME = "mskitchen";
+const DELIVERY_PORTAL_PASSWORD = "msdelivery@2026";
 
 export async function ownerExists(): Promise<boolean> {
   return true;
@@ -126,15 +128,13 @@ export async function loginDelivery(
   username: string,
   password: string
 ) {
-  const normalized = normalizePhone(username);
-  const ref = doc(db, "delivery_agents", normalized);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Invalid credentials");
-  const data = snap.data() as DeliveryAccount;
-  if (data.active === false) throw new Error("Account inactive");
-  if (!data.passwordHash) throw new Error("Password not set");
-  const ok = await bcrypt.compare(password, data.passwordHash);
-  if (!ok) throw new Error("Invalid credentials");
+  const normalizedUsername = username.trim().toLowerCase();
+  if (
+    normalizedUsername !== DELIVERY_PORTAL_USERNAME ||
+    password !== DELIVERY_PORTAL_PASSWORD
+  ) {
+    throw new Error("Invalid credentials");
+  }
   return true;
 }
 

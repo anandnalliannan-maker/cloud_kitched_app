@@ -3122,7 +3122,20 @@ export default function OwnerPage() {
             }
           }
 
-          if (!assignedAgentId) {
+          if (!assignedAgentId && ownerOrderForm.subArea) {
+            const mappedMasterSubArea = masterSubAreas.find(
+              (record) =>
+                normalizeSubAreaName(record.name) ===
+                  normalizeSubAreaName(ownerOrderForm.subArea) &&
+                (!record.parentArea || record.parentArea === ownerOrderForm.area)
+            );
+            if (mappedMasterSubArea?.deliveryAgentName) {
+              assignedAgentId = mappedMasterSubArea.deliveryAgentId || "";
+              assignedAgentName = mappedMasterSubArea.deliveryAgentName;
+            }
+          }
+
+          if (!assignedAgentId && !assignedAgentName) {
             const assignmentRef = doc(db, "area_assignments", ownerOrderForm.area);
             const assignmentSnap = await tx.get(assignmentRef);
             if (assignmentSnap.exists()) {

@@ -4,26 +4,31 @@ import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
   updateDoc,
-  where,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
-import { loginDelivery, normalizePhone } from "@/lib/auth";
+import { loginDelivery } from "@/lib/auth";
 import { clearSession, getSession, saveSession } from "@/lib/session";
 
 type Mode = "loading" | "login" | "dashboard";
+
 type PublishedMenu = {
   id: string;
   date: string;
   mealType?: string;
   isArchived?: boolean;
   ordersStopped?: boolean;
-  createdAt?: any;
+  createdAt?: unknown;
+};
+
+type OrderItem = {
+  name: string;
+  qty: number;
+  price?: number;
 };
 
 type Order = {
@@ -31,12 +36,11 @@ type Order = {
   orderId?: string;
   customerName?: string;
   phone?: string;
-  items?: { name: string; qty: number; price: number }[];
+  items?: OrderItem[];
   address?: string;
   area?: string;
   subArea?: string;
   deliveryType?: string;
-  location?: { lat: number; lng: number };
   assignedAgentId?: string;
   assignedAgentName?: string;
   status?: string;
@@ -46,10 +50,7 @@ type Order = {
   total?: number;
   mealType?: string;
   publishedDate?: string;
-  publishedMenuId?: string;
   createdAt?: any;
-  deliveredAt?: string;
-  undeliveredAt?: string;
   codPaymentStatus?: string;
   codAmountCollected?: number;
   codBalance?: number;
@@ -57,6 +58,21 @@ type Order = {
   codCollectedByAgentId?: string;
   codCollectedByAgentName?: string;
 };
+
+type MasterSubAreaRecord = {
+  id: string;
+  name: string;
+  parentArea?: string;
+  deliveryAgentName?: string;
+};
+
+type DeliveryAgentRecord = {
+  id: string;
+  name: string;
+  active?: boolean;
+};
+
+const DELIVERY_AGENT_STORAGE_KEY = "msk_delivery_selected_agent";
 
 function formatOrderDate(value?: string | null) {
   if (!value) return "-";
@@ -80,38 +96,120 @@ function getOrderDateKey(order: Order) {
   return "";
 }
 
+function normalizeLookupLabel(value: string) {
+  return value.trim().toLowerCase();
+}
+
 function isCashOnDeliveryOrder(order: Order) {
   return order.deliveryType === "delivery" && order.paymentMethod === "cash_on_delivery";
 }
 
+function buildAgentPackingMatrix(operationalOrders: Order[]) {
+  const itemSet = new Set<string>();
+  const grouped: Record<string, Record<string, Record<number, number>>> = {};
+  const itemPackQtyMap: Record<string, Set<number>> = {};
+
+  operationalOrders.forEach((order) => {
+    const agent = order.assignedAgentName || "Unassigned";
+    if (!grouped[agent]) {
+      grouped[agent] = {};
+    }
+    (order.items || []).forEach((item) => {
+      if (!item.name || !item.qty) return;
+      itemSet.add(item.name);
+      if (!itemPackQtyMap[item.name]) {
+        itemPackQtyMap[item.name] = new Set<number>();
+      }
+      itemPackQtyMap[item.name].add(item.qty);
+      if (!grouped[agent][item.name]) {
+        grouped[agent][item.name] = {};
+      }
+      grouped[agent][item.name][item.qty] = (grouped[agent][item.name][item.qty] || 0) + 1;
+    });
+  });
+
+  const itemNames = Array.from(itemSet).sort((a, b) => a.localeCompare(b));
+  const itemPackQtyColumns = Object.fromEntries(
+    itemNames.map((itemName) => [
+      itemName,
+      Array.from(itemPackQtyMap[itemName] || []).sort((a, b) => a - b),
+    ])
+  ) as Record<string, number[]>;
+
+  const rows = Object.entries(grouped)
+    .map(([agent, items]) => ({
+      key: agent,
+      agent,
+      items,
+    }))
+    .sort((a, b) => a.agent.localeCompare(b.agent));
+
+  return { itemNames, itemPackQtyColumns, rows };
+}
+
+function exportPackingMatrixCsv(
+  filename: string,
+  matrix: ReturnType<typeof buildAgentPackingMatrix>
+) {
+  const headerRowTop = ["Name"];
+  const headerRowBottom = [""];
+
+  matrix.itemNames.forEach((itemName) => {
+    const packColumns = matrix.itemPackQtyColumns[itemName] || [];
+    if (packColumns.length === 0) return;
+    headerRowTop.push(itemName, ...Array(Math.max(packColumns.length - 1, 0)).fill(""));
+    headerRowBottom.push(...packColumns.map((packQty) => `Pack ${packQty}`));
+  });
+
+  const rows = matrix.rows.map((row) => {
+    const line = [row.agent];
+    matrix.itemNames.forEach((itemName) => {
+      const packColumns = matrix.itemPackQtyColumns[itemName] || [];
+      packColumns.forEach((packQty) => {
+        line.push(String(row.items[itemName]?.[packQty] || "-"));
+      });
+    });
+    return line;
+  });
+
+  const csvLines = [headerRowTop, headerRowBottom, ...rows]
+    .map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob([csvLines], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function DeliveryPage() {
   const [mode, setMode] = useState<Mode>("loading");
-  const [tab, setTab] = useState<"summary" | "orders" | "dashboard">("summary");
+  const [tab, setTab] = useState<"summary" | "orders">("summary");
   const [error, setError] = useState("");
   const [form, setForm] = useState({
     username: "",
     password: "",
   });
+  const [selectedAgentName, setSelectedAgentName] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [publishedMenus, setPublishedMenus] = useState<PublishedMenu[]>([]);
+  const [masterSubAreas, setMasterSubAreas] = useState<MasterSubAreaRecord[]>([]);
+  const [deliveryAgents, setDeliveryAgents] = useState<DeliveryAgentRecord[]>([]);
   const [openOrderActions, setOpenOrderActions] = useState<string | null>(null);
-  const [agentInfo, setAgentInfo] = useState<{
-    name: string;
-    areas: string[];
-  } | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [locError, setLocError] = useState("");
-  const [historyFilters, setHistoryFilters] = useState({
-    date: "",
-    area: "",
-  });
 
   useEffect(() => {
     const session = getSession();
     if (session?.role === "delivery") {
+      const savedAgent =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(DELIVERY_AGENT_STORAGE_KEY) || ""
+          : "";
+      setSelectedAgentName(savedAgent);
       setMode("dashboard");
       return;
     }
@@ -120,54 +218,7 @@ export default function DeliveryPage() {
 
   useEffect(() => {
     if (mode !== "dashboard") return;
-    const session = getSession();
-    const username = session?.username;
-    if (!username) return;
-    getDoc(doc(db, "delivery_agents", username)).then((snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data() as any;
-      setAgentInfo({
-        name: data.name || "",
-        areas: [],
-      });
-    });
-    const unsubAssignments = onSnapshot(
-      collection(db, "area_assignments"),
-      (snap) => {
-        const areas = snap.docs.flatMap((docSnap) => {
-          const data = docSnap.data() as any;
-          const names: string[] = [];
-          if ((data.agentIds || []).includes(username)) {
-            names.push(docSnap.id);
-          }
-          Object.entries(data.mealAgentIds || {}).forEach(([meal, agentIds]) => {
-            if (Array.isArray(agentIds) && agentIds.includes(username)) {
-              names.push(`${docSnap.id} (${meal})`);
-            }
-          });
-          Object.entries(data.subAreaAgentIds || {}).forEach(([subArea, agentIds]) => {
-            if (Array.isArray(agentIds) && agentIds.includes(username)) {
-              names.push(`${docSnap.id} - ${subArea}`);
-            }
-          });
-          Object.entries(data.subAreaMealAgentIds || {}).forEach(([meal, subAreaMap]) => {
-            Object.entries((subAreaMap as Record<string, string[]>) || {}).forEach(([subArea, agentIds]) => {
-              if (Array.isArray(agentIds) && agentIds.includes(username)) {
-                names.push(`${docSnap.id} - ${subArea} (${meal})`);
-              }
-            });
-          });
-          return names;
-        });
-        setAgentInfo((prev) =>
-          prev ? { ...prev, areas } : { name: "", areas }
-        );
-      }
-    );
-    const q = query(
-      collection(db, "orders"),
-      where("assignedAgentId", "==", username)
-    );
+
     const unsubMenus = onSnapshot(
       query(collection(db, "published_menus"), orderBy("createdAt", "desc")),
       (snap) => {
@@ -179,57 +230,150 @@ export default function DeliveryPage() {
         );
       }
     );
-    const unsub = onSnapshot(q, (snap) => {
-      setOrders(
-        snap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as any),
-        }))
-      );
-    });
+
+    const unsubOrders = onSnapshot(
+      query(collection(db, "orders"), orderBy("createdAt", "desc")),
+      (snap) => {
+        setOrders(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+          }))
+        );
+      }
+    );
+
+    const unsubMasterSubAreas = onSnapshot(
+      query(collection(db, "master_sub_areas"), orderBy("name", "asc")),
+      (snap) => {
+        setMasterSubAreas(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+          }))
+        );
+      }
+    );
+
+    const unsubDeliveryAgents = onSnapshot(
+      query(collection(db, "delivery_agents"), orderBy("name", "asc")),
+      (snap) => {
+        setDeliveryAgents(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as any),
+          }))
+        );
+      }
+    );
+
     return () => {
-      unsub();
       unsubMenus();
-      unsubAssignments();
+      unsubOrders();
+      unsubMasterSubAreas();
+      unsubDeliveryAgents();
     };
   }, [mode]);
 
-  function requestCurrentLocation() {
-    setLocError("");
-    if (!navigator.geolocation) {
-      setLocError("Geolocation is not supported.");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!selectedAgentName) {
+      window.localStorage.removeItem(DELIVERY_AGENT_STORAGE_KEY);
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCurrentLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
-      },
-      () => {
-        setLocError("Unable to access current location.");
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }
+    window.localStorage.setItem(DELIVERY_AGENT_STORAGE_KEY, selectedAgentName);
+  }, [selectedAgentName]);
 
   async function handleLogin() {
     setError("");
-    if (!form.username || !form.password) {
+    if (!form.username.trim() || !form.password) {
       setError("Enter username and password");
       return;
     }
-    const username = normalizePhone(form.username);
-    await loginDelivery(username, form.password);
-    saveSession({ role: "delivery", username });
-    setMode("dashboard");
+    try {
+      await loginDelivery(form.username, form.password);
+      saveSession({ role: "delivery", username: "mskitchen" });
+      setMode("dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to login");
+    }
   }
 
   function handleLogout() {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(DELIVERY_AGENT_STORAGE_KEY);
+    }
     clearSession();
+    setSelectedAgentName("");
+    setOpenOrderActions(null);
     setMode("login");
   }
+
+  const agentOptions = useMemo(() => {
+    const byKey = new Map<string, string>();
+
+    masterSubAreas.forEach((record) => {
+      const name = (record.deliveryAgentName || "").trim();
+      const key = normalizeLookupLabel(name);
+      if (name && key && !byKey.has(key)) {
+        byKey.set(key, name);
+      }
+    });
+
+    deliveryAgents.forEach((agent) => {
+      const name = (agent.name || "").trim();
+      const key = normalizeLookupLabel(name);
+      if (name && key && !byKey.has(key)) {
+        byKey.set(key, name);
+      }
+    });
+
+    orders.forEach((order) => {
+      const name = (order.assignedAgentName || "").trim();
+      const key = normalizeLookupLabel(name);
+      if (name && key && !byKey.has(key)) {
+        byKey.set(key, name);
+      }
+    });
+
+    return Array.from(byKey.entries())
+      .map(([key, name]) => ({ key, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [deliveryAgents, masterSubAreas, orders]);
+
+  useEffect(() => {
+    if (!agentOptions.length) {
+      setSelectedAgentName("");
+      return;
+    }
+
+    if (
+      selectedAgentName &&
+      agentOptions.some(
+        (option) => option.key === normalizeLookupLabel(selectedAgentName)
+      )
+    ) {
+      return;
+    }
+
+    const savedAgent =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(DELIVERY_AGENT_STORAGE_KEY) || ""
+        : "";
+    const savedMatch = agentOptions.find(
+      (option) => option.key === normalizeLookupLabel(savedAgent)
+    );
+    if (savedMatch) {
+      setSelectedAgentName(savedMatch.name);
+    } else if (
+      selectedAgentName &&
+      !agentOptions.some(
+        (option) => option.key === normalizeLookupLabel(selectedAgentName)
+      )
+    ) {
+      setSelectedAgentName("");
+    }
+  }, [agentOptions, selectedAgentName]);
 
   const currentPublishedMenu = useMemo(
     () => publishedMenus.find((menu) => !menu.isArchived && !menu.ordersStopped) || null,
@@ -241,6 +385,11 @@ export default function DeliveryPage() {
     return `${currentPublishedMenu.date}__${currentPublishedMenu.mealType || "Unknown"}`;
   }, [currentPublishedMenu]);
 
+  const selectedAgentKey = useMemo(
+    () => normalizeLookupLabel(selectedAgentName),
+    [selectedAgentName]
+  );
+
   const currentMenuOrders = useMemo(() => {
     if (!currentPublishedMenu) return [];
     return orders.filter(
@@ -251,188 +400,56 @@ export default function DeliveryPage() {
   }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
 
   const activeOrders = useMemo(
-    () => currentMenuOrders.filter((order) => !order.status || order.status === "active"),
-    [currentMenuOrders]
+    () =>
+      currentMenuOrders.filter(
+        (order) =>
+          (!order.status || order.status === "active") &&
+          normalizeLookupLabel(order.assignedAgentName || "") === selectedAgentKey
+      ),
+    [currentMenuOrders, selectedAgentKey]
   );
 
-  const orderSummary = useMemo(() => {
-    const totalOrders = activeOrders.length;
-    const itemCounts: Record<string, number> = {};
-    const itemPairCounts: Record<string, number> = {};
-    const areaCounts: Record<string, number> = {};
-    let codDue = 0;
+  const selectedAgentAreas = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          masterSubAreas
+            .filter(
+              (record) =>
+                normalizeLookupLabel(record.deliveryAgentName || "") ===
+                selectedAgentKey
+            )
+            .map((record) => record.parentArea || "Unknown")
+        )
+      ).sort((a, b) => a.localeCompare(b)),
+    [masterSubAreas, selectedAgentKey]
+  );
+
+  const summary = useMemo(() => {
+    const bySubArea: Record<string, number> = {};
+    let codOrders = 0;
+
     activeOrders.forEach((order) => {
-      const area = order.area || "Unknown";
-      areaCounts[area] = (areaCounts[area] || 0) + 1;
+      const subArea = order.subArea || "No sub area mapped";
+      bySubArea[subArea] = (bySubArea[subArea] || 0) + 1;
       if (isCashOnDeliveryOrder(order)) {
-        codDue += typeof order.codBalance === "number" ? order.codBalance : order.total || 0;
+        codOrders += 1;
       }
-      (order.items || []).forEach((item) => {
-        itemCounts[item.name] = (itemCounts[item.name] || 0) + item.qty;
-        const pairKey = `${item.name}__${item.qty}`;
-        itemPairCounts[pairKey] = (itemPairCounts[pairKey] || 0) + 1;
-      });
     });
-    return { totalOrders, itemCounts, itemPairCounts, areaCounts, codDue };
+
+    return {
+      activeOrders: activeOrders.length,
+      codOrders,
+      bySubArea: Object.entries(bySubArea)
+        .map(([subArea, count]) => ({ subArea, count }))
+        .sort((a, b) => b.count - a.count || a.subArea.localeCompare(b.subArea)),
+    };
   }, [activeOrders]);
 
-  const activeItemPackingMatrix = useMemo(() => {
-    const packQtySet = new Set<number>();
-    const grouped: Record<string, Record<number, number>> = {};
-
-    Object.entries(orderSummary.itemPairCounts).forEach(([pairKey, count]) => {
-      const [itemName, packQtyRaw] = pairKey.split("__");
-      const packQty = Number(packQtyRaw || 0);
-      if (!itemName || !packQty) return;
-
-      packQtySet.add(packQty);
-      if (!grouped[itemName]) {
-        grouped[itemName] = {};
-      }
-      grouped[itemName][packQty] = count;
-    });
-
-    const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
-    const rows = Object.entries(grouped)
-      .map(([itemName, buckets]) => ({
-        key: itemName,
-        itemName,
-        buckets,
-      }))
-      .sort((a, b) => a.itemName.localeCompare(b.itemName));
-
-    return {
-      packQtyColumns,
-      rows,
-    };
-  }, [orderSummary.itemPairCounts]);
-
-  const codCollectedSummary = useMemo(() => {
-    return currentMenuOrders.reduce(
-      (summary, order) => {
-        if (!isCashOnDeliveryOrder(order)) return summary;
-        summary.totalOrders += 1;
-        summary.collected += order.codAmountCollected || 0;
-        summary.outstanding +=
-          typeof order.codBalance === "number" ? order.codBalance : order.total || 0;
-        return summary;
-      },
-      { totalOrders: 0, collected: 0, outstanding: 0 }
-    );
-  }, [currentMenuOrders]);
-
-  const historicalOrders = useMemo(
-    () =>
-      orders.filter(
-        (order) => order.status === "closed" || order.status === "undelivered"
-      ),
-    [orders]
+  const packingMatrix = useMemo(
+    () => buildAgentPackingMatrix(activeOrders),
+    [activeOrders]
   );
-
-  const historyDateOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(historicalOrders.map((order) => getOrderDateKey(order)).filter(Boolean))
-      ).sort((a, b) => b.localeCompare(a)),
-    [historicalOrders]
-  );
-
-  const historyAreaOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(historicalOrders.map((order) => order.area || "Unknown"))
-      ).sort((a, b) => a.localeCompare(b)),
-    [historicalOrders]
-  );
-
-  const filteredHistoryOrders = useMemo(
-    () =>
-      historicalOrders.filter((order) => {
-        const matchesDate =
-          !historyFilters.date || getOrderDateKey(order) === historyFilters.date;
-        const matchesArea =
-          !historyFilters.area || (order.area || "Unknown") === historyFilters.area;
-        return matchesDate && matchesArea;
-      }),
-    [historicalOrders, historyFilters]
-  );
-
-  const historySummary = useMemo(() => {
-    const byDate: Record<string, { delivered: number; undelivered: number }> = {};
-    const byArea: Record<string, { delivered: number; undelivered: number }> = {};
-
-    filteredHistoryOrders.forEach((order) => {
-      const dateKey = getOrderDateKey(order) || "Unknown";
-      const areaKey = order.area || "Unknown";
-      const isDelivered = order.status === "closed";
-
-      byDate[dateKey] ||= { delivered: 0, undelivered: 0 };
-      byArea[areaKey] ||= { delivered: 0, undelivered: 0 };
-
-      if (isDelivered) {
-        byDate[dateKey].delivered += 1;
-        byArea[areaKey].delivered += 1;
-      } else {
-        byDate[dateKey].undelivered += 1;
-        byArea[areaKey].undelivered += 1;
-      }
-    });
-
-    return {
-      total: filteredHistoryOrders.length,
-      delivered: filteredHistoryOrders.filter((order) => order.status === "closed")
-        .length,
-      undelivered: filteredHistoryOrders.filter(
-        (order) => order.status === "undelivered"
-      ).length,
-      byDate: Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])),
-      byArea: Object.entries(byArea).sort((a, b) => a[0].localeCompare(b[0])),
-    };
-  }, [filteredHistoryOrders]);
-
-  function haversineKm(
-    lat1: number,
-    lng1: number,
-    lat2: number,
-    lng2: number
-  ) {
-    const toRad = (value: number) => (value * Math.PI) / 180;
-    const R = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) *
-        Math.cos(toRad(lat2)) *
-        Math.sin(dLng / 2) *
-        Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  const sortedActiveOrders = useMemo(() => {
-    if (!currentLocation) return activeOrders;
-    return [...activeOrders].sort((a, b) => {
-      const aLoc = a.location;
-      const bLoc = b.location;
-      if (!aLoc && !bLoc) return 0;
-      if (!aLoc) return 1;
-      if (!bLoc) return -1;
-      const aDist = haversineKm(
-        currentLocation.lat,
-        currentLocation.lng,
-        aLoc.lat,
-        aLoc.lng
-      );
-      const bDist = haversineKm(
-        currentLocation.lat,
-        currentLocation.lng,
-        bLoc.lat,
-        bLoc.lng
-      );
-      return aDist - bDist;
-    });
-  }, [activeOrders, currentLocation]);
 
   async function markDelivered(order: Order, paymentReceived = false) {
     const payload: Record<string, any> = {
@@ -445,21 +462,23 @@ export default function DeliveryPage() {
       const balanceAmount = paymentReceived
         ? 0
         : typeof order.codBalance === "number"
-        ? order.codBalance
-        : order.total || 0;
+          ? order.codBalance
+          : order.total || 0;
+
       payload.paymentMethod = "cash_on_delivery";
       payload.paymentStatus = paymentReceived ? "paid" : "cash_on_delivery";
       payload.codAmountCollected = collectedAmount;
       payload.codBalance = balanceAmount;
       payload.codPaymentStatus = paymentReceived ? "paid" : "unpaid";
-      payload.codCollectedByAgentId = paymentReceived ? getSession()?.username || "" : "";
-      payload.codCollectedByAgentName = paymentReceived ? agentInfo?.name || "" : "";
+      payload.codCollectedByAgentId = paymentReceived ? selectedAgentKey : "";
+      payload.codCollectedByAgentName = paymentReceived ? selectedAgentName : "";
       payload.codPaymentNotes = paymentReceived
         ? "Payment collected by delivery agent."
         : order.codPaymentNotes || "";
     }
 
     await updateDoc(doc(db, "orders", order.id), payload);
+    setOpenOrderActions(null);
   }
 
   async function markUndelivered(order: Order, reason: string) {
@@ -468,29 +487,25 @@ export default function DeliveryPage() {
       undeliveredReason: reason,
       undeliveredAt: new Date().toISOString(),
     });
-  }
-
-  function getMapsLink(order: Order) {
-    if (order.location?.lat && order.location?.lng) {
-      return `https://www.google.com/maps?q=${order.location.lat},${order.location.lng}`;
-    }
-    return "";
+    setOpenOrderActions(null);
   }
 
   return (
     <main className="container delivery-portal">
       <div className="card stack delivery-shell">
         <h1>Delivery Portal</h1>
+
         {mode === "loading" && <p>Loading...</p>}
+
         {mode === "login" && (
           <div className="stack">
-            <p>Use the phone number and password given by the owner.</p>
+            <p>Use the shared delivery login.</p>
             <div className="field">
-              <label>Phone Number</label>
+              <label>Username</label>
               <input
                 className="input"
                 value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, username: e.target.value }))}
               />
             </div>
             <div className="field">
@@ -499,7 +514,7 @@ export default function DeliveryPage() {
                 className="input"
                 type="password"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
               />
             </div>
             {error && <p style={{ color: "crimson" }}>{error}</p>}
@@ -511,415 +526,286 @@ export default function DeliveryPage() {
 
         {mode === "dashboard" && (
           <div className="stack">
-            {agentInfo && (
-              <div className="card row delivery-agent-header" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <strong>{agentInfo.name}</strong>
-                </div>
-                <div>
-                  Areas: {agentInfo.areas.length ? agentInfo.areas.join(", ") : "Not set"}
-                </div>
+            <div className="card delivery-agent-bar">
+              <div className="delivery-agent-bar-copy">
+                <strong>Delivery Agent</strong>
+                <span>
+                  {selectedAgentName || "Select an agent"}{" "}
+                  {selectedAgentAreas.length
+                    ? `| ${selectedAgentAreas.join(", ")}`
+                    : ""}
+                </span>
               </div>
-            )}
-            <div className="row delivery-toolbar">
-              <button className="btn secondary" onClick={requestCurrentLocation}>
-                Use Current Location (Sort by distance)
-              </button>
-              {currentLocation && (
-                <small>
-                  {currentLocation.lat.toFixed(5)}, {currentLocation.lng.toFixed(5)}
-                </small>
-              )}
-              {locError && <small style={{ color: "crimson" }}>{locError}</small>}
-            </div>
-            <div className="row delivery-tabs">
-              <button
-                className={`btn ${tab === "summary" ? "" : "secondary"}`}
-                onClick={() => setTab("summary")}
-              >
-                Order Summary
-              </button>
-              <button
-                className={`btn ${tab === "orders" ? "" : "secondary"}`}
-                onClick={() => setTab("orders")}
-              >
-                Active Orders
-              </button>
-              <button
-                className={`btn ${tab === "dashboard" ? "" : "secondary"}`}
-                onClick={() => setTab("dashboard")}
-              >
-                Dashboard
-              </button>
-              <button className="btn secondary" onClick={handleLogout}>
-                Logout
-              </button>
+              <div className="row delivery-tab-actions">
+                <button
+                  className={`btn ${tab === "summary" ? "" : "secondary"}`}
+                  onClick={() => setTab("summary")}
+                >
+                  Summary
+                </button>
+                <button
+                  className={`btn ${tab === "orders" ? "" : "secondary"}`}
+                  onClick={() => setTab("orders")}
+                >
+                  Active Orders
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={() => setSelectedAgentName("")}
+                >
+                  Change Agent
+                </button>
+                <button className="btn secondary" onClick={handleLogout}>
+                  Logout
+                </button>
+              </div>
             </div>
 
-            {tab === "summary" && (
-              <div className="stack delivery-summary-stack">
-                <div className="card delivery-summary-card">
-                  Current Menu:{" "}
-                  {currentPublishedMenu
-                    ? `${formatOrderDate(currentPublishedMenu.date)} - ${
-                        currentPublishedMenu.mealType || "Unknown"
-                      }`
-                    : "No live published menu"}
-                </div>
-                <div className="card delivery-summary-card">Active Orders: {orderSummary.totalOrders}</div>
-                <div className="card delivery-summary-card">COD Due on Active Orders: Rs. {orderSummary.codDue}</div>
-                <div className="card delivery-summary-card">
-                  COD to hand over: Rs. {codCollectedSummary.collected}
-                </div>
-                <div className="card delivery-summary-card">
-                  <strong>Active Orders by Area</strong>
-                  {Object.keys(orderSummary.areaCounts).length === 0 && <p>No active orders.</p>}
-                  {Object.entries(orderSummary.areaCounts).map(([name, count]) => (
-                    <div key={name} className="row delivery-summary-row">
-                      <div style={{ flex: 1 }}>{name}</div>
-                      <div>{count}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="card delivery-summary-card">
-                  <strong>Active Items Count</strong>
-                  {Object.keys(orderSummary.itemCounts).length === 0 && <p>No items</p>}
-                  {Object.entries(orderSummary.itemCounts).map(([name, count]) => (
-                    <div key={name} className="row delivery-summary-row">
-                      <div style={{ flex: 1 }}>{name}</div>
-                      <div>{count}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="card delivery-summary-card">
-                  <strong>Packing Buckets</strong>
-                  <div className="table-scroll delivery-packing-scroll">
-                    <table className="payments-table payments-table-compact owner-summary-packing-table delivery-packing-table">
-                      <thead>
-                        <tr>
-                          <th>Item</th>
-                          {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
-                            <th key={packQty}>{packQty} Pack</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activeItemPackingMatrix.rows.length === 0 && (
-                          <tr>
-                            <td
-                              colSpan={Math.max(activeItemPackingMatrix.packQtyColumns.length + 1, 2)}
-                            >
-                              No packing data
-                            </td>
-                          </tr>
-                        )}
-                        {activeItemPackingMatrix.rows.map((row) => (
-                          <tr key={row.key}>
-                            <td>{row.itemName}</td>
-                            {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
-                              <td key={`${row.key}-${packQty}`}>
-                                {row.buckets[packQty] || "-"}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {tab === "orders" && (
-              <div className="stack delivery-orders-stack">
-                <div className="card delivery-summary-card">
-                  Current Menu:{" "}
-                  {currentPublishedMenu
-                    ? `${formatOrderDate(currentPublishedMenu.date)} - ${
-                        currentPublishedMenu.mealType || "Unknown"
-                      }`
-                    : "No live published menu"}
-                </div>
-                {sortedActiveOrders.length === 0 && <p>No active orders assigned.</p>}
-                {sortedActiveOrders.map((order) => {
-                  const distance =
-                    currentLocation && order.location
-                      ? haversineKm(
-                          currentLocation.lat,
-                          currentLocation.lng,
-                          order.location.lat,
-                          order.location.lng
-                        )
-                      : null;
-                  return (
-                  <div key={order.id} className="card delivery-order-card" style={{ position: "relative" }}>
-                    <div>
-                      {order.customerName || "Customer"} | {order.phone || ""}
-                    </div>
-                    <div>
-                      Items:{" "}
-                      {order.items
-                        ?.map((item) => `${item.name} x${item.qty}`)
-                        .join(", ") || "Items"}
-                    </div>
-                    <div>
-                      Payment:{" "}
-                      {isCashOnDeliveryOrder(order)
-                        ? `Cash on Delivery${` - Rs. ${
-                            typeof order.codBalance === "number"
-                              ? order.codBalance
-                              : order.total || 0
-                          } due`}`
-                        : "Prepaid / Settled"}
-                    </div>
-                    <div>Address: {order.address || ""}</div>
-                    <div>
-                      Area: {order.area || "Unknown"}
-                      {order.subArea ? ` - ${order.subArea}` : ""}
-                    </div>
-                    {distance !== null && (
-                      <div>Distance: {distance.toFixed(2)} km</div>
-                    )}
-                    <div className="row delivery-order-actions">
-                      <a
-                        className="btn secondary"
-                        href={`tel:${order.phone || ""}`}
-                      >
-                        Call
-                      </a>
-                      {getMapsLink(order) ? (
-                        <a
-                          className="btn secondary"
-                          href={getMapsLink(order)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Navigate
-                        </a>
-                      ) : (
-                        <button className="btn secondary" disabled>
-                          Navigate
-                        </button>
-                      )}
+            {!selectedAgentName ? (
+              <div className="card stack">
+                <strong>Select delivery agent</strong>
+                {agentOptions.length === 0 ? (
+                  <p>No delivery agents are currently available from master data.</p>
+                ) : (
+                  <div className="delivery-agent-picker">
+                    {agentOptions.map((agent) => (
                       <button
-                        className="btn secondary"
-                        onClick={() =>
-                          setOpenOrderActions(
-                            openOrderActions === order.id ? null : order.id
-                          )
-                        }
+                        key={agent.key}
+                        className="btn secondary delivery-agent-option"
+                        onClick={() => setSelectedAgentName(agent.name)}
                       >
-                        ⋮
+                        {agent.name}
                       </button>
-                    </div>
-                    {openOrderActions === order.id && (
-                      <div
-                        className="card stack delivery-order-menu"
-                        style={{
-                          position: "absolute",
-                          right: 12,
-                          top: "100%",
-                          zIndex: 10,
-                          minWidth: 180,
-                        }}
-                      >
-                        {isCashOnDeliveryOrder(order) ? (
-                          <>
-                            <button
-                              className="btn"
-                              onClick={() => markDelivered(order, true)}
-                            >
-                              Delivered + Payment Received
-                            </button>
-                            <button
-                              className="btn secondary"
-                              onClick={() => markDelivered(order, false)}
-                            >
-                              Delivered, Payment Pending
-                            </button>
-                          </>
-                        ) : (
-                          <button className="btn" onClick={() => markDelivered(order)}>
-                            Mark Delivered
-                          </button>
-                        )}
-                        <button
-                          className="btn secondary"
-                          onClick={() => {
-                            const reason =
-                              window.prompt(
-                                "Reason for undelivered? (e.g., customer not available, address not found, payment issue)"
-                              ) || "";
-                            if (!reason.trim()) return;
-                            markUndelivered(order, reason.trim());
-                          }}
-                        >
-                          Mark Undelivered
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-                })}
-              </div>
-            )}
-
-            {tab === "dashboard" && (
-              <div className="stack delivery-dashboard-stack">
-                <div className="row delivery-dashboard-filters">
-                  <input
-                    className="input"
-                    type="date"
-                    value={historyFilters.date}
-                    onChange={(e) =>
-                      setHistoryFilters((prev) => ({ ...prev, date: e.target.value }))
-                    }
-                    style={{ maxWidth: 220 }}
-                  />
-                  <select
-                    className="input"
-                    value={historyFilters.area}
-                    onChange={(e) =>
-                      setHistoryFilters((prev) => ({ ...prev, area: e.target.value }))
-                    }
-                    style={{ maxWidth: 220 }}
-                  >
-                    <option value="">All areas</option>
-                    {historyAreaOptions.map((area) => (
-                      <option key={area} value={area}>
-                        {area}
-                      </option>
                     ))}
-                  </select>
-                  <button
-                    className="btn secondary"
-                    onClick={() => setHistoryFilters({ date: "", area: "" })}
-                  >
-                    Clear Filters
-                  </button>
-                </div>
-
-                <div className="row delivery-dashboard-metrics">
-                  <div className="card delivery-dashboard-metric" style={{ minWidth: 160 }}>
-                    Total History Orders: {historySummary.total}
-                  </div>
-                  <div className="card delivery-dashboard-metric" style={{ minWidth: 160 }}>
-                    Delivered: {historySummary.delivered}
-                  </div>
-                  <div className="card delivery-dashboard-metric" style={{ minWidth: 160 }}>
-                    Undelivered: {historySummary.undelivered}
-                  </div>
-                </div>
-
-                <div className="card stack">
-                  <strong>History by Date</strong>
-                  {historySummary.byDate.length === 0 && <p>No history found.</p>}
-                  {historySummary.byDate.length > 0 && (
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                        <thead>
-                          <tr>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Date</th>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Delivered</th>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Undelivered</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {historySummary.byDate.map(([date, counts]) => (
-                            <tr key={date}>
-                              <td style={{ padding: "8px 0" }}>
-                                {date ? formatOrderDate(date) : "Unknown"}
-                              </td>
-                              <td style={{ padding: "8px 0" }}>{counts.delivered}</td>
-                              <td style={{ padding: "8px 0" }}>{counts.undelivered}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                <div className="card stack">
-                  <strong>History by Area</strong>
-                  {historySummary.byArea.length === 0 && <p>No history found.</p>}
-                  {historySummary.byArea.length > 0 && (
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                        <thead>
-                          <tr>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Area</th>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Delivered</th>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Undelivered</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {historySummary.byArea.map(([area, counts]) => (
-                            <tr key={area}>
-                              <td style={{ padding: "8px 0" }}>{area}</td>
-                              <td style={{ padding: "8px 0" }}>{counts.delivered}</td>
-                              <td style={{ padding: "8px 0" }}>{counts.undelivered}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                <div className="card stack">
-                  <strong>History Orders</strong>
-                  {filteredHistoryOrders.length === 0 && <p>No history orders found.</p>}
-                  {filteredHistoryOrders.length > 0 && (
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-                        <thead>
-                          <tr>
-                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Date</th>
-                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Customer</th>
-                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Area</th>
-                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Items</th>
-                            <th style={{ textAlign: "left", padding: "8px 12px 8px 0" }}>Status</th>
-                            <th style={{ textAlign: "left", padding: "8px 0" }}>Reason</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredHistoryOrders.map((order) => (
-                            <tr key={order.id}>
-                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
-                                {formatOrderDate(getOrderDateKey(order))}
-                              </td>
-                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
-                                <div>{order.customerName || "Customer"}</div>
-                                <small>{order.phone || ""}</small>
-                              </td>
-                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
-                                {order.area || "Unknown"}
-                              </td>
-                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
-                                {order.items?.map((item) => `${item.name} x${item.qty}`).join(", ") ||
-                                  "Items"}
-                              </td>
-                              <td style={{ padding: "8px 12px 8px 0", verticalAlign: "top" }}>
-                                {order.status === "closed" ? "Delivered" : "Undelivered"}
-                              </td>
-                              <td style={{ padding: "8px 0", verticalAlign: "top" }}>
-                                {order.undeliveredReason || "-"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-                {historyDateOptions.length === 0 && filteredHistoryOrders.length === 0 && (
-                  <div className="card">
-                    History will appear here once this agent completes or marks orders as
-                    undelivered.
                   </div>
                 )}
               </div>
+            ) : (
+              <>
+                {tab === "summary" && (
+                  <div className="stack delivery-summary-stack">
+                    <div className="card delivery-summary-card">
+                      Current Menu:{" "}
+                      {currentPublishedMenu
+                        ? `${formatOrderDate(currentPublishedMenu.date)} - ${
+                            currentPublishedMenu.mealType || "Unknown"
+                          }`
+                        : "No live published menu"}
+                    </div>
+
+                    <div className="delivery-summary-grid">
+                      <div className="card delivery-summary-card">
+                        <strong>Active Orders</strong>
+                        <div>{summary.activeOrders}</div>
+                      </div>
+                      <div className="card delivery-summary-card">
+                        <strong>COD Orders</strong>
+                        <div>{summary.codOrders}</div>
+                      </div>
+                    </div>
+
+                    <div className="card delivery-summary-card">
+                      <strong>Orders by Sub Area</strong>
+                      {summary.bySubArea.length === 0 ? (
+                        <p>No active orders.</p>
+                      ) : (
+                        summary.bySubArea.map((row) => (
+                          <div key={row.subArea} className="row delivery-summary-row">
+                            <div style={{ flex: 1 }}>{row.subArea}</div>
+                            <div>{row.count}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="card owner-packing-matrix-card">
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <strong>Item Packing Pairs</strong>
+                        <button
+                          className="btn secondary"
+                          onClick={() =>
+                            exportPackingMatrixCsv(
+                              `${selectedAgentName.replace(/\s+/g, "_").toLowerCase()}_packing.csv`,
+                              packingMatrix
+                            )
+                          }
+                        >
+                          Export to Excel
+                        </button>
+                      </div>
+                      <div className="table-scroll">
+                        <table className="payments-table owner-packing-matrix-table">
+                          <thead>
+                            <tr>
+                              <th rowSpan={2}>Name</th>
+                              {packingMatrix.itemNames.map((itemName, itemIndex) => (
+                                <th
+                                  key={itemName}
+                                  colSpan={packingMatrix.itemPackQtyColumns[itemName]?.length || 1}
+                                  className={`packing-group-header packing-group-${itemIndex % 5}`}
+                                >
+                                  {itemName}
+                                </th>
+                              ))}
+                            </tr>
+                            <tr>
+                              {packingMatrix.itemNames.flatMap((itemName, itemIndex) =>
+                                (packingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
+                                  <th
+                                    key={`${itemName}-${packQty}`}
+                                    className={`packing-group-subheader packing-group-${itemIndex % 5}`}
+                                  >
+                                    Pack {packQty}
+                                  </th>
+                                ))
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {packingMatrix.rows.length === 0 && (
+                              <tr>
+                                <td
+                                  colSpan={
+                                    1 +
+                                    packingMatrix.itemNames.reduce(
+                                      (sum, itemName) =>
+                                        sum + (packingMatrix.itemPackQtyColumns[itemName]?.length || 0),
+                                      0
+                                    )
+                                  }
+                                >
+                                  No packing data
+                                </td>
+                              </tr>
+                            )}
+                            {packingMatrix.rows.map((row) => (
+                              <tr key={row.key}>
+                                <td className="packing-agent-cell">{row.agent}</td>
+                                {packingMatrix.itemNames.flatMap((itemName, itemIndex) =>
+                                  (packingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
+                                    <td
+                                      key={`${row.key}-${itemName}-${packQty}`}
+                                      className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                                    >
+                                      {row.items[itemName]?.[packQty] || "-"}
+                                    </td>
+                                  ))
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {tab === "orders" && (
+                  <div className="stack delivery-orders-stack">
+                    <div className="card delivery-summary-card">
+                      Current Menu:{" "}
+                      {currentPublishedMenu
+                        ? `${formatOrderDate(currentPublishedMenu.date)} - ${
+                            currentPublishedMenu.mealType || "Unknown"
+                          }`
+                        : "No live published menu"}
+                    </div>
+                    {activeOrders.length === 0 && <p>No active orders assigned.</p>}
+                    {activeOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="card delivery-order-card"
+                        style={{ position: "relative" }}
+                      >
+                        <div>
+                          <strong>{order.customerName || "Customer"}</strong>
+                          {order.phone ? ` | ${order.phone}` : ""}
+                        </div>
+                        <div>
+                          Items:{" "}
+                          {order.items?.map((item) => `${item.name} x${item.qty}`).join(", ") ||
+                            "Items"}
+                        </div>
+                        <div>
+                          Payment:{" "}
+                          {isCashOnDeliveryOrder(order)
+                            ? `Cash on Delivery - Rs. ${
+                                typeof order.codBalance === "number"
+                                  ? order.codBalance
+                                  : order.total || 0
+                              } due`
+                            : "UPI"}
+                        </div>
+                        <div>Address: {order.address || "-"}</div>
+                        <div>Area: {order.area || "Unknown"}</div>
+                        <div>Sub Area: {order.subArea || "No sub area mapped"}</div>
+                        <div className="row delivery-order-actions">
+                          <a
+                            className="btn secondary delivery-call-btn"
+                            href={`tel:${order.phone || ""}`}
+                            aria-label={`Call ${order.customerName || "customer"}`}
+                            title="Call customer"
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <path
+                                d="M6.6 10.8a15.5 15.5 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.2 11.2 0 0 0 3.5.56 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.2 11.2 0 0 0 .56 3.5 1 1 0 0 1-.25 1Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          </a>
+                          <button
+                            className="btn secondary"
+                            onClick={() =>
+                              setOpenOrderActions(
+                                openOrderActions === order.id ? null : order.id
+                              )
+                            }
+                          >
+                            Actions
+                          </button>
+                        </div>
+                        {openOrderActions === order.id && (
+                          <div className="card stack delivery-order-menu">
+                            {isCashOnDeliveryOrder(order) ? (
+                              <>
+                                <button
+                                  className="btn"
+                                  onClick={() => markDelivered(order, true)}
+                                >
+                                  Delivered + Payment Received
+                                </button>
+                                <button
+                                  className="btn secondary"
+                                  onClick={() => markDelivered(order, false)}
+                                >
+                                  Delivered, Payment Pending
+                                </button>
+                              </>
+                            ) : (
+                              <button className="btn" onClick={() => markDelivered(order)}>
+                                Mark Delivered
+                              </button>
+                            )}
+                            <button
+                              className="btn secondary"
+                              onClick={() => {
+                                const reason =
+                                  window.prompt(
+                                    "Reason for undelivered? (e.g., customer not available, address not found, payment issue)"
+                                  ) || "";
+                                if (!reason.trim()) return;
+                                void markUndelivered(order, reason.trim());
+                              }}
+                            >
+                              Mark Undelivered
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
