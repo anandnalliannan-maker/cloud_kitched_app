@@ -339,7 +339,7 @@ a {
 }
 
 .owner-orders-table {
-  min-width: 1200px;
+  min-width: 1100px;
 }
 
 .owner-order-row-alert td {
@@ -361,19 +361,32 @@ a {
 
 .owner-orders-items-col,
 .owner-orders-items-cell {
-  min-width: 220px;
+  min-width: 170px;
+}
+
+.owner-inline-mapper {
+  max-width: 170px;
 }
 
 .owner-inline-mapper .select,
 .owner-inline-mapper .input {
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 0.84rem;
+  border-radius: 10px;
+}
+
+.owner-inline-mapper .btn {
+  min-height: 32px !important;
+  padding: 6px 10px !important;
+  font-size: 0.82rem !important;
+  border-radius: 10px !important;
 }
 
 .owner-icon-btn {
-  width: 44px !important;
-  min-width: 44px;
-  height: 44px;
+  width: 38px !important;
+  min-width: 38px;
+  height: 38px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -1814,7 +1827,7 @@ a {
   }
 
   .owner-orders-table {
-    min-width: 980px;
+    min-width: 920px;
   }
 
   .owner-orders-actions-cell {
@@ -1823,7 +1836,7 @@ a {
 
   .owner-orders-items-col,
   .owner-orders-items-cell {
-    min-width: 180px;
+    min-width: 150px;
   }
 }
 
