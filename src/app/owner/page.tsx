@@ -554,8 +554,8 @@ function buildItemRows(summary: OrdersSummaryData) {
 
 function buildAgentPackingMatrix(operationalOrders: Order[]) {
   const itemSet = new Set<string>();
-  const packQtySet = new Set<number>();
   const grouped: Record<string, Record<string, Record<number, number>>> = {};
+  const itemPackQtyMap: Record<string, Set<number>> = {};
 
   operationalOrders.forEach((order) => {
     const agent =
@@ -566,7 +566,10 @@ function buildAgentPackingMatrix(operationalOrders: Order[]) {
     (order.items || []).forEach((item) => {
       if (!item.name || !item.qty) return;
       itemSet.add(item.name);
-      packQtySet.add(item.qty);
+      if (!itemPackQtyMap[item.name]) {
+        itemPackQtyMap[item.name] = new Set<number>();
+      }
+      itemPackQtyMap[item.name].add(item.qty);
       if (!grouped[agent][item.name]) {
         grouped[agent][item.name] = {};
       }
@@ -575,7 +578,12 @@ function buildAgentPackingMatrix(operationalOrders: Order[]) {
   });
 
   const itemNames = Array.from(itemSet).sort((a, b) => a.localeCompare(b));
-  const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
+  const itemPackQtyColumns = Object.fromEntries(
+    itemNames.map((itemName) => [
+      itemName,
+      Array.from(itemPackQtyMap[itemName] || []).sort((a, b) => a - b),
+    ])
+  ) as Record<string, number[]>;
   const rows = Object.entries(grouped)
     .map(([agent, items]) => ({
       key: agent,
@@ -584,7 +592,7 @@ function buildAgentPackingMatrix(operationalOrders: Order[]) {
     }))
     .sort((a, b) => a.agent.localeCompare(b.agent));
 
-  return { itemNames, packQtyColumns, rows };
+  return { itemNames, itemPackQtyColumns, rows };
 }
 
 function buildDeliveryTypeRows(summary: OrdersSummaryData) {
@@ -3707,20 +3715,28 @@ export default function OwnerPage() {
     filename: string,
     matrix: ReturnType<typeof buildAgentPackingMatrix>
   ) => {
-    if (!matrix.rows.length || !matrix.itemNames.length || !matrix.packQtyColumns.length) {
+    const totalPackColumns = matrix.itemNames.reduce(
+      (sum, itemName) => sum + (matrix.itemPackQtyColumns[itemName]?.length || 0),
+      0
+    );
+    if (!matrix.rows.length || !matrix.itemNames.length || !totalPackColumns) {
       window.alert("No packing data to export.");
       return;
     }
     const headers = [
       "Name",
       ...matrix.itemNames.flatMap((itemName) =>
-        matrix.packQtyColumns.map((packQty) => `${itemName} - Pack ${packQty}`)
+        (matrix.itemPackQtyColumns[itemName] || []).map(
+          (packQty) => `${itemName} - Pack ${packQty}`
+        )
       ),
     ];
     const rows = matrix.rows.map((row) => [
       row.agent,
       ...matrix.itemNames.flatMap((itemName) =>
-        matrix.packQtyColumns.map((packQty) => row.items[itemName]?.[packQty] || "-")
+        (matrix.itemPackQtyColumns[itemName] || []).map(
+          (packQty) => row.items[itemName]?.[packQty] || "-"
+        )
       ),
     ]);
     exportRowsAsCsv(filename, headers, rows);
@@ -5651,7 +5667,10 @@ export default function OwnerPage() {
                                 {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) => (
                                   <th
                                     key={itemName}
-                                    colSpan={activeItemPackingMatrix.packQtyColumns.length}
+                                    colSpan={Math.max(
+                                      activeItemPackingMatrix.itemPackQtyColumns[itemName]?.length || 0,
+                                      1
+                                    )}
                                     className={`packing-group-header packing-group-${itemIndex % 5}`}
                                   >
                                     {itemName}
@@ -5660,7 +5679,7 @@ export default function OwnerPage() {
                               </tr>
                               <tr>
                                 {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
-                                  activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                  (activeItemPackingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
                                     <th
                                       key={`${itemName}-${packQty}`}
                                       className={`packing-group-subheader packing-group-${itemIndex % 5}`}
@@ -5677,8 +5696,12 @@ export default function OwnerPage() {
                                   <td
                                     colSpan={
                                       Math.max(
-                                        activeItemPackingMatrix.itemNames.length *
-                                          activeItemPackingMatrix.packQtyColumns.length +
+                                        activeItemPackingMatrix.itemNames.reduce(
+                                          (sum, itemName) =>
+                                            sum +
+                                            (activeItemPackingMatrix.itemPackQtyColumns[itemName]?.length || 0),
+                                          0
+                                        ) +
                                           1,
                                         2
                                       )
@@ -5692,7 +5715,7 @@ export default function OwnerPage() {
                                 <tr key={row.key}>
                                   <td className="packing-agent-cell">{row.agent}</td>
                                   {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
-                                    activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                    (activeItemPackingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
                                       <td
                                         key={`${row.key}-${itemName}-${packQty}`}
                                         className={`packing-group-cell packing-group-${itemIndex % 5}`}
@@ -6465,7 +6488,10 @@ export default function OwnerPage() {
                                 {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) => (
                                   <th
                                     key={itemName}
-                                    colSpan={pastItemPackingMatrix.packQtyColumns.length}
+                                    colSpan={Math.max(
+                                      pastItemPackingMatrix.itemPackQtyColumns[itemName]?.length || 0,
+                                      1
+                                    )}
                                     className={`packing-group-header packing-group-${itemIndex % 5}`}
                                   >
                                     {itemName}
@@ -6474,7 +6500,7 @@ export default function OwnerPage() {
                               </tr>
                               <tr>
                                 {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
-                                  pastItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                  (pastItemPackingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
                                     <th
                                       key={`${itemName}-${packQty}`}
                                       className={`packing-group-subheader packing-group-${itemIndex % 5}`}
@@ -6490,8 +6516,12 @@ export default function OwnerPage() {
                                 <tr>
                                   <td
                                     colSpan={Math.max(
-                                      pastItemPackingMatrix.itemNames.length *
-                                        pastItemPackingMatrix.packQtyColumns.length +
+                                      pastItemPackingMatrix.itemNames.reduce(
+                                        (sum, itemName) =>
+                                          sum +
+                                          (pastItemPackingMatrix.itemPackQtyColumns[itemName]?.length || 0),
+                                        0
+                                      ) +
                                         1,
                                       2
                                     )}
@@ -6504,7 +6534,7 @@ export default function OwnerPage() {
                                 <tr key={row.key}>
                                   <td className="packing-agent-cell">{row.agent}</td>
                                   {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
-                                    pastItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                    (pastItemPackingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
                                       <td
                                         key={`${row.key}-${itemName}-${packQty}`}
                                         className={`packing-group-cell packing-group-${itemIndex % 5}`}
