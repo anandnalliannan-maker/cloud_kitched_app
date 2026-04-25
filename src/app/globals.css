@@ -1534,6 +1534,61 @@ a {
   min-width: max-content;
 }
 
+.owner-packing-matrix-card .row {
+  margin-bottom: 0.75rem;
+}
+
+.owner-packing-matrix-table {
+  min-width: max-content;
+}
+
+.owner-packing-matrix-table th,
+.owner-packing-matrix-table td {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.owner-packing-matrix-table .packing-agent-cell,
+.owner-packing-matrix-table th[rowspan="2"] {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  text-align: left;
+  background: #ffffff;
+}
+
+.packing-group-header {
+  font-weight: 800;
+}
+
+.packing-group-subheader {
+  font-size: 0.74rem;
+}
+
+.packing-group-cell {
+  font-weight: 600;
+}
+
+.packing-group-0 {
+  background: #fff7ed !important;
+}
+
+.packing-group-1 {
+  background: #eff6ff !important;
+}
+
+.packing-group-2 {
+  background: #f0fdf4 !important;
+}
+
+.packing-group-3 {
+  background: #fdf4ff !important;
+}
+
+.packing-group-4 {
+  background: #fefce8 !important;
+}
+
 .owner-assignment-table {
   min-width: 100%;
 }

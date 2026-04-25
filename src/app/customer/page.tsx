@@ -771,14 +771,6 @@ export default function CustomerPage() {
 
         if (latestOrder.deliveryType === "delivery") {
           setDeliveryType("delivery");
-          if (latestOrder.location?.lat && latestOrder.location?.lng) {
-            setLocation({
-              lat: Number(latestOrder.location.lat),
-              lng: Number(latestOrder.location.lng),
-            });
-            setLocLabel("Saved location loaded from this browser");
-            setLocError("");
-          }
         } else if (latestOrder.deliveryType === "pickup" && !deliveryType) {
           setDeliveryType("pickup");
         }
@@ -953,9 +945,6 @@ export default function CustomerPage() {
       }
       if (!form.area.trim()) {
         missing.push("Area");
-      }
-      if (!location) {
-        missing.push("Current Location");
       }
     }
 
@@ -1238,10 +1227,6 @@ export default function CustomerPage() {
       window.alert(message);
       return;
     }
-    if (deliveryType === "delivery" && !location) {
-      setPayError("Please use current location before proceeding.");
-      return;
-    }
     const selectedItems = items.filter((item) => item.qty > 0);
     if (!selectedItems.length) {
       setPayError("Please select at least one item.");
@@ -1286,7 +1271,7 @@ export default function CustomerPage() {
         total: effectiveOrderTotal,
         deliveryType,
         paymentMethod: "upi",
-        location,
+        location: null,
         addressText: deliveryAddressText,
       };
       await runTransaction(db, async (tx) => {
@@ -1481,7 +1466,7 @@ export default function CustomerPage() {
               : "",
           area: deliveryType === "delivery" ? effectiveResolvedArea || form.area : "",
           subArea: deliveryType === "delivery" ? effectiveResolvedSubArea : "",
-          location: location || null,
+          location: null,
           items: selectedItems.map((item) => ({
             name: item.name,
             qty: item.qty,
@@ -1501,7 +1486,7 @@ export default function CustomerPage() {
         addressLine1: deliveryType === "delivery" ? form.addressLine1.trim() : "",
         street: deliveryType === "delivery" ? form.street.trim() : "",
         area: deliveryType === "delivery" ? resolvedArea || form.area : "",
-        location: deliveryType === "delivery" ? location : null,
+        location: null,
       });
       summaryForPayment.deliveryFee = effectiveDeliveryFee;
       summaryForPayment.total = effectiveOrderTotal;
@@ -2200,27 +2185,6 @@ export default function CustomerPage() {
                     ))}
                   </select>
                 </div>
-                <div className="field">
-                  <label>Current Location (required)</label>
-                  {locLabel && <small>{locLabel}</small>}
-                  {location && (
-                    <small>
-                      {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
-                    </small>
-                  )}
-                  {locError && (
-                    <small style={{ color: "crimson" }}>{locError}</small>
-                  )}
-                  <div className="row" style={{ marginTop: 8 }}>
-                    <button
-                      type="button"
-                      className="btn secondary customer-ghost-btn"
-                      onClick={useCurrentLocation}
-                    >
-                      Use current location
-                    </button>
-                  </div>
-                </div>
               </>
             )}
 
@@ -2340,12 +2304,11 @@ export default function CustomerPage() {
                   <span>Total</span>
                   <strong>Rs. {paymentSummary?.total ?? 0}</strong>
                 </div>
-                {(paymentSummary?.addressText || paymentSummary?.location) && (
+                {paymentSummary?.addressText && (
                   <div className="payment-location-box">
                     <span className="payment-location-label">Delivery Address</span>
                     <span className="payment-location-value">
-                      {paymentSummary?.addressText ||
-                        `${paymentSummary?.location?.lat.toFixed(5)}, ${paymentSummary?.location?.lng.toFixed(5)}`}
+                      {paymentSummary?.addressText}
                     </span>
                   </div>
                 )}

@@ -552,31 +552,39 @@ function buildItemRows(summary: OrdersSummaryData) {
     .sort((a, b) => b.count - a.count || a.itemName.localeCompare(b.itemName));
 }
 
-function buildPackingMatrix(summary: OrdersSummaryData) {
+function buildAgentPackingMatrix(operationalOrders: Order[]) {
+  const itemSet = new Set<string>();
   const packQtySet = new Set<number>();
-  const grouped: Record<string, Record<number, number>> = {};
+  const grouped: Record<string, Record<string, Record<number, number>>> = {};
 
-  Object.entries(summary.itemPairCounts).forEach(([pairKey, count]) => {
-    const [itemName, packQtyRaw] = pairKey.split("__");
-    const packQty = Number(packQtyRaw || 0);
-    if (!itemName || !packQty) return;
-    packQtySet.add(packQty);
-    if (!grouped[itemName]) {
-      grouped[itemName] = {};
+  operationalOrders.forEach((order) => {
+    const agent =
+      order.deliveryType === "delivery" ? order.assignedAgentName || "Unassigned" : "Pickup";
+    if (!grouped[agent]) {
+      grouped[agent] = {};
     }
-    grouped[itemName][packQty] = count;
+    (order.items || []).forEach((item) => {
+      if (!item.name || !item.qty) return;
+      itemSet.add(item.name);
+      packQtySet.add(item.qty);
+      if (!grouped[agent][item.name]) {
+        grouped[agent][item.name] = {};
+      }
+      grouped[agent][item.name][item.qty] = (grouped[agent][item.name][item.qty] || 0) + 1;
+    });
   });
 
+  const itemNames = Array.from(itemSet).sort((a, b) => a.localeCompare(b));
   const packQtyColumns = Array.from(packQtySet).sort((a, b) => a - b);
   const rows = Object.entries(grouped)
-    .map(([itemName, buckets]) => ({
-      key: itemName,
-      itemName,
-      buckets,
+    .map(([agent, items]) => ({
+      key: agent,
+      agent,
+      items,
     }))
-    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+    .sort((a, b) => a.agent.localeCompare(b.agent));
 
-  return { packQtyColumns, rows };
+  return { itemNames, packQtyColumns, rows };
 }
 
 function buildDeliveryTypeRows(summary: OrdersSummaryData) {
@@ -1267,6 +1275,44 @@ export default function OwnerPage() {
     }
     return "";
   };
+  async function syncOrdersForMasterSubArea(
+    subArea: string,
+    parentArea: string,
+    deliveryAgentId: string,
+    deliveryAgentName: string
+  ) {
+    const normalizedTargetSubArea = normalizeSubAreaName(subArea);
+    if (!normalizedTargetSubArea) return;
+
+    const relevantOrders = orders.filter((order) => {
+      if (
+        order.deliveryType !== "delivery" ||
+        order.status === "closed" ||
+        order.status === "cancelled" ||
+        order.status === "undelivered"
+      ) {
+        return false;
+      }
+      const phoneMappedSubArea =
+        customerMasterByPhone[normalizePhone(order.phone || "")]?.subArea || "";
+      const effectiveSubArea = normalizeSubAreaName(order.subArea || phoneMappedSubArea || "");
+      return effectiveSubArea === normalizedTargetSubArea;
+    });
+
+    if (!relevantOrders.length) return;
+
+    await Promise.all(
+      relevantOrders.map((order) =>
+        updateDoc(doc(db, "orders", order.id), {
+          subArea: normalizedTargetSubArea,
+          area: order.area || parentArea || "",
+          assignedAgentId: deliveryAgentId || "",
+          assignedAgentName: deliveryAgentName || "",
+          updatedAt: serverTimestamp(),
+        })
+      )
+    );
+  }
   const unassignedCustomSubAreas = useMemo(() => {
     const mealKey = getAssignmentMealKey(assignmentMeal);
     return serviceAreas.flatMap((area) =>
@@ -2221,6 +2267,12 @@ export default function OwnerPage() {
       },
       { merge: true }
     );
+    await syncOrdersForMasterSubArea(
+      nextName,
+      masterSubAreaCreateForm.parentArea.trim(),
+      agentId,
+      agentName
+    );
     setMasterSubAreaCreateForm({
       name: "",
       parentArea: "",
@@ -2285,6 +2337,12 @@ export default function OwnerPage() {
         )
       );
     }
+    await syncOrdersForMasterSubArea(
+      nextName,
+      masterSubAreaEditForm.parentArea.trim(),
+      agentId,
+      agentName
+    );
     setEditingMasterSubAreaId(null);
   }
 
@@ -2346,6 +2404,7 @@ export default function OwnerPage() {
         let batch = writeBatch(db);
         let ops = 0;
         let imported = 0;
+        const syncedRows: { subArea: string; parentArea: string; agentId: string; agentName: string }[] = [];
         for (const row of rows.slice(1)) {
           const rawSubArea = normalizeSubAreaName(String(row[0] || ""));
           const rawAgentName = normalizeSubAreaName(String(row[1] || ""));
@@ -2368,6 +2427,12 @@ export default function OwnerPage() {
             payload.parentArea = inferredArea;
           }
           batch.set(subAreaRef, payload, { merge: true });
+          syncedRows.push({
+            subArea: rawSubArea,
+            parentArea: inferredArea,
+            agentId: agent?.id || "",
+            agentName: agent?.name || rawAgentName,
+          });
           ops += 1;
           imported += 1;
           if (ops >= 400) {
@@ -2378,6 +2443,14 @@ export default function OwnerPage() {
         }
         if (ops > 0) {
           await batch.commit();
+        }
+        for (const row of syncedRows) {
+          await syncOrdersForMasterSubArea(
+            row.subArea,
+            row.parentArea,
+            row.agentId,
+            row.agentName
+          );
         }
         setMasterImportStatus(`Imported ${imported} delivery-agent mappings.`);
       }
@@ -3464,8 +3537,8 @@ export default function OwnerPage() {
   const activeItemRows = useMemo(() => buildItemRows(currentOrdersSummary), [currentOrdersSummary]);
 
   const activeItemPackingMatrix = useMemo(
-    () => buildPackingMatrix(currentOrdersSummary),
-    [currentOrdersSummary]
+    () => buildAgentPackingMatrix(currentOperationalOrders),
+    [currentOperationalOrders]
   );
 
   const activeAgentRows = useMemo(
@@ -3628,6 +3701,29 @@ export default function OwnerPage() {
         record.deliveryAgentName || "",
       ])
     );
+  };
+
+  const exportPackingMatrixCsv = (
+    filename: string,
+    matrix: ReturnType<typeof buildAgentPackingMatrix>
+  ) => {
+    if (!matrix.rows.length || !matrix.itemNames.length || !matrix.packQtyColumns.length) {
+      window.alert("No packing data to export.");
+      return;
+    }
+    const headers = [
+      "Name",
+      ...matrix.itemNames.flatMap((itemName) =>
+        matrix.packQtyColumns.map((packQty) => `${itemName} - Pack ${packQty}`)
+      ),
+    ];
+    const rows = matrix.rows.map((row) => [
+      row.agent,
+      ...matrix.itemNames.flatMap((itemName) =>
+        matrix.packQtyColumns.map((packQty) => row.items[itemName]?.[packQty] || "-")
+      ),
+    ]);
+    exportRowsAsCsv(filename, headers, rows);
   };
 
   const exportActiveOrdersCsv = () => {
@@ -3815,8 +3911,8 @@ export default function OwnerPage() {
   const pastAreaRows = useMemo(() => buildAreaRows(pastOrdersSummary), [pastOrdersSummary]);
   const pastItemRows = useMemo(() => buildItemRows(pastOrdersSummary), [pastOrdersSummary]);
   const pastItemPackingMatrix = useMemo(
-    () => buildPackingMatrix(pastOrdersSummary),
-    [pastOrdersSummary]
+    () => buildAgentPackingMatrix(pastOperationalOrders),
+    [pastOperationalOrders]
   );
   const pastDeliveryTypeRows = useMemo(
     () => buildDeliveryTypeRows(pastOrdersSummary),
@@ -5532,16 +5628,47 @@ export default function OwnerPage() {
                           </div>
                         </div>
                       </div>
-                      <div className="card">
-                        <h3>Item Packing Pairs</h3>
+                      <div className="card owner-packing-matrix-card">
+                        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                          <h3>Item Packing Pairs</h3>
+                          <button
+                            className="btn secondary btn-compact"
+                            onClick={() =>
+                              exportPackingMatrixCsv(
+                                `packing-matrix-${formatDateKey(currentPublishedMenu?.date)}-${(currentPublishedMenu?.mealType || "menu").replace(/\s+/g, "-")}.csv`,
+                                activeItemPackingMatrix
+                              )
+                            }
+                          >
+                            Export to Excel
+                          </button>
+                        </div>
                         <div className="table-scroll">
-                          <table className="payments-table payments-table-compact owner-summary-packing-table">
+                          <table className="payments-table payments-table-compact owner-summary-packing-table owner-packing-matrix-table">
                             <thead>
                               <tr>
-                                <th>Item</th>
-                                {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
-                                  <th key={packQty}>{packQty} Pack</th>
+                                <th rowSpan={2}>Name</th>
+                                {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) => (
+                                  <th
+                                    key={itemName}
+                                    colSpan={activeItemPackingMatrix.packQtyColumns.length}
+                                    className={`packing-group-header packing-group-${itemIndex % 5}`}
+                                  >
+                                    {itemName}
+                                  </th>
                                 ))}
+                              </tr>
+                              <tr>
+                                {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
+                                  activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                    <th
+                                      key={`${itemName}-${packQty}`}
+                                      className={`packing-group-subheader packing-group-${itemIndex % 5}`}
+                                    >
+                                      Pack {packQty}
+                                    </th>
+                                  ))
+                                )}
                               </tr>
                             </thead>
                             <tbody>
@@ -5549,7 +5676,12 @@ export default function OwnerPage() {
                                 <tr>
                                   <td
                                     colSpan={
-                                      Math.max(activeItemPackingMatrix.packQtyColumns.length + 1, 2)
+                                      Math.max(
+                                        activeItemPackingMatrix.itemNames.length *
+                                          activeItemPackingMatrix.packQtyColumns.length +
+                                          1,
+                                        2
+                                      )
                                     }
                                   >
                                     No packing data
@@ -5558,12 +5690,17 @@ export default function OwnerPage() {
                               )}
                               {activeItemPackingMatrix.rows.map((row) => (
                                 <tr key={row.key}>
-                                  <td>{row.itemName}</td>
-                                  {activeItemPackingMatrix.packQtyColumns.map((packQty) => (
-                                    <td key={`${row.key}-${packQty}`}>
-                                      {row.buckets[packQty] || "-"}
-                                    </td>
-                                  ))}
+                                  <td className="packing-agent-cell">{row.agent}</td>
+                                  {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
+                                    activeItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                      <td
+                                        key={`${row.key}-${itemName}-${packQty}`}
+                                        className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                                      >
+                                        {row.items[itemName]?.[packQty] || "-"}
+                                      </td>
+                                    ))
+                                  )}
                                 </tr>
                               ))}
                             </tbody>
@@ -6305,34 +6442,77 @@ export default function OwnerPage() {
                         </div>
                       </div>
 
-                      <div className="card">
-                        <h3>Item Packing Pairs</h3>
+                      <div className="card owner-packing-matrix-card">
+                        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                          <h3>Item Packing Pairs</h3>
+                          <button
+                            className="btn secondary btn-compact"
+                            onClick={() =>
+                              exportPackingMatrixCsv(
+                                `packing-matrix-${selectedPastMenuOption?.date || "past"}-${(selectedPastMenuOption?.mealType || "menu").replace(/\s+/g, "-")}.csv`,
+                                pastItemPackingMatrix
+                              )
+                            }
+                          >
+                            Export to Excel
+                          </button>
+                        </div>
                         <div className="table-scroll">
-                          <table className="payments-table payments-table-compact owner-summary-packing-table">
+                          <table className="payments-table payments-table-compact owner-summary-packing-table owner-packing-matrix-table">
                             <thead>
                               <tr>
-                                <th>Item</th>
-                                {pastItemPackingMatrix.packQtyColumns.map((packQty) => (
-                                  <th key={packQty}>{packQty} Pack</th>
+                                <th rowSpan={2}>Name</th>
+                                {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) => (
+                                  <th
+                                    key={itemName}
+                                    colSpan={pastItemPackingMatrix.packQtyColumns.length}
+                                    className={`packing-group-header packing-group-${itemIndex % 5}`}
+                                  >
+                                    {itemName}
+                                  </th>
                                 ))}
+                              </tr>
+                              <tr>
+                                {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
+                                  pastItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                    <th
+                                      key={`${itemName}-${packQty}`}
+                                      className={`packing-group-subheader packing-group-${itemIndex % 5}`}
+                                    >
+                                      Pack {packQty}
+                                    </th>
+                                  ))
+                                )}
                               </tr>
                             </thead>
                             <tbody>
                               {pastItemPackingMatrix.rows.length === 0 && (
                                 <tr>
-                                  <td colSpan={Math.max(pastItemPackingMatrix.packQtyColumns.length + 1, 2)}>
+                                  <td
+                                    colSpan={Math.max(
+                                      pastItemPackingMatrix.itemNames.length *
+                                        pastItemPackingMatrix.packQtyColumns.length +
+                                        1,
+                                      2
+                                    )}
+                                  >
                                     No packing data
                                   </td>
                                 </tr>
                               )}
                               {pastItemPackingMatrix.rows.map((row) => (
                                 <tr key={row.key}>
-                                  <td>{row.itemName}</td>
-                                  {pastItemPackingMatrix.packQtyColumns.map((packQty) => (
-                                    <td key={`${row.key}-${packQty}`}>
-                                      {row.buckets[packQty] || "-"}
-                                    </td>
-                                  ))}
+                                  <td className="packing-agent-cell">{row.agent}</td>
+                                  {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
+                                    pastItemPackingMatrix.packQtyColumns.map((packQty) => (
+                                      <td
+                                        key={`${row.key}-${itemName}-${packQty}`}
+                                        className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                                      >
+                                        {row.items[itemName]?.[packQty] || "-"}
+                                      </td>
+                                    ))
+                                  )}
                                 </tr>
                               ))}
                             </tbody>
