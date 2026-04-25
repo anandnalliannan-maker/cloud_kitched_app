@@ -1019,6 +1019,12 @@ export default function OwnerPage() {
     assignedAgentId: "",
     status: "active",
   });
+  const [activeOrderSubAreaDrafts, setActiveOrderSubAreaDrafts] = useState<
+    Record<string, { selected: string; newName: string; error: string }>
+  >({});
+  const [activeOrderAgentDrafts, setActiveOrderAgentDrafts] = useState<
+    Record<string, { selected: string; error: string }>
+  >({});
 
   useEffect(() => {
     if (!openActiveOrderActionsId) {
@@ -1161,6 +1167,43 @@ export default function OwnerPage() {
     });
     return map;
   }, [masterSubAreas]);
+  const deliveryAgentChoices = useMemo(() => {
+    const byName = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        value: string;
+      }
+    >();
+
+    deliveryAgents.forEach((agent) => {
+      if (agent.active === false || !agent.name.trim()) return;
+      const name = agent.name.trim();
+      byName.set(normalizeLookupLabel(name), {
+        id: agent.id,
+        name,
+        value: `id:${agent.id}`,
+      });
+    });
+
+    masterSubAreas.forEach((record) => {
+      const name = (record.deliveryAgentName || "").trim();
+      if (!name) return;
+      const key = normalizeLookupLabel(name);
+      const existing = byName.get(key);
+      if (existing?.id) return;
+      byName.set(key, {
+        id: record.deliveryAgentId || "",
+        name,
+        value: record.deliveryAgentId
+          ? `id:${record.deliveryAgentId}`
+          : `name:${key}`,
+      });
+    });
+
+    return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [deliveryAgents, masterSubAreas]);
   const pendingCustomerMasterRecords = useMemo(
     () => customerMasterRecords.filter((record) => !record.subArea),
     [customerMasterRecords]
@@ -1283,6 +1326,8 @@ export default function OwnerPage() {
     }
     return "";
   };
+  const getResolvedOrderSubArea = (order: Order) =>
+    normalizeSubAreaName(getOrderDisplaySubArea(order));
   async function syncOrdersForMasterSubArea(
     subArea: string,
     parentArea: string,
@@ -2707,6 +2752,206 @@ export default function OwnerPage() {
           ? order.status
           : "active",
     });
+  }
+
+  function getActiveOrderSubAreaDraft(order: Order) {
+    return (
+      activeOrderSubAreaDrafts[order.id] || {
+        selected: "",
+        newName: "",
+        error: "",
+      }
+    );
+  }
+
+  function getActiveOrderAgentDraft(order: Order) {
+    return (
+      activeOrderAgentDrafts[order.id] || {
+        selected: "",
+        error: "",
+      }
+    );
+  }
+
+  async function saveActiveOrderSubAreaMapping(order: Order) {
+    const draft = getActiveOrderSubAreaDraft(order);
+    const chosenExisting =
+      draft.selected && draft.selected !== "__new__"
+        ? normalizeSubAreaName(draft.selected)
+        : "";
+    const chosenNew = normalizeSubAreaName(draft.newName);
+    const nextSubArea = chosenExisting || chosenNew;
+
+    if (!nextSubArea) {
+      setActiveOrderSubAreaDrafts((prev) => ({
+        ...prev,
+        [order.id]: {
+          ...draft,
+          error: "Select or enter a sub area.",
+        },
+      }));
+      return;
+    }
+
+    const normalizedPhone = normalizePhone(order.phone || "");
+    const subAreaId = getSubAreaDocId(nextSubArea);
+    const existingMaster = masterSubAreaMap[subAreaId];
+    const parentArea =
+      order.area ||
+      existingMaster?.parentArea ||
+      inferAreaForSubArea(nextSubArea, serviceAreas, masterSubAreas) ||
+      "";
+    const deliveryAgentId = existingMaster?.deliveryAgentId || "";
+    const deliveryAgentName = existingMaster?.deliveryAgentName || "";
+
+    if (normalizedPhone) {
+      await setDoc(
+        doc(db, "customer_master", normalizedPhone),
+        {
+          phone: normalizedPhone,
+          normalizedPhone,
+          customerName: order.customerName || "",
+          area: parentArea,
+          subArea: nextSubArea,
+          address: order.address || "",
+          status: "mapped",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    if (!existingMaster) {
+      await setDoc(
+        doc(db, "master_sub_areas", subAreaId),
+        {
+          name: nextSubArea,
+          normalizedName: nextSubArea.toLowerCase(),
+          parentArea,
+          deliveryFee: 0,
+          deliveryAgentId,
+          deliveryAgentName,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } else if (!existingMaster.parentArea && parentArea) {
+      await updateDoc(doc(db, "master_sub_areas", subAreaId), {
+        parentArea,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    await updateDoc(doc(db, "orders", order.id), {
+      area: parentArea,
+      subArea: nextSubArea,
+      assignedAgentId: deliveryAgentId || "",
+      assignedAgentName: deliveryAgentName || "",
+      updatedAt: serverTimestamp(),
+    });
+
+    if (deliveryAgentId || deliveryAgentName) {
+      await syncOrdersForMasterSubArea(
+        nextSubArea,
+        parentArea,
+        deliveryAgentId,
+        deliveryAgentName
+      );
+    }
+
+    setActiveOrderSubAreaDrafts((prev) => ({
+      ...prev,
+      [order.id]: {
+        selected: nextSubArea,
+        newName: "",
+        error: "",
+      },
+    }));
+    setActiveOrderAgentDrafts((prev) => ({
+      ...prev,
+      [order.id]: {
+        selected: deliveryAgentId
+          ? `id:${deliveryAgentId}`
+          : deliveryAgentName
+            ? `name:${normalizeLookupLabel(deliveryAgentName)}`
+            : "",
+        error: "",
+      },
+    }));
+  }
+
+  async function saveActiveOrderAgentAssignment(order: Order) {
+    const resolvedSubArea = getResolvedOrderSubArea(order);
+    if (!resolvedSubArea) {
+      setActiveOrderAgentDrafts((prev) => ({
+        ...prev,
+        [order.id]: {
+          ...getActiveOrderAgentDraft(order),
+          error: "Map sub area first.",
+        },
+      }));
+      return;
+    }
+
+    const draft = getActiveOrderAgentDraft(order);
+    const selectedChoice = deliveryAgentChoices.find(
+      (choice) => choice.value === draft.selected
+    );
+
+    if (!selectedChoice) {
+      setActiveOrderAgentDrafts((prev) => ({
+        ...prev,
+        [order.id]: {
+          ...draft,
+          error: "Select a delivery agent.",
+        },
+      }));
+      return;
+    }
+
+    const parentArea =
+      order.area ||
+      masterSubAreaMap[getSubAreaDocId(resolvedSubArea)]?.parentArea ||
+      inferAreaForSubArea(resolvedSubArea, serviceAreas, masterSubAreas) ||
+      "";
+
+    await setDoc(
+      doc(db, "master_sub_areas", getSubAreaDocId(resolvedSubArea)),
+      {
+        name: resolvedSubArea,
+        normalizedName: resolvedSubArea.toLowerCase(),
+        parentArea,
+        deliveryFee:
+          masterSubAreaMap[getSubAreaDocId(resolvedSubArea)]?.deliveryFee || 0,
+        deliveryAgentId: selectedChoice.id || "",
+        deliveryAgentName: selectedChoice.name,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    await updateDoc(doc(db, "orders", order.id), {
+      area: parentArea,
+      subArea: resolvedSubArea,
+      assignedAgentId: selectedChoice.id || "",
+      assignedAgentName: selectedChoice.name,
+      updatedAt: serverTimestamp(),
+    });
+
+    await syncOrdersForMasterSubArea(
+      resolvedSubArea,
+      parentArea,
+      selectedChoice.id || "",
+      selectedChoice.name
+    );
+
+    setActiveOrderAgentDrafts((prev) => ({
+      ...prev,
+      [order.id]: {
+        selected: selectedChoice.value,
+        error: "",
+      },
+    }));
   }
 
   function canOwnerCancelOrder(order: Order) {
@@ -5944,7 +6189,7 @@ export default function OwnerPage() {
                             <th>Delivery Type</th>
                             <th>Area</th>
                             <th>Address</th>
-                            <th>Items</th>
+                            <th className="owner-orders-items-col">Items</th>
                               <th>Delivery Agent</th>
                               <th>Payment</th>
                               <th>Total Value</th>
@@ -5968,6 +6213,67 @@ export default function OwnerPage() {
                                   <small className="payments-subtext">
                                     {getOrderDisplaySubArea(order) || "No sub area mapped"}
                                   </small>
+                                  {order.deliveryType === "delivery" &&
+                                    !getResolvedOrderSubArea(order) && (
+                                      <div
+                                        className="stack owner-inline-mapper"
+                                        style={{ gap: 6, marginTop: 8 }}
+                                      >
+                                        <select
+                                          className="select"
+                                          value={getActiveOrderSubAreaDraft(order).selected}
+                                          onChange={(e) =>
+                                            setActiveOrderSubAreaDrafts((prev) => ({
+                                              ...prev,
+                                              [order.id]: {
+                                                ...getActiveOrderSubAreaDraft(order),
+                                                selected: e.target.value,
+                                                error: "",
+                                              },
+                                            }))
+                                          }
+                                        >
+                                          <option value="">Select sub area</option>
+                                          {(subAreaOptionsByArea[order.area || ""] || []).map(
+                                            (subArea) => (
+                                              <option key={subArea} value={subArea}>
+                                                {subArea}
+                                              </option>
+                                            )
+                                          )}
+                                          <option value="__new__">Add new sub area</option>
+                                        </select>
+                                        {(getActiveOrderSubAreaDraft(order).selected === "__new__" ||
+                                          !(subAreaOptionsByArea[order.area || ""] || []).length) && (
+                                          <input
+                                            className="input"
+                                            placeholder="New sub area name"
+                                            value={getActiveOrderSubAreaDraft(order).newName}
+                                            onChange={(e) =>
+                                              setActiveOrderSubAreaDrafts((prev) => ({
+                                                ...prev,
+                                                [order.id]: {
+                                                  ...getActiveOrderSubAreaDraft(order),
+                                                  newName: e.target.value,
+                                                  error: "",
+                                                },
+                                              }))
+                                            }
+                                          />
+                                        )}
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() => saveActiveOrderSubAreaMapping(order)}
+                                        >
+                                          Map
+                                        </button>
+                                        {getActiveOrderSubAreaDraft(order).error && (
+                                          <small className="customer-error-text">
+                                            {getActiveOrderSubAreaDraft(order).error}
+                                          </small>
+                                        )}
+                                      </div>
+                                    )}
                                 </td>
                                 <td>
                                   {order.address || "-"}
@@ -5977,7 +6283,7 @@ export default function OwnerPage() {
                                     </small>
                                   )}
                                 </td>
-                                <td>
+                                <td className="owner-orders-items-cell">
                                   {(order.items || []).map((item) => (
                                     <div key={`${order.id}-${item.name}`}>
                                       {item.name} x{item.qty}
@@ -5988,36 +6294,90 @@ export default function OwnerPage() {
                                   {order.deliveryType === "delivery"
                                     ? order.assignedAgentName || "Unassigned"
                                     : "Pickup"}
+                                  {order.deliveryType === "delivery" &&
+                                    !order.assignedAgentName && (
+                                      <div
+                                        className="stack owner-inline-mapper"
+                                        style={{ gap: 6, marginTop: 8 }}
+                                      >
+                                        <select
+                                          className="select"
+                                          value={getActiveOrderAgentDraft(order).selected}
+                                          onChange={(e) =>
+                                            setActiveOrderAgentDrafts((prev) => ({
+                                              ...prev,
+                                              [order.id]: {
+                                                selected: e.target.value,
+                                                error: "",
+                                              },
+                                            }))
+                                          }
+                                          disabled={!getResolvedOrderSubArea(order)}
+                                        >
+                                          <option value="">Select delivery agent</option>
+                                          {deliveryAgentChoices.map((agent) => (
+                                            <option key={agent.value} value={agent.value}>
+                                              {agent.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          disabled={!getResolvedOrderSubArea(order)}
+                                          onClick={() => saveActiveOrderAgentAssignment(order)}
+                                        >
+                                          Assign
+                                        </button>
+                                        {getActiveOrderAgentDraft(order).error && (
+                                          <small className="customer-error-text">
+                                            {getActiveOrderAgentDraft(order).error}
+                                          </small>
+                                        )}
+                                      </div>
+                                    )}
                                 </td>
                                 <td>
                                   {getPaymentMethodLabel(order)}
                                 </td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>
-                                  <div
-                                    className="stack owner-orders-actions-cell"
-                                    style={{ gap: 6 }}
-                                    data-owner-order-actions
-                                  >
+                                  <div className="stack owner-orders-actions-cell" data-owner-order-actions>
                                     <button
-                                      className="btn secondary btn-compact"
+                                      className="btn secondary btn-compact owner-icon-btn"
                                       onClick={() => openPlacedNotification(order)}
                                       disabled={!getWhatsAppPhone(order.phone)}
+                                      aria-label="Open WhatsApp message"
+                                      title="WhatsApp"
                                     >
-                                      WhatsApp
+                                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path
+                                          d="M17.47 14.38c-.27-.13-1.58-.78-1.82-.87-.24-.09-.41-.13-.58.13-.17.27-.67.87-.82 1.05-.15.18-.3.2-.57.07-.27-.13-1.13-.42-2.15-1.33-.8-.71-1.34-1.58-1.5-1.85-.16-.27-.02-.42.12-.55.12-.12.27-.31.4-.47.13-.16.17-.27.27-.45.09-.18.04-.34-.02-.47-.07-.13-.58-1.4-.8-1.91-.21-.5-.43-.43-.58-.44h-.5c-.18 0-.47.07-.71.34-.24.27-.92.9-.92 2.19s.94 2.54 1.08 2.71c.13.18 1.85 2.82 4.49 3.95.63.27 1.12.43 1.5.55.63.2 1.2.17 1.65.1.5-.07 1.58-.64 1.8-1.26.22-.62.22-1.15.15-1.26-.06-.11-.24-.18-.5-.31Z"
+                                          fill="currentColor"
+                                        />
+                                        <path
+                                          d="M20.52 3.48A11.86 11.86 0 0 0 12.05 0C5.53 0 .24 5.29.24 11.81c0 2.08.54 4.11 1.57 5.9L0 24l6.48-1.7a11.8 11.8 0 0 0 5.57 1.42h.01c6.52 0 11.81-5.29 11.81-11.81 0-3.15-1.23-6.12-3.35-8.43ZM12.06 21.7h-.01a9.86 9.86 0 0 1-5.02-1.37l-.36-.21-3.85 1.01 1.03-3.75-.23-.38a9.8 9.8 0 0 1-1.5-5.2c0-5.42 4.41-9.83 9.84-9.83 2.63 0 5.1 1.02 6.95 2.87a9.78 9.78 0 0 1 2.88 6.96c0 5.42-4.42 9.83-9.83 9.83Z"
+                                          fill="currentColor"
+                                        />
+                                      </svg>
                                     </button>
                                     {placedNotificationSentIds.includes(order.id) && (
                                       <small className="payments-subtext">Opened</small>
                                     )}
                                     <button
-                                      className="btn secondary btn-compact"
+                                      className="btn secondary btn-compact owner-icon-btn"
                                       onClick={() =>
                                         setOpenActiveOrderActionsId(
                                           openActiveOrderActionsId === order.id ? null : order.id
                                         )
                                       }
+                                      aria-label="Order actions"
+                                      title="Actions"
                                     >
-                                      Actions
+                                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <circle cx="5" cy="12" r="2" fill="currentColor" />
+                                        <circle cx="12" cy="12" r="2" fill="currentColor" />
+                                        <circle cx="19" cy="12" r="2" fill="currentColor" />
+                                      </svg>
                                     </button>
                                     {openActiveOrderActionsId === order.id && (
                                       <div className="list-card stack" style={{ gap: 6 }}>
