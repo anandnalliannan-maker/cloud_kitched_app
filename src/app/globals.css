@@ -361,15 +361,18 @@ a {
 
 .owner-orders-items-col,
 .owner-orders-items-cell {
-  min-width: 170px;
+  min-width: 120px;
 }
 
 .owner-inline-mapper {
-  max-width: 140px;
+  max-width: 120px;
+  min-width: 0;
 }
 
 .owner-inline-mapper .select,
 .owner-inline-mapper .input {
+  width: 100%;
+  max-width: 100%;
   min-height: 28px;
   padding: 4px 8px;
   font-size: 0.78rem;
@@ -377,11 +380,13 @@ a {
 }
 
 .owner-inline-mapper .btn {
+  width: auto !important;
   min-height: 28px !important;
   padding: 4px 8px !important;
   font-size: 0.76rem !important;
   border-radius: 8px !important;
   box-shadow: none !important;
+  justify-self: start;
 }
 
 .owner-icon-btn {
@@ -1837,7 +1842,7 @@ a {
 
   .owner-orders-items-col,
   .owner-orders-items-cell {
-    min-width: 150px;
+    min-width: 110px;
   }
 }
 

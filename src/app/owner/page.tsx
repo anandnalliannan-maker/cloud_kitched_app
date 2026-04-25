@@ -6277,11 +6277,6 @@ export default function OwnerPage() {
                                 </td>
                                 <td>
                                   {order.address || "-"}
-                                  {order.location && (
-                                    <small className="payments-subtext">
-                                      {formatLocationInput(order.location)}
-                                    </small>
-                                  )}
                                 </td>
                                 <td className="owner-orders-items-cell">
                                   {(order.items || []).map((item) => (
@@ -7083,11 +7078,6 @@ export default function OwnerPage() {
                                 </td>
                                 <td>
                                   {order.address || "-"}
-                                  {order.location && (
-                                    <small className="payments-subtext">
-                                      {formatLocationInput(order.location)}
-                                    </small>
-                                  )}
                                 </td>
                                 <td>
                                   {(order.items || []).map((item) => (
