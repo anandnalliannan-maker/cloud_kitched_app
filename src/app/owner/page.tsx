@@ -172,6 +172,10 @@ type MasterSubAreaRecord = {
   deliveryFee?: number;
   deliveryAgentId?: string;
   deliveryAgentName?: string;
+  lunchDeliveryAgentId?: string;
+  lunchDeliveryAgentName?: string;
+  dinnerDeliveryAgentId?: string;
+  dinnerDeliveryAgentName?: string;
   updatedAt?: any;
 };
 
@@ -780,6 +784,33 @@ function inferAreaForSubArea(
   return matchedArea?.name || "";
 }
 
+function getMasterSubAreaAgentFields(
+  record: MasterSubAreaRecord | null | undefined,
+  mealType?: string
+) {
+  const mealKey = getAssignmentMealKey(mealType);
+  if (mealKey === "Lunch") {
+    return {
+      agentId: record?.lunchDeliveryAgentId || record?.deliveryAgentId || "",
+      agentName: record?.lunchDeliveryAgentName || record?.deliveryAgentName || "",
+    };
+  }
+  if (mealKey === "Dinner") {
+    return {
+      agentId: record?.dinnerDeliveryAgentId || record?.deliveryAgentId || "",
+      agentName: record?.dinnerDeliveryAgentName || record?.deliveryAgentName || "",
+    };
+  }
+  return {
+    agentId: record?.deliveryAgentId || record?.lunchDeliveryAgentId || record?.dinnerDeliveryAgentId || "",
+    agentName:
+      record?.deliveryAgentName ||
+      record?.lunchDeliveryAgentName ||
+      record?.dinnerDeliveryAgentName ||
+      "",
+  };
+}
+
 function getAreaAgentIdsForMeal(assignmentData: any, mealType?: string) {
   const mealKey = getAssignmentMealKey(mealType);
   return mealKey
@@ -935,7 +966,8 @@ export default function OwnerPage() {
     subArea: "",
     area: "",
     fee: "",
-    agent: "",
+    lunchAgent: "",
+    dinnerAgent: "",
   });
   const [editingCustomerMasterId, setEditingCustomerMasterId] = useState<string | null>(null);
   const [customerMasterEditForm, setCustomerMasterEditForm] = useState({
@@ -949,13 +981,15 @@ export default function OwnerPage() {
     name: "",
     parentArea: "",
     deliveryFee: "",
-    deliveryAgentId: "",
+    lunchDeliveryAgentId: "",
+    dinnerDeliveryAgentId: "",
   });
   const [masterSubAreaCreateForm, setMasterSubAreaCreateForm] = useState({
     name: "",
     parentArea: "",
     deliveryFee: "",
-    deliveryAgentId: "",
+    lunchDeliveryAgentId: "",
+    dinnerDeliveryAgentId: "",
   });
   const [masterImportStatus, setMasterImportStatus] = useState("");
   const [masterImportError, setMasterImportError] = useState("");
@@ -1188,17 +1222,25 @@ export default function OwnerPage() {
     });
 
     masterSubAreas.forEach((record) => {
-      const name = (record.deliveryAgentName || "").trim();
-      if (!name) return;
-      const key = normalizeLookupLabel(name);
-      const existing = byName.get(key);
-      if (existing?.id) return;
-      byName.set(key, {
-        id: record.deliveryAgentId || "",
-        name,
-        value: record.deliveryAgentId
-          ? `id:${record.deliveryAgentId}`
-          : `name:${key}`,
+      [
+        {
+          id: record.lunchDeliveryAgentId || record.deliveryAgentId || "",
+          name: (record.lunchDeliveryAgentName || record.deliveryAgentName || "").trim(),
+        },
+        {
+          id: record.dinnerDeliveryAgentId || record.deliveryAgentId || "",
+          name: (record.dinnerDeliveryAgentName || record.deliveryAgentName || "").trim(),
+        },
+      ].forEach((entry) => {
+        if (!entry.name) return;
+        const key = normalizeLookupLabel(entry.name);
+        const existing = byName.get(key);
+        if (existing?.id) return;
+        byName.set(key, {
+          id: entry.id,
+          name: entry.name,
+          value: entry.id ? `id:${entry.id}` : `name:${key}`,
+        });
       });
     });
 
@@ -1291,8 +1333,18 @@ export default function OwnerPage() {
         return false;
       }
       if (
-        subAreaMasterFilters.agent &&
-        !(record.deliveryAgentName || "").toLowerCase().includes(subAreaMasterFilters.agent.trim().toLowerCase())
+        subAreaMasterFilters.lunchAgent &&
+        !(record.lunchDeliveryAgentName || record.deliveryAgentName || "")
+          .toLowerCase()
+          .includes(subAreaMasterFilters.lunchAgent.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        subAreaMasterFilters.dinnerAgent &&
+        !(record.dinnerDeliveryAgentName || record.deliveryAgentName || "")
+          .toLowerCase()
+          .includes(subAreaMasterFilters.dinnerAgent.trim().toLowerCase())
       ) {
         return false;
       }
@@ -1331,8 +1383,14 @@ export default function OwnerPage() {
   async function syncOrdersForMasterSubArea(
     subArea: string,
     parentArea: string,
-    deliveryAgentId: string,
-    deliveryAgentName: string
+    agentFields: {
+      lunchDeliveryAgentId?: string;
+      lunchDeliveryAgentName?: string;
+      dinnerDeliveryAgentId?: string;
+      dinnerDeliveryAgentName?: string;
+      deliveryAgentId?: string;
+      deliveryAgentName?: string;
+    }
   ) {
     const normalizedTargetSubArea = normalizeSubAreaName(subArea);
     if (!normalizedTargetSubArea) return;
@@ -1355,15 +1413,19 @@ export default function OwnerPage() {
     if (!relevantOrders.length) return;
 
     await Promise.all(
-      relevantOrders.map((order) =>
-        updateDoc(doc(db, "orders", order.id), {
+      relevantOrders.map((order) => {
+        const resolvedAgent = getMasterSubAreaAgentFields(
+          agentFields as MasterSubAreaRecord,
+          order.mealType
+        );
+        return updateDoc(doc(db, "orders", order.id), {
           subArea: normalizedTargetSubArea,
           area: order.area || parentArea || "",
-          assignedAgentId: deliveryAgentId || "",
-          assignedAgentName: deliveryAgentName || "",
+          assignedAgentId: resolvedAgent.agentId || "",
+          assignedAgentName: resolvedAgent.agentName || "",
           updatedAt: serverTimestamp(),
-        })
-      )
+        });
+      })
     );
   }
   const unassignedCustomSubAreas = useMemo(() => {
@@ -2285,8 +2347,10 @@ export default function OwnerPage() {
             normalizedName: nextSubArea.toLowerCase(),
             parentArea: customerMasterEditForm.area.trim(),
             deliveryFee: 0,
-            deliveryAgentId: "",
-            deliveryAgentName: "",
+            lunchDeliveryAgentId: "",
+            lunchDeliveryAgentName: "",
+            dinnerDeliveryAgentId: "",
+            dinnerDeliveryAgentName: "",
             updatedAt: serverTimestamp(),
           },
           { merge: true }
@@ -2304,8 +2368,10 @@ export default function OwnerPage() {
   async function addMasterSubAreaRecord() {
     const nextName = normalizeSubAreaName(masterSubAreaCreateForm.name);
     if (!nextName) return;
-    const agentId = masterSubAreaCreateForm.deliveryAgentId;
-    const agentName = agentId ? agentNameMap[agentId] || "" : "";
+    const lunchAgentId = masterSubAreaCreateForm.lunchDeliveryAgentId;
+    const dinnerAgentId = masterSubAreaCreateForm.dinnerDeliveryAgentId;
+    const lunchAgentName = lunchAgentId ? agentNameMap[lunchAgentId] || "" : "";
+    const dinnerAgentName = dinnerAgentId ? agentNameMap[dinnerAgentId] || "" : "";
     const subAreaId = getSubAreaDocId(nextName);
     await setDoc(
       doc(db, "master_sub_areas", subAreaId),
@@ -2314,8 +2380,10 @@ export default function OwnerPage() {
         normalizedName: nextName.toLowerCase(),
         parentArea: masterSubAreaCreateForm.parentArea.trim(),
         deliveryFee: Math.max(0, Number(masterSubAreaCreateForm.deliveryFee || 0)),
-        deliveryAgentId: agentId,
-        deliveryAgentName: agentName,
+        lunchDeliveryAgentId: lunchAgentId,
+        lunchDeliveryAgentName: lunchAgentName,
+        dinnerDeliveryAgentId: dinnerAgentId,
+        dinnerDeliveryAgentName: dinnerAgentName,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -2323,14 +2391,19 @@ export default function OwnerPage() {
     await syncOrdersForMasterSubArea(
       nextName,
       masterSubAreaCreateForm.parentArea.trim(),
-      agentId,
-      agentName
+      {
+        lunchDeliveryAgentId: lunchAgentId,
+        lunchDeliveryAgentName: lunchAgentName,
+        dinnerDeliveryAgentId: dinnerAgentId,
+        dinnerDeliveryAgentName: dinnerAgentName,
+      }
     );
     setMasterSubAreaCreateForm({
       name: "",
       parentArea: "",
       deliveryFee: "",
-      deliveryAgentId: "",
+      lunchDeliveryAgentId: "",
+      dinnerDeliveryAgentId: "",
     });
   }
 
@@ -2340,7 +2413,8 @@ export default function OwnerPage() {
       name: record.name || "",
       parentArea: record.parentArea || "",
       deliveryFee: String(Number(record.deliveryFee || 0)),
-      deliveryAgentId: record.deliveryAgentId || "",
+      lunchDeliveryAgentId: record.lunchDeliveryAgentId || record.deliveryAgentId || "",
+      dinnerDeliveryAgentId: record.dinnerDeliveryAgentId || record.deliveryAgentId || "",
     });
   }
 
@@ -2348,8 +2422,10 @@ export default function OwnerPage() {
     const nextName = normalizeSubAreaName(masterSubAreaEditForm.name);
     if (!nextName) return;
     const nextId = getSubAreaDocId(nextName);
-    const agentId = masterSubAreaEditForm.deliveryAgentId;
-    const agentName = agentId ? agentNameMap[agentId] || "" : "";
+    const lunchAgentId = masterSubAreaEditForm.lunchDeliveryAgentId;
+    const dinnerAgentId = masterSubAreaEditForm.dinnerDeliveryAgentId;
+    const lunchAgentName = lunchAgentId ? agentNameMap[lunchAgentId] || "" : "";
+    const dinnerAgentName = dinnerAgentId ? agentNameMap[dinnerAgentId] || "" : "";
 
     await setDoc(
       doc(db, "master_sub_areas", nextId),
@@ -2358,8 +2434,10 @@ export default function OwnerPage() {
         normalizedName: nextName.toLowerCase(),
         parentArea: masterSubAreaEditForm.parentArea.trim(),
         deliveryFee: Math.max(0, Number(masterSubAreaEditForm.deliveryFee || 0)),
-        deliveryAgentId: agentId,
-        deliveryAgentName: agentName,
+        lunchDeliveryAgentId: lunchAgentId,
+        lunchDeliveryAgentName: lunchAgentName,
+        dinnerDeliveryAgentId: dinnerAgentId,
+        dinnerDeliveryAgentName: dinnerAgentName,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -2393,8 +2471,12 @@ export default function OwnerPage() {
     await syncOrdersForMasterSubArea(
       nextName,
       masterSubAreaEditForm.parentArea.trim(),
-      agentId,
-      agentName
+      {
+        lunchDeliveryAgentId: lunchAgentId,
+        lunchDeliveryAgentName: lunchAgentName,
+        dinnerDeliveryAgentId: dinnerAgentId,
+        dinnerDeliveryAgentName: dinnerAgentName,
+      }
     );
     setEditingMasterSubAreaId(null);
   }
@@ -2417,12 +2499,15 @@ export default function OwnerPage() {
         let imported = 0;
         for (const row of rows.slice(1)) {
           const rawPhone = String(row[0] || "").trim();
-          const rawSubArea = normalizeSubAreaName(String(row[1] || ""));
+          const rawArea = String(row[1] || "").trim();
+          const rawSubArea = normalizeSubAreaName(String(row[2] || ""));
           const normalizedPhone = normalizePhone(rawPhone);
           if (!normalizedPhone || !rawSubArea) {
             continue;
           }
-          const inferredArea = inferAreaForSubArea(rawSubArea, serviceAreas, masterSubAreas);
+          const inferredArea =
+            rawArea ||
+            inferAreaForSubArea(rawSubArea, serviceAreas, masterSubAreas);
           const customerRef = doc(db, "customer_master", normalizedPhone);
           batch.set(
             customerRef,
@@ -2447,7 +2532,7 @@ export default function OwnerPage() {
         if (ops > 0) {
           await batch.commit();
         }
-        setMasterImportStatus(`Imported ${imported} phone-to-sub-area rows.`);
+        setMasterImportStatus(`Imported ${imported} customer lookup rows.`);
       }
 
       if (sheetName === "deliveryAgent") {
@@ -2457,25 +2542,46 @@ export default function OwnerPage() {
         let batch = writeBatch(db);
         let ops = 0;
         let imported = 0;
-        const syncedRows: { subArea: string; parentArea: string; agentId: string; agentName: string }[] = [];
+        const syncedRows: Array<{
+          subArea: string;
+          parentArea: string;
+          lunchDeliveryAgentId: string;
+          lunchDeliveryAgentName: string;
+          dinnerDeliveryAgentId: string;
+          dinnerDeliveryAgentName: string;
+        }> = [];
         for (const row of rows.slice(1)) {
           const rawSubArea = normalizeSubAreaName(String(row[0] || ""));
-          const rawAgentName = normalizeSubAreaName(String(row[1] || ""));
-          if (!rawSubArea || !rawAgentName) {
+          const rawLunchAgentName = normalizeSubAreaName(String(row[1] || ""));
+          const rawDinnerAgentName = normalizeSubAreaName(String(row[2] || ""));
+          if (!rawSubArea) {
             continue;
           }
-          const agent = agentByName.get(normalizeLookupLabel(rawAgentName));
+          const lunchAgent =
+            rawLunchAgentName && normalizeLookupLabel(rawLunchAgentName) !== "na"
+              ? agentByName.get(normalizeLookupLabel(rawLunchAgentName))
+              : undefined;
+          const dinnerAgent =
+            rawDinnerAgentName && normalizeLookupLabel(rawDinnerAgentName) !== "na"
+              ? agentByName.get(normalizeLookupLabel(rawDinnerAgentName))
+              : undefined;
           const subAreaRef = doc(db, "master_sub_areas", getSubAreaDocId(rawSubArea));
           const inferredArea = inferAreaForSubArea(rawSubArea, serviceAreas, masterSubAreas);
           const payload: Record<string, any> = {
             name: rawSubArea,
             normalizedName: rawSubArea.toLowerCase(),
-            deliveryAgentName: agent?.name || rawAgentName,
+            lunchDeliveryAgentName:
+              rawLunchAgentName && normalizeLookupLabel(rawLunchAgentName) !== "na"
+                ? lunchAgent?.name || rawLunchAgentName
+                : "",
+            dinnerDeliveryAgentName:
+              rawDinnerAgentName && normalizeLookupLabel(rawDinnerAgentName) !== "na"
+                ? dinnerAgent?.name || rawDinnerAgentName
+                : "",
             updatedAt: serverTimestamp(),
           };
-          if (agent?.id) {
-            payload.deliveryAgentId = agent.id;
-          }
+          payload.lunchDeliveryAgentId = lunchAgent?.id || "";
+          payload.dinnerDeliveryAgentId = dinnerAgent?.id || "";
           if (inferredArea) {
             payload.parentArea = inferredArea;
           }
@@ -2483,8 +2589,10 @@ export default function OwnerPage() {
           syncedRows.push({
             subArea: rawSubArea,
             parentArea: inferredArea,
-            agentId: agent?.id || "",
-            agentName: agent?.name || rawAgentName,
+            lunchDeliveryAgentId: lunchAgent?.id || "",
+            lunchDeliveryAgentName: payload.lunchDeliveryAgentName,
+            dinnerDeliveryAgentId: dinnerAgent?.id || "",
+            dinnerDeliveryAgentName: payload.dinnerDeliveryAgentName,
           });
           ops += 1;
           imported += 1;
@@ -2501,11 +2609,10 @@ export default function OwnerPage() {
           await syncOrdersForMasterSubArea(
             row.subArea,
             row.parentArea,
-            row.agentId,
-            row.agentName
+            row
           );
         }
-        setMasterImportStatus(`Imported ${imported} delivery-agent mappings.`);
+        setMasterImportStatus(`Imported ${imported} lunch/dinner agent mappings.`);
       }
 
       if (sheetName === "deliveryCharge") {
@@ -2801,8 +2908,9 @@ export default function OwnerPage() {
       existingMaster?.parentArea ||
       inferAreaForSubArea(nextSubArea, serviceAreas, masterSubAreas) ||
       "";
-    const deliveryAgentId = existingMaster?.deliveryAgentId || "";
-    const deliveryAgentName = existingMaster?.deliveryAgentName || "";
+    const resolvedAgent = getMasterSubAreaAgentFields(existingMaster, order.mealType);
+    const deliveryAgentId = resolvedAgent.agentId;
+    const deliveryAgentName = resolvedAgent.agentName;
 
     if (normalizedPhone) {
       await setDoc(
@@ -2829,8 +2937,10 @@ export default function OwnerPage() {
           normalizedName: nextSubArea.toLowerCase(),
           parentArea,
           deliveryFee: 0,
-          deliveryAgentId,
-          deliveryAgentName,
+          lunchDeliveryAgentId: "",
+          lunchDeliveryAgentName: "",
+          dinnerDeliveryAgentId: "",
+          dinnerDeliveryAgentName: "",
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -2854,8 +2964,12 @@ export default function OwnerPage() {
       await syncOrdersForMasterSubArea(
         nextSubArea,
         parentArea,
-        deliveryAgentId,
-        deliveryAgentName
+        existingMaster || {
+          lunchDeliveryAgentId: "",
+          lunchDeliveryAgentName: "",
+          dinnerDeliveryAgentId: "",
+          dinnerDeliveryAgentName: "",
+        }
       );
     }
 
@@ -2923,8 +3037,20 @@ export default function OwnerPage() {
         parentArea,
         deliveryFee:
           masterSubAreaMap[getSubAreaDocId(resolvedSubArea)]?.deliveryFee || 0,
-        deliveryAgentId: selectedChoice.id || "",
-        deliveryAgentName: selectedChoice.name,
+        ...(getAssignmentMealKey(order.mealType) === "Lunch"
+          ? {
+              lunchDeliveryAgentId: selectedChoice.id || "",
+              lunchDeliveryAgentName: selectedChoice.name,
+            }
+          : getAssignmentMealKey(order.mealType) === "Dinner"
+            ? {
+                dinnerDeliveryAgentId: selectedChoice.id || "",
+                dinnerDeliveryAgentName: selectedChoice.name,
+              }
+            : {
+                deliveryAgentId: selectedChoice.id || "",
+                deliveryAgentName: selectedChoice.name,
+              }),
         updatedAt: serverTimestamp(),
       },
       { merge: true }
@@ -2941,8 +3067,23 @@ export default function OwnerPage() {
     await syncOrdersForMasterSubArea(
       resolvedSubArea,
       parentArea,
-      selectedChoice.id || "",
-      selectedChoice.name
+      {
+        ...masterSubAreaMap[getSubAreaDocId(resolvedSubArea)],
+        ...(getAssignmentMealKey(order.mealType) === "Lunch"
+          ? {
+              lunchDeliveryAgentId: selectedChoice.id || "",
+              lunchDeliveryAgentName: selectedChoice.name,
+            }
+          : getAssignmentMealKey(order.mealType) === "Dinner"
+            ? {
+                dinnerDeliveryAgentId: selectedChoice.id || "",
+                dinnerDeliveryAgentName: selectedChoice.name,
+              }
+            : {
+                deliveryAgentId: selectedChoice.id || "",
+                deliveryAgentName: selectedChoice.name,
+              }),
+      }
     );
 
     setActiveOrderAgentDrafts((prev) => ({
@@ -3374,9 +3515,13 @@ export default function OwnerPage() {
                   normalizeSubAreaName(ownerOrderForm.subArea) &&
                 (!record.parentArea || record.parentArea === ownerOrderForm.area)
             );
-            if (mappedMasterSubArea?.deliveryAgentName) {
-              assignedAgentId = mappedMasterSubArea.deliveryAgentId || "";
-              assignedAgentName = mappedMasterSubArea.deliveryAgentName;
+            const resolvedAgent = getMasterSubAreaAgentFields(
+              mappedMasterSubArea || null,
+              menuData.mealType || ""
+            );
+            if (resolvedAgent.agentName) {
+              assignedAgentId = resolvedAgent.agentId || "";
+              assignedAgentName = resolvedAgent.agentName;
             }
           }
 
@@ -3959,12 +4104,13 @@ export default function OwnerPage() {
     }
     exportRowsAsCsv(
       "master-data-sub-area-master.csv",
-      ["Sub Area", "Area", "Delivery Fee", "Delivery Agent"],
+      ["Sub Area", "Area", "Delivery Fee", "Lunch Agent", "Dinner Agent"],
       filteredMasterSubAreaRecords.map((record) => [
         record.name || "",
         record.parentArea || "",
         Number(record.deliveryFee || 0),
-        record.deliveryAgentName || "",
+        record.lunchDeliveryAgentName || record.deliveryAgentName || "",
+        record.dinnerDeliveryAgentName || record.deliveryAgentName || "",
       ])
     );
   };
@@ -8540,42 +8686,6 @@ export default function OwnerPage() {
                       </button>
                     </div>
                   </div>
-                  <div className="card stack">
-                    <strong>Import Sheet 1: Sub Area</strong>
-                    <small className="payments-subtext">Columns: Mobile, Sub Area</small>
-                    <textarea
-                      className="input"
-                      rows={6}
-                      placeholder={"Paste two Excel columns here:\nMobile\tSub Area"}
-                      value={masterPasteData.subArea}
-                      onChange={(e) =>
-                        setMasterPasteData((prev) => ({ ...prev, subArea: e.target.value }))
-                      }
-                      disabled={masterImportingSheet !== ""}
-                    />
-                    <div className="row">
-                      <button
-                        className="btn secondary"
-                        onClick={() => importMasterPaste("subArea")}
-                        disabled={masterImportingSheet !== ""}
-                      >
-                        Paste Import
-                      </button>
-                      <input
-                        className="input"
-                        type="file"
-                        accept=".csv,text/csv"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            await importMasterSheet(file, "subArea");
-                          }
-                          e.currentTarget.value = "";
-                        }}
-                        disabled={masterImportingSheet !== ""}
-                      />
-                    </div>
-                  </div>
                   <div className="table-scroll">
                     <table className="payments-table payments-table-compact owner-assignment-table">
                       <thead>
@@ -8753,12 +8863,48 @@ export default function OwnerPage() {
                     <div>
                       <strong>Customer Lookup</strong>
                       <small className="payments-subtext" style={{ display: "block" }}>
-                        Lookup and maintain phone to sub-area mapping.
+                        Lookup and maintain phone to area and sub-area mapping.
                       </small>
                     </div>
                     <button className="btn secondary btn-compact" onClick={exportCustomerLookupCsv}>
                       Export to Excel
                     </button>
+                  </div>
+                  <div className="card stack">
+                    <strong>Import Sheet 1: Customer Lookup</strong>
+                    <small className="payments-subtext">Columns: Mobile, Area, Sub Area</small>
+                    <textarea
+                      className="input"
+                      rows={6}
+                      placeholder={"Paste three Excel columns here:\nMobile\tArea\tSub Area"}
+                      value={masterPasteData.subArea}
+                      onChange={(e) =>
+                        setMasterPasteData((prev) => ({ ...prev, subArea: e.target.value }))
+                      }
+                      disabled={masterImportingSheet !== ""}
+                    />
+                    <div className="row">
+                      <button
+                        className="btn secondary"
+                        onClick={() => importMasterPaste("subArea")}
+                        disabled={masterImportingSheet !== ""}
+                      >
+                        Paste Import
+                      </button>
+                      <input
+                        className="input"
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            await importMasterSheet(file, "subArea");
+                          }
+                          e.currentTarget.value = "";
+                        }}
+                        disabled={masterImportingSheet !== ""}
+                      />
+                    </div>
                   </div>
                   <div className="table-scroll">
                     <table className="payments-table payments-table-compact owner-assignment-table">
@@ -8970,8 +9116,8 @@ export default function OwnerPage() {
                   <div className="card stack">
                     <div className="owner-summary-grid">
                       <div className="card stack">
-                        <strong>Import Sheet 2: Delivery Agent</strong>
-                        <small className="payments-subtext">Columns: Sub Area, Delivery Agent</small>
+                        <strong>Import Sheet 2: Meal Agent Mapping</strong>
+                        <small className="payments-subtext">Columns: Sub Area, Lunch Agent, Dinner Agent</small>
                         <textarea
                           className="input"
                           rows={6}
@@ -9078,12 +9224,28 @@ export default function OwnerPage() {
                     />
                     <select
                       className="select"
-                      value={masterSubAreaCreateForm.deliveryAgentId}
+                      value={masterSubAreaCreateForm.lunchDeliveryAgentId}
                       onChange={(e) =>
-                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, deliveryAgentId: e.target.value })
+                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, lunchDeliveryAgentId: e.target.value })
                       }
                     >
-                      <option value="">Select delivery agent</option>
+                      <option value="">Select lunch agent</option>
+                      {deliveryAgents
+                        .filter((agent) => agent.active)
+                        .map((agent) => (
+                          <option key={agent.id} value={agent.id}>
+                            {agent.name}
+                          </option>
+                        ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={masterSubAreaCreateForm.dinnerDeliveryAgentId}
+                      onChange={(e) =>
+                        setMasterSubAreaCreateForm({ ...masterSubAreaCreateForm, dinnerDeliveryAgentId: e.target.value })
+                      }
+                    >
+                      <option value="">Select dinner agent</option>
                       {deliveryAgents
                         .filter((agent) => agent.active)
                         .map((agent) => (
@@ -9141,15 +9303,28 @@ export default function OwnerPage() {
                           </th>
                           <th>
                             {renderMasterFilterHeader(
-                              "sub-area-agent",
-                              "Delivery Agent",
+                              "sub-area-lunch-agent",
+                              "Lunch Agent",
                               <input
                                 className="input"
-                                placeholder="Contains agent"
-                                value={subAreaMasterFilters.agent}
-                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, agent: e.target.value }))}
+                                placeholder="Contains lunch agent"
+                                value={subAreaMasterFilters.lunchAgent}
+                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, lunchAgent: e.target.value }))}
                               />,
-                              isMasterFilterActive(subAreaMasterFilters.agent)
+                              isMasterFilterActive(subAreaMasterFilters.lunchAgent)
+                            )}
+                          </th>
+                          <th>
+                            {renderMasterFilterHeader(
+                              "sub-area-dinner-agent",
+                              "Dinner Agent",
+                              <input
+                                className="input"
+                                placeholder="Contains dinner agent"
+                                value={subAreaMasterFilters.dinnerAgent}
+                                onChange={(e) => setSubAreaMasterFilters((prev) => ({ ...prev, dinnerAgent: e.target.value }))}
+                              />,
+                              isMasterFilterActive(subAreaMasterFilters.dinnerAgent)
                             )}
                           </th>
                           <th>Action</th>
@@ -9158,7 +9333,7 @@ export default function OwnerPage() {
                       <tbody>
                         {filteredMasterSubAreaRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={5}>
+                            <td colSpan={6}>
                               <small className="payments-subtext">No sub area records found.</small>
                             </td>
                           </tr>
@@ -9169,7 +9344,8 @@ export default function OwnerPage() {
                                 <td>{record.name}</td>
                                 <td>{record.parentArea || "-"}</td>
                                 <td>Rs. {Number(record.deliveryFee || 0)}</td>
-                                <td>{record.deliveryAgentName || "-"}</td>
+                                <td>{record.lunchDeliveryAgentName || record.deliveryAgentName || "-"}</td>
+                                <td>{record.dinnerDeliveryAgentName || record.deliveryAgentName || "-"}</td>
                                 <td>
                                   <button
                                     className="btn secondary btn-compact"
@@ -9181,7 +9357,7 @@ export default function OwnerPage() {
                               </tr>
                               {editingMasterSubAreaId === record.id && (
                                 <tr>
-                                  <td colSpan={5} className="owner-assignment-editor-cell">
+                                  <td colSpan={6} className="owner-assignment-editor-cell">
                                     <div className="owner-assignment-editor">
                                       <div className="row">
                                         <input
@@ -9227,15 +9403,34 @@ export default function OwnerPage() {
                                         />
                                         <select
                                           className="select"
-                                          value={masterSubAreaEditForm.deliveryAgentId}
+                                          value={masterSubAreaEditForm.lunchDeliveryAgentId}
                                           onChange={(e) =>
                                             setMasterSubAreaEditForm({
                                               ...masterSubAreaEditForm,
-                                              deliveryAgentId: e.target.value,
+                                              lunchDeliveryAgentId: e.target.value,
                                             })
                                           }
                                         >
-                                          <option value="">Select delivery agent</option>
+                                          <option value="">Select lunch agent</option>
+                                          {deliveryAgents
+                                            .filter((agent) => agent.active)
+                                            .map((agent) => (
+                                              <option key={agent.id} value={agent.id}>
+                                                {agent.name}
+                                              </option>
+                                            ))}
+                                        </select>
+                                        <select
+                                          className="select"
+                                          value={masterSubAreaEditForm.dinnerDeliveryAgentId}
+                                          onChange={(e) =>
+                                            setMasterSubAreaEditForm({
+                                              ...masterSubAreaEditForm,
+                                              dinnerDeliveryAgentId: e.target.value,
+                                            })
+                                          }
+                                        >
+                                          <option value="">Select dinner agent</option>
                                           {deliveryAgents
                                             .filter((agent) => agent.active)
                                             .map((agent) => (

@@ -81,6 +81,10 @@ type MasterSubAreaRecord = {
   deliveryFee?: number;
   deliveryAgentId?: string;
   deliveryAgentName?: string;
+  lunchDeliveryAgentId?: string;
+  lunchDeliveryAgentName?: string;
+  dinnerDeliveryAgentId?: string;
+  dinnerDeliveryAgentName?: string;
 };
 
 type CustomerOrder = {
@@ -148,6 +152,33 @@ function getPhoneVariants(rawPhone: string) {
       ].filter(Boolean)
     )
   );
+}
+
+function getMasterSubAreaAgentFields(
+  record: MasterSubAreaRecord | null | undefined,
+  mealType?: string
+) {
+  const mealKey = getAssignmentMealKey(mealType);
+  if (mealKey === "Lunch") {
+    return {
+      agentId: record?.lunchDeliveryAgentId || record?.deliveryAgentId || "",
+      agentName: record?.lunchDeliveryAgentName || record?.deliveryAgentName || "",
+    };
+  }
+  if (mealKey === "Dinner") {
+    return {
+      agentId: record?.dinnerDeliveryAgentId || record?.deliveryAgentId || "",
+      agentName: record?.dinnerDeliveryAgentName || record?.deliveryAgentName || "",
+    };
+  }
+  return {
+    agentId: record?.deliveryAgentId || record?.lunchDeliveryAgentId || record?.dinnerDeliveryAgentId || "",
+    agentName:
+      record?.deliveryAgentName ||
+      record?.lunchDeliveryAgentName ||
+      record?.dinnerDeliveryAgentName ||
+      "",
+  };
 }
 
 type LocalCustomerProfile = {
@@ -1326,10 +1357,12 @@ export default function CustomerPage() {
         let assignedAgentId = "";
         let assignedAgentName = "";
         if (deliveryType === "delivery" && effectiveResolvedArea) {
-          const resolvedAgentId =
-            effectiveResolvedMasterSubArea?.deliveryAgentId || "";
-          const resolvedAgentName =
-            effectiveResolvedMasterSubArea?.deliveryAgentName || "";
+          const resolvedAgent = getMasterSubAreaAgentFields(
+            effectiveResolvedMasterSubArea,
+            menuData.mealType || ""
+          );
+          const resolvedAgentId = resolvedAgent.agentId;
+          const resolvedAgentName = resolvedAgent.agentName;
           if (resolvedAgentId || resolvedAgentName) {
             assignedAgentId = resolvedAgentId;
             assignedAgentName = resolvedAgentName;

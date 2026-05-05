@@ -64,6 +64,8 @@ type MasterSubAreaRecord = {
   name: string;
   parentArea?: string;
   deliveryAgentName?: string;
+  lunchDeliveryAgentName?: string;
+  dinnerDeliveryAgentName?: string;
 };
 
 type DeliveryAgentRecord = {
@@ -98,6 +100,16 @@ function getOrderDateKey(order: Order) {
 
 function normalizeLookupLabel(value: string) {
   return value.trim().toLowerCase();
+}
+
+function getMasterSubAreaAgentNames(
+  record: MasterSubAreaRecord | null | undefined
+) {
+  return [
+    record?.lunchDeliveryAgentName || "",
+    record?.dinnerDeliveryAgentName || "",
+    record?.deliveryAgentName || "",
+  ].filter(Boolean);
 }
 
 function isCashOnDeliveryOrder(order: Order) {
@@ -390,11 +402,13 @@ export default function DeliveryPage() {
     const byKey = new Map<string, string>();
 
     masterSubAreas.forEach((record) => {
-      const name = (record.deliveryAgentName || "").trim();
-      const key = normalizeLookupLabel(name);
-      if (name && key && !byKey.has(key)) {
-        byKey.set(key, name);
-      }
+      getMasterSubAreaAgentNames(record).forEach((name) => {
+        const trimmed = name.trim();
+        const key = normalizeLookupLabel(trimmed);
+        if (trimmed && key && !byKey.has(key)) {
+          byKey.set(key, trimmed);
+        }
+      });
     });
 
     deliveryAgents.forEach((agent) => {
@@ -493,8 +507,9 @@ export default function DeliveryPage() {
           masterSubAreas
             .filter(
               (record) =>
-                normalizeLookupLabel(record.deliveryAgentName || "") ===
-                selectedAgentKey
+                getMasterSubAreaAgentNames(record).some(
+                  (name) => normalizeLookupLabel(name) === selectedAgentKey
+                )
             )
             .map((record) => record.parentArea || "Unknown")
         )
