@@ -71,6 +71,7 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
     active?: boolean;
+    disabledAt?: number | null;
   }[];
   remaining?: {
     itemId: string;
@@ -80,6 +81,7 @@ type PublishedMenu = {
     description?: string;
     imageUrl?: string;
     active?: boolean;
+    disabledAt?: number | null;
   }[];
   createdAt?: any;
   isArchived?: boolean;
@@ -1135,6 +1137,12 @@ export default function OwnerPage() {
   const ownerOrderAutocompleteRef =
     useRef<google.maps.places.Autocomplete | null>(null);
 
+  useEffect(() => {
+    if (tab === "delivery" || tab === "areas") {
+      setTab("masterData");
+    }
+  }, [tab]);
+
   function showPublishedMenuNotice(message: string) {
     setPublishedMenuNotice(message);
     if (typeof window !== "undefined") {
@@ -2010,8 +2018,22 @@ export default function OwnerPage() {
     itemId: string,
     updates: { active?: boolean; qty?: number; price?: number }
   ) {
+    const now = Date.now();
+    const currentItem =
+      (menu.remaining || []).find((item) => item.itemId === itemId) ||
+      (menu.items || []).find((item) => item.itemId === itemId);
+    if (
+      updates.active === true &&
+      currentItem?.active === false &&
+      typeof currentItem.disabledAt === "number" &&
+      now - currentItem.disabledAt > 3 * 60 * 60 * 1000
+    ) {
+      showPublishedMenuNotice("Re-enable window expired");
+      return;
+    }
     const items = (menu.items || []).map((item) => {
       if (item.itemId !== itemId) return { ...item, active: item.active !== false };
+      const previousDisabledAt = item.active === false ? item.disabledAt : undefined;
       const nextQty =
         typeof updates.qty === "number" && Number.isFinite(updates.qty)
           ? Math.max(0, updates.qty)
@@ -2022,11 +2044,24 @@ export default function OwnerPage() {
           : item.price;
       const nextActive =
         typeof updates.active === "boolean" ? updates.active : item.active !== false;
+      const disableWindowExpired =
+        item.active === false &&
+        nextActive === true &&
+        typeof previousDisabledAt === "number" &&
+        now - previousDisabledAt > 3 * 60 * 60 * 1000;
       return {
         ...item,
         qty: nextQty,
         price: nextPrice,
-        active: nextActive,
+        active: disableWindowExpired ? false : nextActive,
+        disabledAt:
+          disableWindowExpired
+            ? previousDisabledAt
+            : nextActive
+              ? null
+              : item.active === false && previousDisabledAt
+                ? previousDisabledAt
+                : now,
       };
     });
 
@@ -2037,6 +2072,7 @@ export default function OwnerPage() {
       if (item.itemId !== itemId) {
         return { ...item, active: item.active !== false };
       }
+      const previousDisabledAt = item.active === false ? item.disabledAt : undefined;
       const nextQty =
         typeof updates.qty === "number" && Number.isFinite(updates.qty)
           ? Math.max(0, updates.qty)
@@ -2047,11 +2083,24 @@ export default function OwnerPage() {
           : item.price;
       const nextActive =
         typeof updates.active === "boolean" ? updates.active : item.active !== false;
+      const disableWindowExpired =
+        item.active === false &&
+        nextActive === true &&
+        typeof previousDisabledAt === "number" &&
+        now - previousDisabledAt > 3 * 60 * 60 * 1000;
       return {
         ...item,
         qty: Math.max(0, nextQty - soldQty),
         price: nextPrice,
-        active: nextActive,
+        active: disableWindowExpired ? false : nextActive,
+        disabledAt:
+          disableWindowExpired
+            ? previousDisabledAt
+            : nextActive
+              ? null
+              : item.active === false && previousDisabledAt
+                ? previousDisabledAt
+                : now,
       };
     });
 
@@ -4546,8 +4595,6 @@ export default function OwnerPage() {
               { id: "createOrder", label: "Create Order" },
               { id: "dashboard", label: "Report/Dashboard" },
               { id: "history", label: "Orders" },
-              { id: "delivery", label: "Delivery Agents" },
-              { id: "areas", label: "Manage Areas" },
               { id: "masterData", label: "Master Data" },
             ].map((item) => (
               <button
@@ -4574,8 +4621,6 @@ export default function OwnerPage() {
                 { id: "createOrder", label: "Create Order" },
                 { id: "dashboard", label: "Report/Dashboard" },
                 { id: "history", label: "Orders" },
-                { id: "delivery", label: "Delivery Agents" },
-                { id: "areas", label: "Manage Areas" },
                 { id: "masterData", label: "Master Data" },
                 ].map((item) => (
                   <button
