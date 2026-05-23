@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   doc,
@@ -543,6 +543,19 @@ export default function DeliveryPage() {
     [activeOrders]
   );
 
+  const activeOrderItemColumns = useMemo(() => {
+    const itemNames = new Set<string>();
+    activeOrders.forEach((order) => {
+      (order.items || []).forEach((item) => {
+        const name = (item.name || "").trim();
+        if (name) {
+          itemNames.add(name);
+        }
+      });
+    });
+    return Array.from(itemNames).sort((a, b) => a.localeCompare(b));
+  }, [activeOrders]);
+
   async function markDelivered(order: Order, paymentReceived = false) {
     const payload: Record<string, any> = {
       status: "closed",
@@ -804,98 +817,134 @@ export default function DeliveryPage() {
                         : "No live published menu"}
                     </div>
                     {activeOrders.length === 0 && <p>No active orders assigned.</p>}
-                    {activeOrders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="card delivery-order-card"
-                        style={{ position: "relative" }}
-                      >
-                        <div>
-                          <strong>{order.customerName || "Customer"}</strong>
-                          {order.phone ? ` | ${order.phone}` : ""}
+                    {activeOrders.length > 0 && (
+                      <div className="card">
+                        <div className="table-scroll">
+                          <table className="payments-table payments-table-compact delivery-orders-table">
+                            <thead>
+                              <tr>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Address</th>
+                                <th>Sub Area</th>
+                                <th>Payment</th>
+                                {activeOrderItemColumns.map((itemName) => (
+                                  <th key={itemName}>{itemName}</th>
+                                ))}
+                                <th>Call</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activeOrders.map((order) => {
+                                const itemQtyByName = Object.fromEntries(
+                                  (order.items || []).map((item) => [
+                                    (item.name || "").trim(),
+                                    item.qty || 0,
+                                  ])
+                                ) as Record<string, number>;
+
+                                return (
+                                  <Fragment key={order.id}>
+                                    <tr>
+                                      <td>{order.customerName || "Customer"}</td>
+                                      <td>{order.phone || "-"}</td>
+                                      <td>{order.address || "-"}</td>
+                                      <td>{order.subArea || "No sub area mapped"}</td>
+                                      <td>
+                                        {isCashOnDeliveryOrder(order)
+                                          ? `COD - Rs. ${
+                                              typeof order.codBalance === "number"
+                                                ? order.codBalance
+                                                : order.total || 0
+                                            }`
+                                          : "UPI"}
+                                      </td>
+                                      {activeOrderItemColumns.map((itemName) => (
+                                        <td key={`${order.id}-${itemName}`}>
+                                          {itemQtyByName[itemName] || "-"}
+                                        </td>
+                                      ))}
+                                      <td>
+                                        <a
+                                          className="btn secondary delivery-call-btn"
+                                          href={`tel:${order.phone || ""}`}
+                                          aria-label={`Call ${order.customerName || "customer"}`}
+                                          title="Call customer"
+                                        >
+                                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path
+                                              d="M6.6 10.8a15.5 15.5 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.2 11.2 0 0 0 3.5.56 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.2 11.2 0 0 0 .56 3.5 1 1 0 0 1-.25 1Z"
+                                              fill="currentColor"
+                                            />
+                                          </svg>
+                                        </a>
+                                      </td>
+                                      <td>
+                                        <button
+                                          className="btn secondary btn-compact"
+                                          onClick={() =>
+                                            setOpenOrderActions(
+                                              openOrderActions === order.id ? null : order.id
+                                            )
+                                          }
+                                        >
+                                          Actions
+                                        </button>
+                                      </td>
+                                    </tr>
+                                    {openOrderActions === order.id && (
+                                      <tr>
+                                        <td
+                                          colSpan={7 + activeOrderItemColumns.length}
+                                          className="owner-assignment-editor-cell"
+                                        >
+                                          <div className="card stack delivery-order-menu">
+                                            {isCashOnDeliveryOrder(order) ? (
+                                              <>
+                                                <button
+                                                  className="btn"
+                                                  onClick={() => markDelivered(order, true)}
+                                                >
+                                                  Delivered + Payment Received
+                                                </button>
+                                                <button
+                                                  className="btn secondary"
+                                                  onClick={() => markDelivered(order, false)}
+                                                >
+                                                  Delivered, Payment Pending
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <button className="btn" onClick={() => markDelivered(order)}>
+                                                Mark Delivered
+                                              </button>
+                                            )}
+                                            <button
+                                              className="btn secondary"
+                                              onClick={() => {
+                                                const reason =
+                                                  window.prompt(
+                                                    "Reason for undelivered? (e.g., customer not available, address not found, payment issue)"
+                                                  ) || "";
+                                                if (!reason.trim()) return;
+                                                void markUndelivered(order, reason.trim());
+                                              }}
+                                            >
+                                              Mark Undelivered
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </Fragment>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                        <div>
-                          Items:{" "}
-                          {order.items?.map((item) => `${item.name} x${item.qty}`).join(", ") ||
-                            "Items"}
-                        </div>
-                        <div>
-                          Payment:{" "}
-                          {isCashOnDeliveryOrder(order)
-                            ? `Cash on Delivery - Rs. ${
-                                typeof order.codBalance === "number"
-                                  ? order.codBalance
-                                  : order.total || 0
-                              } due`
-                            : "UPI"}
-                        </div>
-                        <div>Address: {order.address || "-"}</div>
-                        <div>Area: {order.area || "Unknown"}</div>
-                        <div>Sub Area: {order.subArea || "No sub area mapped"}</div>
-                        <div className="row delivery-order-actions">
-                          <a
-                            className="btn secondary delivery-call-btn"
-                            href={`tel:${order.phone || ""}`}
-                            aria-label={`Call ${order.customerName || "customer"}`}
-                            title="Call customer"
-                          >
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                              <path
-                                d="M6.6 10.8a15.5 15.5 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.2 11.2 0 0 0 3.5.56 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.2 11.2 0 0 0 .56 3.5 1 1 0 0 1-.25 1Z"
-                                fill="currentColor"
-                              />
-                            </svg>
-                          </a>
-                          <button
-                            className="btn secondary"
-                            onClick={() =>
-                              setOpenOrderActions(
-                                openOrderActions === order.id ? null : order.id
-                              )
-                            }
-                          >
-                            Actions
-                          </button>
-                        </div>
-                        {openOrderActions === order.id && (
-                          <div className="card stack delivery-order-menu">
-                            {isCashOnDeliveryOrder(order) ? (
-                              <>
-                                <button
-                                  className="btn"
-                                  onClick={() => markDelivered(order, true)}
-                                >
-                                  Delivered + Payment Received
-                                </button>
-                                <button
-                                  className="btn secondary"
-                                  onClick={() => markDelivered(order, false)}
-                                >
-                                  Delivered, Payment Pending
-                                </button>
-                              </>
-                            ) : (
-                              <button className="btn" onClick={() => markDelivered(order)}>
-                                Mark Delivered
-                              </button>
-                            )}
-                            <button
-                              className="btn secondary"
-                              onClick={() => {
-                                const reason =
-                                  window.prompt(
-                                    "Reason for undelivered? (e.g., customer not available, address not found, payment issue)"
-                                  ) || "";
-                                if (!reason.trim()) return;
-                                void markUndelivered(order, reason.trim());
-                              }}
-                            >
-                              Mark Undelivered
-                            </button>
-                          </div>
-                        )}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </>
