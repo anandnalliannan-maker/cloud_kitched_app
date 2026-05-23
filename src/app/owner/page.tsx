@@ -3078,33 +3078,6 @@ export default function OwnerPage() {
       inferAreaForSubArea(resolvedSubArea, serviceAreas, masterSubAreas) ||
       "";
 
-    await setDoc(
-      doc(db, "master_sub_areas", getSubAreaDocId(resolvedSubArea)),
-      {
-        name: resolvedSubArea,
-        normalizedName: resolvedSubArea.toLowerCase(),
-        parentArea,
-        deliveryFee:
-          masterSubAreaMap[getSubAreaDocId(resolvedSubArea)]?.deliveryFee || 0,
-        ...(getAssignmentMealKey(order.mealType) === "Lunch"
-          ? {
-              lunchDeliveryAgentId: selectedChoice.id || "",
-              lunchDeliveryAgentName: selectedChoice.name,
-            }
-          : getAssignmentMealKey(order.mealType) === "Dinner"
-            ? {
-                dinnerDeliveryAgentId: selectedChoice.id || "",
-                dinnerDeliveryAgentName: selectedChoice.name,
-              }
-            : {
-                deliveryAgentId: selectedChoice.id || "",
-                deliveryAgentName: selectedChoice.name,
-              }),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-
     await updateDoc(doc(db, "orders", order.id), {
       area: parentArea,
       subArea: resolvedSubArea,
@@ -3112,28 +3085,6 @@ export default function OwnerPage() {
       assignedAgentName: selectedChoice.name,
       updatedAt: serverTimestamp(),
     });
-
-    await syncOrdersForMasterSubArea(
-      resolvedSubArea,
-      parentArea,
-      {
-        ...masterSubAreaMap[getSubAreaDocId(resolvedSubArea)],
-        ...(getAssignmentMealKey(order.mealType) === "Lunch"
-          ? {
-              lunchDeliveryAgentId: selectedChoice.id || "",
-              lunchDeliveryAgentName: selectedChoice.name,
-            }
-          : getAssignmentMealKey(order.mealType) === "Dinner"
-            ? {
-                dinnerDeliveryAgentId: selectedChoice.id || "",
-                dinnerDeliveryAgentName: selectedChoice.name,
-              }
-            : {
-                deliveryAgentId: selectedChoice.id || "",
-                deliveryAgentName: selectedChoice.name,
-              }),
-      }
-    );
 
     setActiveOrderAgentDrafts((prev) => ({
       ...prev,
