@@ -1934,6 +1934,16 @@ a {
   width: min(280px, calc(100vw - 48px));
 }
 
+.delivery-orders-mobile {
+  display: none;
+}
+
+.delivery-mobile-items-table th,
+.delivery-mobile-items-table td {
+  white-space: nowrap;
+  text-align: center;
+}
+
 @media (max-width: 768px) {
   .delivery-portal {
     padding-inline: 12px;
@@ -1986,5 +1996,14 @@ a {
     right: auto !important;
     width: calc(100% - 24px);
     min-width: 0 !important;
+  }
+
+  .delivery-orders-desktop {
+    display: none;
+  }
+
+  .delivery-orders-mobile {
+    display: grid;
+    gap: 12px;
   }
 }

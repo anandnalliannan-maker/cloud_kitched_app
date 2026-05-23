@@ -818,7 +818,8 @@ export default function DeliveryPage() {
                     </div>
                     {activeOrders.length === 0 && <p>No active orders assigned.</p>}
                     {activeOrders.length > 0 && (
-                      <div className="card">
+                      <>
+                      <div className="card delivery-orders-desktop">
                         <div className="table-scroll">
                           <table className="payments-table payments-table-compact delivery-orders-table">
                             <thead>
@@ -944,6 +945,121 @@ export default function DeliveryPage() {
                           </table>
                         </div>
                       </div>
+                      <div className="delivery-orders-mobile">
+                        {activeOrders.map((order) => {
+                          const itemQtyByName = Object.fromEntries(
+                            (order.items || []).map((item) => [
+                              (item.name || "").trim(),
+                              item.qty || 0,
+                            ])
+                          ) as Record<string, number>;
+
+                          return (
+                            <div
+                              key={`mobile-${order.id}`}
+                              className="card delivery-order-card"
+                              style={{ position: "relative" }}
+                            >
+                              <div><strong>{order.customerName || "Customer"}</strong></div>
+                              <div>{order.address || "-"}</div>
+                              <div>Sub Area: {order.subArea || "No sub area mapped"}</div>
+                              <div>
+                                Payment:{" "}
+                                {isCashOnDeliveryOrder(order)
+                                  ? `COD - Rs. ${
+                                      typeof order.codBalance === "number"
+                                        ? order.codBalance
+                                        : order.total || 0
+                                    }`
+                                  : "UPI"}
+                              </div>
+                              <div className="table-scroll">
+                                <table className="payments-table payments-table-compact delivery-mobile-items-table">
+                                  <thead>
+                                    <tr>
+                                      {activeOrderItemColumns.map((itemName) => (
+                                        <th key={`${order.id}-mobile-head-${itemName}`}>{itemName}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr>
+                                      {activeOrderItemColumns.map((itemName) => (
+                                        <td key={`${order.id}-mobile-cell-${itemName}`}>
+                                          {itemQtyByName[itemName] || "-"}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="row delivery-order-actions">
+                                <a
+                                  className="btn secondary delivery-call-btn"
+                                  href={`tel:${order.phone || ""}`}
+                                  aria-label={`Call ${order.customerName || "customer"}`}
+                                  title="Call customer"
+                                >
+                                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path
+                                      d="M6.6 10.8a15.5 15.5 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.2 11.2 0 0 0 3.5.56 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.2 11.2 0 0 0 .56 3.5 1 1 0 0 1-.25 1Z"
+                                      fill="currentColor"
+                                    />
+                                  </svg>
+                                </a>
+                                <button
+                                  className="btn secondary btn-compact"
+                                  onClick={() =>
+                                    setOpenOrderActions(
+                                      openOrderActions === order.id ? null : order.id
+                                    )
+                                  }
+                                >
+                                  Actions
+                                </button>
+                              </div>
+                              {openOrderActions === order.id && (
+                                <div className="card stack delivery-order-menu">
+                                  {isCashOnDeliveryOrder(order) ? (
+                                    <>
+                                      <button
+                                        className="btn"
+                                        onClick={() => markDelivered(order, true)}
+                                      >
+                                        Delivered + Payment Received
+                                      </button>
+                                      <button
+                                        className="btn secondary"
+                                        onClick={() => markDelivered(order, false)}
+                                      >
+                                        Delivered, Payment Pending
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button className="btn" onClick={() => markDelivered(order)}>
+                                      Mark Delivered
+                                    </button>
+                                  )}
+                                  <button
+                                    className="btn secondary"
+                                    onClick={() => {
+                                      const reason =
+                                        window.prompt(
+                                          "Reason for undelivered? (e.g., customer not available, address not found, payment issue)"
+                                        ) || "";
+                                      if (!reason.trim()) return;
+                                      void markUndelivered(order, reason.trim());
+                                    }}
+                                  >
+                                    Mark Undelivered
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      </>
                     )}
                   </div>
                 )}

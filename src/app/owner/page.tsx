@@ -3044,18 +3044,6 @@ export default function OwnerPage() {
   }
 
   async function saveActiveOrderAgentAssignment(order: Order) {
-    const resolvedSubArea = getResolvedOrderSubArea(order);
-    if (!resolvedSubArea) {
-      setActiveOrderAgentDrafts((prev) => ({
-        ...prev,
-        [order.id]: {
-          ...getActiveOrderAgentDraft(order),
-          error: "Map sub area first.",
-        },
-      }));
-      return;
-    }
-
     const draft = getActiveOrderAgentDraft(order);
     const selectedChoice = deliveryAgentChoices.find(
       (choice) => choice.value === draft.selected
@@ -3072,15 +3060,7 @@ export default function OwnerPage() {
       return;
     }
 
-    const parentArea =
-      order.area ||
-      masterSubAreaMap[getSubAreaDocId(resolvedSubArea)]?.parentArea ||
-      inferAreaForSubArea(resolvedSubArea, serviceAreas, masterSubAreas) ||
-      "";
-
     await updateDoc(doc(db, "orders", order.id), {
-      area: parentArea,
-      subArea: resolvedSubArea,
       assignedAgentId: selectedChoice.id || "",
       assignedAgentName: selectedChoice.name,
       updatedAt: serverTimestamp(),
@@ -6431,8 +6411,7 @@ export default function OwnerPage() {
                                   {order.deliveryType === "delivery"
                                     ? order.assignedAgentName || "Unassigned"
                                     : "Pickup"}
-                                  {order.deliveryType === "delivery" &&
-                                    !order.assignedAgentName && (
+                                  {order.deliveryType === "delivery" && (
                                       <div
                                         className="stack owner-inline-mapper"
                                         style={{ gap: 6, marginTop: 8 }}
@@ -6449,7 +6428,6 @@ export default function OwnerPage() {
                                               },
                                             }))
                                           }
-                                          disabled={!getResolvedOrderSubArea(order)}
                                         >
                                           <option value="">Select delivery agent</option>
                                           {deliveryAgentChoices.map((agent) => (
@@ -6460,7 +6438,6 @@ export default function OwnerPage() {
                                         </select>
                                         <button
                                           className="btn secondary btn-compact"
-                                          disabled={!getResolvedOrderSubArea(order)}
                                           onClick={() => saveActiveOrderAgentAssignment(order)}
                                         >
                                           Assign
