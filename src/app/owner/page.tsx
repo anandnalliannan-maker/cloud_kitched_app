@@ -7198,7 +7198,7 @@ export default function OwnerPage() {
                                 <td>
                                   {order.address || "-"}
                                 </td>
-                                <td>
+                                <td className="owner-orders-items-cell">
                                   {(order.items || []).map((item) => (
                                     <div key={`past-${order.id}-${item.name}`}>
                                       {item.name} x{item.qty}
@@ -7565,9 +7565,11 @@ export default function OwnerPage() {
                             <th>Order ID</th>
                             <th>Customer</th>
                             <th>Phone</th>
+                            <th>Area</th>
                             <th>Address</th>
                             <th>Type</th>
-                            <th>Items</th>
+                            <th className="owner-orders-items-col">Items</th>
+                            <th>Delivery Agent</th>
                             <th>Total</th>
                             <th>Paid</th>
                             <th>Balance</th>
@@ -7591,13 +7593,15 @@ export default function OwnerPage() {
                                 <td>{order.customerName || "Customer"}</td>
                                 <td>{order.phone || "-"}</td>
                                 <td>
-                                  {order.deliveryType === "delivery" ? order.address || "-" : "Store Pickup"}
-                                  {order.deliveryType === "delivery" && order.area ? (
+                                  {order.deliveryType === "delivery" ? order.area || "-" : "Pickup"}
+                                  {order.deliveryType === "delivery" ? (
                                     <small className="payments-subtext">
-                                      {order.subArea ? `${order.subArea}, ` : ""}
-                                      {order.area}
+                                      {getOrderDisplaySubArea(order) || "No sub area mapped"}
                                     </small>
                                   ) : null}
+                                </td>
+                                <td>
+                                  {order.deliveryType === "delivery" ? order.address || "-" : "Store Pickup"}
                                 </td>
                                 <td>
                                   {isOwnerManualPaymentOrder(order)
@@ -7610,12 +7614,17 @@ export default function OwnerPage() {
                                     ? "Self Pickup"
                                     : "Payment"}
                                 </td>
-                                <td>
+                                <td className="owner-orders-items-cell">
                                   {(order.items || []).map((item) => (
                                     <div key={`${order.id}-${item.name}`}>
                                       {item.name} x{item.qty}
                                     </div>
                                   ))}
+                                </td>
+                                <td>
+                                  {order.deliveryType === "delivery"
+                                    ? order.assignedAgentName || "Unassigned"
+                                    : "Pickup"}
                                 </td>
                                 <td>Rs. {order.total || 0}</td>
                                 <td>Rs. {getPaymentAmountPaid(order)}</td>
@@ -7650,7 +7659,7 @@ export default function OwnerPage() {
                               </tr>
                               {editingPickupPaymentId === order.id && canUpdatePaymentStatus(order) && (
                                 <tr className="payments-edit-row">
-                                  <td colSpan={13}>
+                                  <td colSpan={15}>
                                     <div className="payments-edit-grid">
                                       <input
                                         className="input"
