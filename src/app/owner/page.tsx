@@ -136,6 +136,9 @@ type Order = {
   cancelledByPhone?: string;
   cancellationRemarks?: string;
   cancelledByOwner?: boolean;
+  paymentGateway?: string;
+  iciciTranCtx?: string;
+  iciciMerchantTxnNo?: string;
 };
 
 type DeliveryAgent = {
@@ -389,12 +392,22 @@ function isOwnerManualPaymentOrder(order: Order) {
 }
 
 function isPaymentStatusOrder(order: Order) {
+  const hasStartedGatewayFlow =
+    Boolean(order.iciciTranCtx) ||
+    Boolean(order.iciciMerchantTxnNo) ||
+    order.paymentGateway === "icici";
+  const shouldShowUpiTracking =
+    order.paymentStatus === "paid" || hasStartedGatewayFlow;
   return (
     isOwnerManualPaymentOrder(order) ||
     (order.deliveryType === "pickup" &&
-      (Boolean(order.pickupPaymentStatus) || isUpiPaymentOrder(order))) ||
+      (Boolean(order.pickupPaymentStatus) ||
+        (isUpiPaymentOrder(order) && shouldShowUpiTracking))) ||
     isCashOnDeliveryOrder(order) ||
-    (order.orderSource !== "owner" && order.deliveryType === "delivery" && isUpiPaymentOrder(order))
+    (order.orderSource !== "owner" &&
+      order.deliveryType === "delivery" &&
+      isUpiPaymentOrder(order) &&
+      shouldShowUpiTracking)
   );
 }
 
