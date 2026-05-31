@@ -1101,11 +1101,10 @@ export default function OwnerPage() {
   }, [openMasterFilterKey]);
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>({});
   const [editPublishPrice, setEditPublishPrice] = useState<Record<string, number>>({});
-  const [pickupPaymentFilters, setPickupPaymentFilters] = useState({
-    startDate: "",
-    endDate: "",
-    search: "",
-  });
+  const [pickupPaymentSearch, setPickupPaymentSearch] = useState("");
+  const [pickupPaymentAreaFilter, setPickupPaymentAreaFilter] = useState("All");
+  const [pickupPaymentDeliveryFilter, setPickupPaymentDeliveryFilter] = useState("All");
+  const [pickupPaymentStatusFilter, setPickupPaymentStatusFilter] = useState("All");
   const [editingPickupPaymentId, setEditingPickupPaymentId] = useState<
     string | null
   >(null);
@@ -3899,29 +3898,43 @@ export default function OwnerPage() {
     return currentMenuOrders
       .filter((order) => isPaymentStatusOrder(order))
       .filter((order) => {
-        const dateKey = formatDateKey(order.createdAt || order.publishedDate);
         if (
-          pickupPaymentFilters.startDate &&
-          dateKey < pickupPaymentFilters.startDate
+          pickupPaymentDeliveryFilter !== "All" &&
+          (order.deliveryType || "Unknown") !== pickupPaymentDeliveryFilter
         ) {
           return false;
         }
         if (
-          pickupPaymentFilters.endDate &&
-          dateKey > pickupPaymentFilters.endDate
+          pickupPaymentAreaFilter !== "All" &&
+          (order.area || "Unknown") !== pickupPaymentAreaFilter
         ) {
           return false;
         }
-        if (!pickupPaymentFilters.search.trim()) {
+        if (
+          pickupPaymentStatusFilter !== "All" &&
+          getPaymentStatusLabel(order) !== pickupPaymentStatusFilter
+        ) {
+          return false;
+        }
+        if (!pickupPaymentSearch.trim()) {
           return true;
         }
         const haystack = `${order.orderId || ""} ${order.customerName || ""} ${
           order.phone || ""
-        }`.toLowerCase();
-        return haystack.includes(pickupPaymentFilters.search.toLowerCase());
+        } ${order.address || ""} ${(order.items || [])
+          .map((item) => item.name)
+          .join(" ")}`
+          .toLowerCase();
+        return haystack.includes(pickupPaymentSearch.toLowerCase());
       })
       .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
-  }, [currentMenuOrders, pickupPaymentFilters]);
+  }, [
+    currentMenuOrders,
+    pickupPaymentSearch,
+    pickupPaymentAreaFilter,
+    pickupPaymentDeliveryFilter,
+    pickupPaymentStatusFilter,
+  ]);
 
   const activeAreaRows = useMemo(() => buildAreaRows(currentOrdersSummary), [currentOrdersSummary]);
 
@@ -7521,37 +7534,46 @@ export default function OwnerPage() {
                   <div className="row">
                     <input
                       className="input"
-                      placeholder="Search by Order ID / Phone / Name"
-                      value={pickupPaymentFilters.search}
-                      onChange={(e) =>
-                        setPickupPaymentFilters({
-                          ...pickupPaymentFilters,
-                          search: e.target.value,
-                        })
-                      }
+                      placeholder="Search by order ID / customer / phone / item"
+                      value={pickupPaymentSearch}
+                      onChange={(e) => setPickupPaymentSearch(e.target.value)}
                     />
-                    <input
-                      className="input"
-                      type="date"
-                      value={pickupPaymentFilters.startDate}
-                      onChange={(e) =>
-                        setPickupPaymentFilters({
-                          ...pickupPaymentFilters,
-                          startDate: e.target.value,
-                        })
-                      }
-                    />
-                    <input
-                      className="input"
-                      type="date"
-                      value={pickupPaymentFilters.endDate}
-                      onChange={(e) =>
-                        setPickupPaymentFilters({
-                          ...pickupPaymentFilters,
-                          endDate: e.target.value,
-                        })
-                      }
-                    />
+                    <select
+                      className="select"
+                      value={pickupPaymentDeliveryFilter}
+                      onChange={(e) => setPickupPaymentDeliveryFilter(e.target.value)}
+                    >
+                      <option value="All">All delivery types</option>
+                      <option value="delivery">Home Delivery</option>
+                      <option value="pickup">Self Pickup</option>
+                    </select>
+                    <select
+                      className="select"
+                      value={pickupPaymentAreaFilter}
+                      onChange={(e) => setPickupPaymentAreaFilter(e.target.value)}
+                    >
+                      <option value="All">All areas</option>
+                      {areaOptions.map((area) => (
+                        <option key={`payment-area-${area}`} value={area}>
+                          {area}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={pickupPaymentStatusFilter}
+                      onChange={(e) => setPickupPaymentStatusFilter(e.target.value)}
+                    >
+                      <option value="All">All statuses</option>
+                      <option value="unpaid">unpaid</option>
+                      <option value="pending">pending</option>
+                      <option value="manual_pending">manual_pending</option>
+                      <option value="partial">partial</option>
+                      <option value="paid">paid</option>
+                      <option value="failed">failed</option>
+                      <option value="payment_failed">payment_failed</option>
+                      <option value="cancelled">cancelled</option>
+                    </select>
                   </div>
 
                   {filteredPaymentOrders.length === 0 && <p>No payment-status orders found.</p>}
