@@ -116,6 +116,20 @@ function isCashOnDeliveryOrder(order: Order) {
   return order.deliveryType === "delivery" && order.paymentMethod === "cash_on_delivery";
 }
 
+function shouldShowInOperationalWorkspace(order: Order) {
+  if (order.status === "cancelled" || order.status === "closed" || order.status === "undelivered") {
+    return false;
+  }
+  if (order.deliveryType === "pickup") {
+    return (
+      order.paymentStatus === "paid" ||
+      order.paymentMethod === "upi" ||
+      order.paymentMethod === "online"
+    );
+  }
+  return order.paymentStatus === "paid" || order.paymentStatus === "cash_on_delivery";
+}
+
 function buildAgentPackingMatrix(operationalOrders: Order[]) {
   const itemSet = new Set<string>();
   const grouped: Record<string, Record<string, Record<number, number>>> = {};
@@ -494,7 +508,7 @@ export default function DeliveryPage() {
     () =>
       currentMenuOrders.filter(
         (order) =>
-          (!order.status || order.status === "active") &&
+          shouldShowInOperationalWorkspace(order) &&
           normalizeLookupLabel(order.assignedAgentName || "") === selectedAgentKey
       ),
     [currentMenuOrders, selectedAgentKey]
