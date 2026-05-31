@@ -984,6 +984,8 @@ export default function OwnerPage() {
     lunchAgent: "",
     dinnerAgent: "",
   });
+  const iciciReconcileInFlightRef = useRef<Set<string>>(new Set());
+  const iciciReconcileLastRunRef = useRef(0);
   const [editingCustomerMasterId, setEditingCustomerMasterId] = useState<string | null>(null);
   const [customerMasterEditForm, setCustomerMasterEditForm] = useState({
     customerName: "",
@@ -3886,6 +3888,81 @@ export default function OwnerPage() {
         currentPublishedMenuKey
     );
   }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
+
+  const currentPendingIciciOrders = useMemo(
+    () =>
+      currentMenuOrders.filter((order) => {
+        const hasStartedGatewayFlow =
+          Boolean(order.iciciTranCtx) ||
+          Boolean(order.iciciMerchantTxnNo) ||
+          order.paymentGateway === "icici";
+        return (
+          order.orderSource !== "owner" &&
+          order.deliveryType !== "pickup" &&
+          hasStartedGatewayFlow &&
+          order.paymentStatus !== "paid" &&
+          (order.status === "payment_pending" ||
+            order.paymentStatus === "pending" ||
+            order.paymentStatus === "failed" ||
+            order.paymentStatus === "payment_failed")
+        );
+      }),
+    [currentMenuOrders]
+  );
+
+  useEffect(() => {
+    if (mode !== "dashboard" || !currentPendingIciciOrders.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const runReconciliation = async () => {
+      const now = Date.now();
+      if (now - iciciReconcileLastRunRef.current < 45000) {
+        return;
+      }
+      iciciReconcileLastRunRef.current = now;
+
+      const candidates = currentPendingIciciOrders
+        .filter((order) => !iciciReconcileInFlightRef.current.has(order.id))
+        .slice(0, 12);
+
+      if (!candidates.length) {
+        return;
+      }
+
+      candidates.forEach((order) => iciciReconcileInFlightRef.current.add(order.id));
+
+      try {
+        await Promise.allSettled(
+          candidates.map(async (order) => {
+            try {
+              await fetch("/api/icici/status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ appOrderId: order.id }),
+              });
+            } finally {
+              iciciReconcileInFlightRef.current.delete(order.id);
+            }
+          })
+        );
+      } finally {
+        if (cancelled) {
+          candidates.forEach((order) => iciciReconcileInFlightRef.current.delete(order.id));
+        }
+      }
+    };
+
+    void runReconciliation();
+    const timer = window.setInterval(runReconciliation, 45000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [mode, currentPendingIciciOrders]);
 
   const currentOperationalOrders = useMemo(
     () => currentMenuOrders.filter((order) => shouldShowInOperationalWorkspace(order)),
