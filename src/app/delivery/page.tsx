@@ -714,8 +714,8 @@ export default function DeliveryPage() {
                 </div>
 
                 {tab === "summary" && (
-                  <div className="delivery-desktop-scroll">
-                    <div className="delivery-desktop-canvas">
+                  <div className="delivery-summary-scroll">
+                    <div className="delivery-summary-canvas">
                       <div className="stack delivery-summary-stack">
                         <div className="card delivery-summary-card">
                           Current Menu:{" "}
