@@ -438,26 +438,10 @@ export default function DeliveryPage() {
       });
     });
 
-    deliveryAgents.forEach((agent) => {
-      const name = (agent.name || "").trim();
-      const key = normalizeLookupLabel(name);
-      if (name && key && !byKey.has(key)) {
-        byKey.set(key, name);
-      }
-    });
-
-    orders.forEach((order) => {
-      const name = (order.assignedAgentName || "").trim();
-      const key = normalizeLookupLabel(name);
-      if (name && key && !byKey.has(key)) {
-        byKey.set(key, name);
-      }
-    });
-
     return Array.from(byKey.entries())
       .map(([key, name]) => ({ key, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [deliveryAgents, masterSubAreas, orders]);
+  }, [masterSubAreas]);
 
   useEffect(() => {
     if (!agentOptions.length) {

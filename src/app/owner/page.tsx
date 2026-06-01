@@ -1252,16 +1252,6 @@ export default function OwnerPage() {
       }
     >();
 
-    deliveryAgents.forEach((agent) => {
-      if (agent.active === false || !agent.name.trim()) return;
-      const name = agent.name.trim();
-      byName.set(normalizeLookupLabel(name), {
-        id: agent.id,
-        name,
-        value: `id:${agent.id}`,
-      });
-    });
-
     masterSubAreas.forEach((record) => {
       [
         {
@@ -3535,76 +3525,6 @@ export default function OwnerPage() {
             if (resolvedAgent.agentName) {
               assignedAgentId = resolvedAgent.agentId || "";
               assignedAgentName = resolvedAgent.agentName;
-            }
-          }
-
-          if (!assignedAgentId && !assignedAgentName) {
-            const assignmentRef = doc(db, "area_assignments", ownerOrderForm.area);
-            const assignmentSnap = await tx.get(assignmentRef);
-            if (assignmentSnap.exists()) {
-              const assignmentData = assignmentSnap.data() as any;
-              const subAreaAgentIds: string[] =
-                mealKey
-                  ? assignmentData.subAreaMealAgentIds?.[mealKey]?.[ownerOrderForm.subArea] ||
-                    assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] ||
-                    []
-                  : assignmentData.subAreaAgentIds?.[ownerOrderForm.subArea] || [];
-              const requiresOwnerAssignment =
-                Boolean(ownerOrderForm.subArea) &&
-                !isMappedSubArea(ownerOrderForm.area, ownerOrderForm.subArea) &&
-                subAreaAgentIds.length === 0;
-              const agentIds: string[] =
-                subAreaAgentIds.length > 0
-                  ? subAreaAgentIds
-                  : requiresOwnerAssignment
-                    ? []
-                    : mealKey
-                      ? assignmentData.mealAgentIds?.[mealKey] || assignmentData.agentIds || []
-                      : assignmentData.agentIds || [];
-              if (agentIds.length > 0) {
-                const usesSubAreaPool =
-                  subAreaAgentIds.length > 0;
-                const lastIndex = usesSubAreaPool
-                  ? mealKey
-                    ? typeof assignmentData.subAreaMealLastIndex?.[mealKey]?.[ownerOrderForm.subArea] === "number"
-                      ? assignmentData.subAreaMealLastIndex[mealKey][ownerOrderForm.subArea]
-                      : typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
-                        ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
-                        : -1
-                    : typeof assignmentData.subAreaLastIndex?.[ownerOrderForm.subArea] === "number"
-                      ? assignmentData.subAreaLastIndex[ownerOrderForm.subArea]
-                      : -1
-                  : mealKey
-                    ? typeof assignmentData.mealLastIndex?.[mealKey] === "number"
-                      ? assignmentData.mealLastIndex[mealKey]
-                      : typeof assignmentData.lastIndex === "number"
-                        ? assignmentData.lastIndex
-                        : -1
-                    : typeof assignmentData.lastIndex === "number"
-                      ? assignmentData.lastIndex
-                    : -1
-                  ;
-                const nextIndex = (lastIndex + 1) % agentIds.length;
-                const agentId = agentIds[nextIndex];
-                const agentSnap = await tx.get(doc(db, "delivery_agents", agentId));
-                if (agentSnap.exists()) {
-                  const agentData = agentSnap.data() as any;
-                  if (agentData.active !== false) {
-                    assignedAgentId = agentId;
-                    assignedAgentName = agentData.name || "";
-                    tx.update(
-                      assignmentRef,
-                      usesSubAreaPool
-                        ? mealKey
-                          ? { [`subAreaMealLastIndex.${mealKey}.${ownerOrderForm.subArea}`]: nextIndex }
-                          : { [`subAreaLastIndex.${ownerOrderForm.subArea}`]: nextIndex }
-                        : mealKey
-                          ? { [`mealLastIndex.${mealKey}`]: nextIndex }
-                          : { lastIndex: nextIndex }
-                    );
-                  }
-                }
-              }
             }
           }
         }
