@@ -6169,7 +6169,7 @@ export default function OwnerPage() {
                             Export to Excel
                           </button>
                         </div>
-                        <div className="table-scroll">
+                        <div className="table-scroll owner-packing-scroll">
                           <table className="payments-table payments-table-compact owner-summary-packing-table owner-packing-matrix-table">
                             <thead>
                               <tr>
@@ -7112,7 +7112,7 @@ export default function OwnerPage() {
                             Export to Excel
                           </button>
                         </div>
-                        <div className="table-scroll">
+                        <div className="table-scroll owner-packing-scroll">
                           <table className="payments-table payments-table-compact owner-summary-packing-table owner-packing-matrix-table">
                             <thead>
                               <tr>

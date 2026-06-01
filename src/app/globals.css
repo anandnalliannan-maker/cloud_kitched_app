@@ -1583,12 +1583,34 @@ a {
   margin-bottom: 0.75rem;
 }
 
-.owner-packing-matrix-card {
-  overflow: hidden;
-}
-
 .owner-packing-matrix-table {
   min-width: max-content;
+}
+
+.owner-packing-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable both-edges;
+  padding-bottom: 6px;
+}
+
+.owner-packing-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+
+.owner-packing-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 118, 110, 0.35);
+  border-radius: 999px;
+}
+
+.owner-packing-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 999px;
 }
 
 .owner-packing-matrix-table th,
