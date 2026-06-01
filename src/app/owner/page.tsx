@@ -6045,28 +6045,28 @@ export default function OwnerPage() {
                           </span>
                         </div>
                         <div className="owner-summary-metrics">
-                          <div className="card">
-                            <small className="payments-subtext">Total orders</small>
-                            <strong>{currentOrdersSummary.totalOrders}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">Total orders</small>
+                            <strong className="owner-summary-metric-value">{currentOrdersSummary.totalOrders}</strong>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">Items count</small>
-                            <strong>{currentOrdersSummary.totalItems}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">Items count</small>
+                            <strong className="owner-summary-metric-value">{currentOrdersSummary.totalItems}</strong>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">Total value</small>
-                            <strong>Rs. {currentOrdersSummary.totalValue}</strong>
-                            <small className="payments-subtext">
+                          <div className="card owner-summary-metric-card owner-summary-metric-card-wide">
+                            <small className="payments-subtext owner-summary-metric-label">Total value</small>
+                            <strong className="owner-summary-metric-value">Rs. {currentOrdersSummary.totalValue}</strong>
+                            <small className="payments-subtext owner-summary-metric-meta">
                               UPI: Rs. {currentOrdersSummary.upiValue} | COD: Rs. {currentOrdersSummary.codValue} | SP: Rs. {currentOrdersSummary.selfPickupValue}
                             </small>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">COD orders</small>
-                            <strong>{currentOrdersSummary.codOrders}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">COD orders</small>
+                            <strong className="owner-summary-metric-value">{currentOrdersSummary.codOrders}</strong>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">Cancelled orders</small>
-                            <strong>{currentCancelledOrderRows.length}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">Cancelled orders</small>
+                            <strong className="owner-summary-metric-value">{currentCancelledOrderRows.length}</strong>
                           </div>
                         </div>
                       </div>
@@ -6141,6 +6141,7 @@ export default function OwnerPage() {
                           </button>
                         </div>
                         <div className="table-scroll owner-packing-scroll">
+                          <div className="owner-packing-scroll-inner">
                           <table className="payments-table payments-table-compact owner-summary-packing-table owner-packing-matrix-table">
                             <thead>
                               <tr>
@@ -6224,6 +6225,7 @@ export default function OwnerPage() {
                               )}
                             </tbody>
                           </table>
+                          </div>
                         </div>
                       </div>
                       <div className="card">
@@ -6987,28 +6989,28 @@ export default function OwnerPage() {
                           <span className="status-chip">Past</span>
                         </div>
                         <div className="owner-summary-metrics">
-                          <div className="card">
-                            <small className="payments-subtext">Total orders</small>
-                            <strong>{pastOrdersSummary.totalOrders}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">Total orders</small>
+                            <strong className="owner-summary-metric-value">{pastOrdersSummary.totalOrders}</strong>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">Items count</small>
-                            <strong>{pastOrdersSummary.totalItems}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">Items count</small>
+                            <strong className="owner-summary-metric-value">{pastOrdersSummary.totalItems}</strong>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">Total value</small>
-                            <strong>Rs. {pastOrdersSummary.totalValue}</strong>
-                            <small className="payments-subtext">
+                          <div className="card owner-summary-metric-card owner-summary-metric-card-wide">
+                            <small className="payments-subtext owner-summary-metric-label">Total value</small>
+                            <strong className="owner-summary-metric-value">Rs. {pastOrdersSummary.totalValue}</strong>
+                            <small className="payments-subtext owner-summary-metric-meta">
                               UPI: Rs. {pastOrdersSummary.upiValue} | COD: Rs. {pastOrdersSummary.codValue} | SP: Rs. {pastOrdersSummary.selfPickupValue}
                             </small>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">COD orders</small>
-                            <strong>{pastOrdersSummary.codOrders}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">COD orders</small>
+                            <strong className="owner-summary-metric-value">{pastOrdersSummary.codOrders}</strong>
                           </div>
-                          <div className="card">
-                            <small className="payments-subtext">Cancelled orders</small>
-                            <strong>{pastCancelledOrderRows.length}</strong>
+                          <div className="card owner-summary-metric-card">
+                            <small className="payments-subtext owner-summary-metric-label">Cancelled orders</small>
+                            <strong className="owner-summary-metric-value">{pastCancelledOrderRows.length}</strong>
                           </div>
                         </div>
                       </div>
@@ -7084,6 +7086,7 @@ export default function OwnerPage() {
                           </button>
                         </div>
                         <div className="table-scroll owner-packing-scroll">
+                          <div className="owner-packing-scroll-inner">
                           <table className="payments-table payments-table-compact owner-summary-packing-table owner-packing-matrix-table">
                             <thead>
                               <tr>
@@ -7165,6 +7168,7 @@ export default function OwnerPage() {
                               )}
                             </tbody>
                           </table>
+                          </div>
                         </div>
                       </div>
 

@@ -1445,12 +1445,41 @@ a {
 
 .owner-summary-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
 }
 
 .owner-summary-metrics > .card {
-  padding: 16px 18px;
+  min-width: 0;
+}
+
+.owner-summary-metric-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-height: 0;
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+}
+
+.owner-summary-metric-card-wide {
+  grid-column: span 2;
+}
+
+.owner-summary-metric-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+}
+
+.owner-summary-metric-value {
+  font-size: 1.55rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.owner-summary-metric-meta {
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .owner-filters-grid {
@@ -1584,12 +1613,15 @@ a {
 }
 
 .owner-packing-matrix-table {
-  min-width: max-content;
+  width: max-content;
+  min-width: 100%;
 }
 
 .owner-packing-scroll {
+  display: block;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -1597,6 +1629,11 @@ a {
   overscroll-behavior-x: contain;
   scrollbar-gutter: stable both-edges;
   padding-bottom: 6px;
+}
+
+.owner-packing-scroll-inner {
+  width: max-content;
+  min-width: 100%;
 }
 
 .owner-packing-scroll::-webkit-scrollbar {
@@ -1821,6 +1858,10 @@ a {
     min-width: 0;
   }
 
+  .owner-summary-metric-card-wide {
+    grid-column: auto;
+  }
+
   .owner-summary-header {
     flex-direction: column;
     align-items: stretch;
@@ -1989,8 +2030,7 @@ a {
 }
 
 .delivery-orders-desktop .table-scroll,
-.delivery-summary-stack .table-scroll,
-.owner-packing-matrix-card .table-scroll {
+.delivery-summary-stack .table-scroll {
   width: 100%;
   max-width: 100%;
   overflow-x: scroll;
@@ -2002,21 +2042,18 @@ a {
 }
 
 .delivery-orders-desktop .table-scroll::-webkit-scrollbar,
-.delivery-summary-stack .table-scroll::-webkit-scrollbar,
-.owner-packing-matrix-card .table-scroll::-webkit-scrollbar {
+.delivery-summary-stack .table-scroll::-webkit-scrollbar {
   height: 10px;
 }
 
 .delivery-orders-desktop .table-scroll::-webkit-scrollbar-thumb,
-.delivery-summary-stack .table-scroll::-webkit-scrollbar-thumb,
-.owner-packing-matrix-card .table-scroll::-webkit-scrollbar-thumb {
+.delivery-summary-stack .table-scroll::-webkit-scrollbar-thumb {
   background: rgba(15, 118, 110, 0.35);
   border-radius: 999px;
 }
 
 .delivery-orders-desktop .table-scroll::-webkit-scrollbar-track,
-.delivery-summary-stack .table-scroll::-webkit-scrollbar-track,
-.owner-packing-matrix-card .table-scroll::-webkit-scrollbar-track {
+.delivery-summary-stack .table-scroll::-webkit-scrollbar-track {
   background: rgba(15, 23, 42, 0.06);
   border-radius: 999px;
 }
