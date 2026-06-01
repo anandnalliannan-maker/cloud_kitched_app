@@ -57,6 +57,8 @@ type Order = {
   codPaymentNotes?: string;
   codCollectedByAgentId?: string;
   codCollectedByAgentName?: string;
+  orderSource?: string;
+  manualPaymentStatus?: string;
 };
 
 type MasterSubAreaRecord = {
@@ -125,6 +127,9 @@ function isCashOnDeliveryOrder(order: Order) {
 function shouldShowInOperationalWorkspace(order: Order) {
   if (order.status === "cancelled" || order.status === "closed" || order.status === "undelivered") {
     return false;
+  }
+  if (order.orderSource === "owner" && order.deliveryType === "delivery") {
+    return true;
   }
   if (order.deliveryType === "pickup") {
     return (
