@@ -1866,6 +1866,11 @@ a {
   gap: 0.85rem;
 }
 
+.delivery-summary-stack > .card,
+.delivery-summary-stack > .owner-packing-matrix-card {
+  min-width: 0;
+}
+
 .delivery-agent-bar {
   display: flex;
   align-items: center;
@@ -1895,6 +1900,12 @@ a {
 
 .delivery-summary-card {
   min-width: 0;
+}
+
+.delivery-summary-stack .owner-packing-matrix-card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .delivery-summary-grid {
@@ -1972,12 +1983,17 @@ a {
 
 .delivery-packing-scroll {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
+}
+
+.delivery-packing-scroll .owner-packing-matrix-table {
+  min-width: max-content;
 }
 
 .delivery-packing-scroll::-webkit-scrollbar {
