@@ -106,6 +106,16 @@ function getOrderDateKey(order: Order) {
   return "";
 }
 
+function getCreatedAtMs(value: any) {
+  if (!value) return 0;
+  if (value?.toDate) return value.toDate().getTime();
+  if (typeof value === "object" && "seconds" in value) {
+    return value.seconds * 1000;
+  }
+  if (value instanceof Date) return value.getTime();
+  return 0;
+}
+
 function normalizeLookupLabel(value: string) {
   return value.trim().toLowerCase();
 }
@@ -601,7 +611,20 @@ export default function DeliveryPage() {
         (order) =>
           shouldShowInOperationalWorkspace(order) &&
           normalizeLookupLabel(order.assignedAgentName || "") === selectedAgentKey
-      ),
+      ).sort((a, b) => {
+        const areaCompare = (a.area || "Unknown").localeCompare(b.area || "Unknown");
+        if (areaCompare !== 0) return areaCompare;
+
+        const subAreaCompare = (a.subArea || "No sub area mapped").localeCompare(
+          b.subArea || "No sub area mapped"
+        );
+        if (subAreaCompare !== 0) return subAreaCompare;
+
+        const createdAtCompare = getCreatedAtMs(a.createdAt) - getCreatedAtMs(b.createdAt);
+        if (createdAtCompare !== 0) return createdAtCompare;
+
+        return (a.orderId || a.id).localeCompare(b.orderId || b.id);
+      }),
     [currentMenuOrders, selectedAgentKey]
   );
 
