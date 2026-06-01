@@ -1165,6 +1165,7 @@ export default function OwnerPage() {
     area: "",
     subArea: "",
     preferredAgentId: "",
+    deliveryFee: "",
   });
   const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
   const ownerOrderAutocompleteRef =
@@ -3458,10 +3459,15 @@ export default function OwnerPage() {
       const displayOrderId = await generateUniqueSixDigitOrderId();
       const orderRef = doc(collection(db, "orders"));
       const menuRef = doc(db, "published_menus", selectedOwnerMenu.id);
-      const total = selectedItems.reduce(
+      const itemsTotal = selectedItems.reduce(
         (sum, item) => sum + item.qty * item.price,
         0
       );
+      const deliveryFee =
+        ownerOrderForm.deliveryType === "delivery"
+          ? Math.max(0, Number(ownerOrderForm.deliveryFee || 0))
+          : 0;
+      const total = itemsTotal + deliveryFee;
 
       await runTransaction(db, async (tx) => {
         const menuSnap = await tx.get(menuRef);
@@ -3559,6 +3565,7 @@ export default function OwnerPage() {
             price: item.price,
           })),
           total,
+          deliveryFee,
           assignedAgentId,
           assignedAgentName,
           orderSource: "owner",
@@ -3584,6 +3591,7 @@ export default function OwnerPage() {
         area: "",
         subArea: "",
         preferredAgentId: "",
+        deliveryFee: "",
       });
       setOwnerOrderLocation(null);
       setOwnerOrderLocLabel("");
@@ -3793,6 +3801,16 @@ export default function OwnerPage() {
         0
       ),
     [selectedOwnerOrderItems]
+  );
+  const ownerOrderDeliveryFeeValue = useMemo(() => {
+    const fee = Number(ownerOrderForm.deliveryFee || 0);
+    return Number.isFinite(fee) ? Math.max(0, fee) : 0;
+  }, [ownerOrderForm.deliveryFee]);
+  const ownerOrderGrandTotal = useMemo(
+    () =>
+      selectedOwnerOrderTotal +
+      (ownerOrderForm.deliveryType === "delivery" ? ownerOrderDeliveryFeeValue : 0),
+    [ownerOrderDeliveryFeeValue, ownerOrderForm.deliveryType, selectedOwnerOrderTotal]
   );
   const getEditableMenuForOrder = (order: Order) =>
     publishedMenus.find((menu) => menu.id === order.publishedMenuId) ||
@@ -5518,14 +5536,29 @@ export default function OwnerPage() {
                             }
                           >
                             <option value="">Auto assign by area</option>
-                            {deliveryAgents
-                              .filter((agent) => agent.active)
-                              .map((agent) => (
-                                <option key={agent.id} value={agent.id}>
-                                  {agent.name}
-                                </option>
-                              ))}
+                            {deliveryAgentChoices.map((agent) => (
+                              <option key={agent.value} value={agent.id}>
+                                {agent.name}
+                              </option>
+                            ))}
                           </select>
+                        </div>
+                        <div className="field" style={{ marginBottom: 0 }}>
+                          <label>Delivery fee</label>
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="Delivery fee"
+                            value={ownerOrderForm.deliveryFee}
+                            onChange={(e) =>
+                              setOwnerOrderForm({
+                                ...ownerOrderForm,
+                                deliveryFee: e.target.value,
+                              })
+                            }
+                          />
                         </div>
                         {ownerOrderLocLabel && (
                           <small className="payments-subtext">{ownerOrderLocLabel}</small>
@@ -5602,6 +5635,24 @@ export default function OwnerPage() {
                     {ownerOrderSuccess && (
                       <small style={{ color: "green" }}>{ownerOrderSuccess}</small>
                     )}
+
+                    <div className="card stack">
+                      <strong>Order Summary</strong>
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <span>Items Total</span>
+                        <strong>Rs. {selectedOwnerOrderTotal}</strong>
+                      </div>
+                      {ownerOrderForm.deliveryType === "delivery" && (
+                        <div className="row" style={{ justifyContent: "space-between" }}>
+                          <span>Delivery Fee</span>
+                          <strong>Rs. {ownerOrderDeliveryFeeValue}</strong>
+                        </div>
+                      )}
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <span>Total</span>
+                        <strong>Rs. {ownerOrderGrandTotal}</strong>
+                      </div>
+                    </div>
 
                     <button
                       className="btn"
