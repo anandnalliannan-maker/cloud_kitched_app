@@ -1902,6 +1902,17 @@ a {
   min-width: 0;
 }
 
+.delivery-menu-filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 240px));
+  gap: 12px;
+  align-items: end;
+}
+
+.delivery-menu-filter-row .field {
+  margin-bottom: 0;
+}
+
 .delivery-summary-stack .owner-packing-matrix-card {
   width: 100%;
   min-width: 0;
@@ -2075,6 +2086,10 @@ a {
 
   .delivery-summary-grid {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .delivery-menu-filter-row {
+    grid-template-columns: repeat(2, minmax(160px, 220px));
   }
 
   .delivery-summary-row {

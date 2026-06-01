@@ -87,6 +87,12 @@ function formatOrderDate(value?: string | null) {
   });
 }
 
+function parseDateKey(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function getOrderDateKey(order: Order) {
   if (order.publishedDate) return order.publishedDate;
   if (order.createdAt?.seconds) {
@@ -227,6 +233,8 @@ export default function DeliveryPage() {
   const [masterSubAreas, setMasterSubAreas] = useState<MasterSubAreaRecord[]>([]);
   const [deliveryAgents, setDeliveryAgents] = useState<DeliveryAgentRecord[]>([]);
   const [openOrderActions, setOpenOrderActions] = useState<string | null>(null);
+  const [selectedMenuDate, setSelectedMenuDate] = useState("");
+  const [selectedMenuMealType, setSelectedMenuMealType] = useState("");
   const navigationReadyRef = useRef(false);
 
   useEffect(() => {
@@ -490,19 +498,113 @@ export default function DeliveryPage() {
     return `${currentPublishedMenu.date}__${currentPublishedMenu.mealType || "Unknown"}`;
   }, [currentPublishedMenu]);
 
+  const recentMenuEntries = useMemo(() => {
+    const map = new Map<string, { date: string; mealType: string; sortTime: number }>();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const earliest = new Date(today);
+    earliest.setDate(today.getDate() - 2);
+
+    const pushEntry = (date: string, mealType?: string, sortSeed?: number) => {
+      const parsedDate = parseDateKey(date);
+      const normalizedMeal = (mealType || "Unknown").trim() || "Unknown";
+      if (!parsedDate) return;
+      if (parsedDate < earliest || parsedDate > today) return;
+      const key = `${date}__${normalizedMeal}`;
+      const sortTime = sortSeed ?? parsedDate.getTime();
+      const existing = map.get(key);
+      if (!existing || sortTime > existing.sortTime) {
+        map.set(key, { date, mealType: normalizedMeal, sortTime });
+      }
+    };
+
+    publishedMenus.forEach((menu, index) => {
+      const createdAtMs =
+        typeof (menu.createdAt as any)?.seconds === "number"
+          ? (menu.createdAt as any).seconds * 1000
+          : Date.now() - index;
+      pushEntry(menu.date, menu.mealType || "Unknown", createdAtMs);
+    });
+
+    orders.forEach((order, index) => {
+      const date = getOrderDateKey(order);
+      const createdAtMs =
+        typeof order.createdAt?.seconds === "number"
+          ? order.createdAt.seconds * 1000
+          : Date.now() - index;
+      pushEntry(date, order.mealType || "Unknown", createdAtMs);
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return a.mealType.localeCompare(b.mealType);
+    });
+  }, [orders, publishedMenus]);
+
+  const availableDeliveryDates = useMemo(
+    () => Array.from(new Set(recentMenuEntries.map((entry) => entry.date))),
+    [recentMenuEntries]
+  );
+
+  const availableMealTypesForDate = useMemo(
+    () =>
+      recentMenuEntries
+        .filter((entry) => entry.date === selectedMenuDate)
+        .map((entry) => entry.mealType),
+    [recentMenuEntries, selectedMenuDate]
+  );
+
+  useEffect(() => {
+    if (!recentMenuEntries.length) {
+      setSelectedMenuDate("");
+      setSelectedMenuMealType("");
+      return;
+    }
+
+    const hasCurrentSelection = recentMenuEntries.some(
+      (entry) => entry.date === selectedMenuDate && entry.mealType === selectedMenuMealType
+    );
+    if (hasCurrentSelection) return;
+
+    const preferredEntry =
+      recentMenuEntries.find(
+        (entry) =>
+          `${entry.date}__${entry.mealType}` === currentPublishedMenuKey
+      ) || recentMenuEntries[0];
+
+    setSelectedMenuDate(preferredEntry.date);
+    setSelectedMenuMealType(preferredEntry.mealType);
+  }, [recentMenuEntries, selectedMenuDate, selectedMenuMealType, currentPublishedMenuKey]);
+
+  useEffect(() => {
+    if (!selectedMenuDate) return;
+    if (!availableMealTypesForDate.length) {
+      setSelectedMenuMealType("");
+      return;
+    }
+    if (!availableMealTypesForDate.includes(selectedMenuMealType)) {
+      setSelectedMenuMealType(availableMealTypesForDate[0]);
+    }
+  }, [availableMealTypesForDate, selectedMenuDate, selectedMenuMealType]);
+
+  const selectedMenuKey = useMemo(() => {
+    if (!selectedMenuDate || !selectedMenuMealType) return "";
+    return `${selectedMenuDate}__${selectedMenuMealType}`;
+  }, [selectedMenuDate, selectedMenuMealType]);
+
   const selectedAgentKey = useMemo(
     () => normalizeLookupLabel(selectedAgentName),
     [selectedAgentName]
   );
 
   const currentMenuOrders = useMemo(() => {
-    if (!currentPublishedMenu) return [];
+    if (!selectedMenuKey) return [];
     return orders.filter(
       (order) =>
         `${getOrderDateKey(order)}__${order.mealType || "Unknown"}` ===
-        currentPublishedMenuKey
+        selectedMenuKey
     );
-  }, [orders, currentPublishedMenu, currentPublishedMenuKey]);
+  }, [orders, selectedMenuKey]);
 
   const activeOrders = useMemo(
     () =>
@@ -554,6 +656,11 @@ export default function DeliveryPage() {
         .sort((a, b) => b.count - a.count || a.subArea.localeCompare(b.subArea)),
     };
   }, [activeOrders]);
+
+  const selectedMenuLabel = useMemo(() => {
+    if (!selectedMenuDate || !selectedMenuMealType) return "No menu selected";
+    return `${formatOrderDate(selectedMenuDate)} - ${selectedMenuMealType}`;
+  }, [selectedMenuDate, selectedMenuMealType]);
 
   const packingMatrix = useMemo(
     () => buildAgentPackingMatrix(activeOrders),
@@ -713,15 +820,47 @@ export default function DeliveryPage() {
                   </div>
                 </div>
 
+                <div className="card delivery-summary-card">
+                  <div className="delivery-menu-filter-row">
+                    <div className="field">
+                      <label>Date</label>
+                      <select
+                        className="select"
+                        value={selectedMenuDate}
+                        onChange={(e) => setSelectedMenuDate(e.target.value)}
+                      >
+                        {availableDeliveryDates.length === 0 && <option value="">No dates</option>}
+                        {availableDeliveryDates.map((date) => (
+                          <option key={date} value={date}>
+                            {formatOrderDate(date)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Meal Type</label>
+                      <select
+                        className="select"
+                        value={selectedMenuMealType}
+                        onChange={(e) => setSelectedMenuMealType(e.target.value)}
+                      >
+                        {availableMealTypesForDate.length === 0 && (
+                          <option value="">No menu types</option>
+                        )}
+                        {availableMealTypesForDate.map((mealType) => (
+                          <option key={mealType} value={mealType}>
+                            {mealType}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
                 {tab === "summary" && (
                   <div className="stack delivery-summary-stack">
                         <div className="card delivery-summary-card">
-                          Current Menu:{" "}
-                          {currentPublishedMenu
-                            ? `${formatOrderDate(currentPublishedMenu.date)} - ${
-                                currentPublishedMenu.mealType || "Unknown"
-                              }`
-                            : "No live published menu"}
+                          Selected Menu: {selectedMenuLabel}
                         </div>
 
                         <div className="delivery-summary-grid">
@@ -839,12 +978,7 @@ export default function DeliveryPage() {
                 {tab === "orders" && (
                   <div className="stack delivery-orders-stack">
                     <div className="card delivery-summary-card">
-                      Current Menu:{" "}
-                      {currentPublishedMenu
-                        ? `${formatOrderDate(currentPublishedMenu.date)} - ${
-                            currentPublishedMenu.mealType || "Unknown"
-                          }`
-                        : "No live published menu"}
+                      Selected Menu: {selectedMenuLabel}
                     </div>
                     {activeOrders.length === 0 && <p>No active orders assigned.</p>}
                     {activeOrders.length > 0 && (
