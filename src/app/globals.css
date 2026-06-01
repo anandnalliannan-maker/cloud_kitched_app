@@ -1893,6 +1893,33 @@ a {
   justify-content: center;
 }
 
+.delivery-desktop-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+}
+
+.delivery-desktop-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.delivery-desktop-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 118, 110, 0.35);
+  border-radius: 999px;
+}
+
+.delivery-desktop-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 999px;
+}
+
+.delivery-desktop-canvas {
+  min-width: 100%;
+}
+
 .delivery-summary-card {
   min-width: 0;
 }
@@ -2007,15 +2034,16 @@ a {
 
 @media (max-width: 768px) {
   .delivery-portal {
-    width: 1120px;
-    min-width: 1120px;
-    max-width: none;
-    padding-inline: 16px;
+    padding-inline: 8px;
   }
 
   .delivery-shell {
-    min-width: 1088px;
-    padding: 20px;
+    padding: 14px;
+  }
+
+  .delivery-desktop-canvas {
+    min-width: 1080px;
+    padding-bottom: 4px;
   }
 
   .delivery-agent-bar {
@@ -2037,8 +2065,9 @@ a {
     width: auto;
   }
 
-  .delivery-summary-card {
-    padding: 20px;
+  .delivery-agent-picker {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    gap: 12px;
   }
 
   .delivery-summary-grid {
@@ -2067,7 +2096,7 @@ a {
   .delivery-orders-desktop .table-scroll,
   .delivery-summary-stack .table-scroll,
   .owner-packing-matrix-card .table-scroll {
-    max-width: none;
+    max-width: calc(100vw - 44px);
   }
 
   .delivery-orders-table th,

@@ -649,180 +649,192 @@ export default function DeliveryPage() {
         {mode === "dashboard" && (
           <div className="stack">
             {!selectedAgentName ? (
-              <div className="card stack">
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <strong>Select delivery agent</strong>
-                  <button className="btn secondary" onClick={handleLogout}>
-                    Logout
-                  </button>
-                </div>
-                {agentOptions.length === 0 ? (
-                  <p>No delivery agents are currently available from master data.</p>
-                ) : (
-                  <div className="delivery-agent-picker">
-                    {agentOptions.map((agent) => (
-                      <button
-                        key={agent.key}
-                        className="btn secondary delivery-agent-option"
-                        onClick={() => openAgent(agent.name)}
-                      >
-                        {agent.name}
+              <div className="delivery-desktop-scroll">
+                <div className="delivery-desktop-canvas">
+                  <div className="card stack">
+                    <div className="row" style={{ justifyContent: "space-between" }}>
+                      <strong>Select delivery agent</strong>
+                      <button className="btn secondary" onClick={handleLogout}>
+                        Logout
                       </button>
-                    ))}
+                    </div>
+                    {agentOptions.length === 0 ? (
+                      <p>No delivery agents are currently available from master data.</p>
+                    ) : (
+                      <div className="delivery-agent-picker">
+                        {agentOptions.map((agent) => (
+                          <button
+                            key={agent.key}
+                            className="btn secondary delivery-agent-option"
+                            onClick={() => openAgent(agent.name)}
+                          >
+                            {agent.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             ) : (
               <>
-                <div className="card delivery-agent-bar">
-                  <div className="delivery-agent-bar-copy">
-                    <strong>{selectedAgentName}</strong>
-                    <span>
-                      {selectedAgentAreas.length
-                        ? selectedAgentAreas.join(", ")
-                        : "No mapped areas"}
-                    </span>
-                  </div>
-                  <div className="row delivery-tab-actions">
-                    <button
-                      className={`btn ${tab === "summary" ? "" : "secondary"}`}
-                      onClick={() => openTab("summary")}
-                    >
-                      Summary
-                    </button>
-                    <button
-                      className={`btn ${tab === "orders" ? "" : "secondary"}`}
-                      onClick={() => openTab("orders")}
-                    >
-                      Active Orders
-                    </button>
-                    <button className="btn secondary" onClick={goToAgentPicker}>
-                      Back
-                    </button>
-                    <button className="btn secondary" onClick={handleLogout}>
-                      Logout
-                    </button>
+                <div className="delivery-desktop-scroll">
+                  <div className="delivery-desktop-canvas">
+                    <div className="card delivery-agent-bar">
+                      <div className="delivery-agent-bar-copy">
+                        <strong>{selectedAgentName}</strong>
+                        <span>
+                          {selectedAgentAreas.length
+                            ? selectedAgentAreas.join(", ")
+                            : "No mapped areas"}
+                        </span>
+                      </div>
+                      <div className="row delivery-tab-actions">
+                        <button
+                          className={`btn ${tab === "summary" ? "" : "secondary"}`}
+                          onClick={() => openTab("summary")}
+                        >
+                          Summary
+                        </button>
+                        <button
+                          className={`btn ${tab === "orders" ? "" : "secondary"}`}
+                          onClick={() => openTab("orders")}
+                        >
+                          Active Orders
+                        </button>
+                        <button className="btn secondary" onClick={goToAgentPicker}>
+                          Back
+                        </button>
+                        <button className="btn secondary" onClick={handleLogout}>
+                          Logout
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {tab === "summary" && (
-                  <div className="stack delivery-summary-stack">
-                    <div className="card delivery-summary-card">
-                      Current Menu:{" "}
-                      {currentPublishedMenu
-                        ? `${formatOrderDate(currentPublishedMenu.date)} - ${
-                            currentPublishedMenu.mealType || "Unknown"
-                          }`
-                        : "No live published menu"}
-                    </div>
+                  <div className="delivery-desktop-scroll">
+                    <div className="delivery-desktop-canvas">
+                      <div className="stack delivery-summary-stack">
+                        <div className="card delivery-summary-card">
+                          Current Menu:{" "}
+                          {currentPublishedMenu
+                            ? `${formatOrderDate(currentPublishedMenu.date)} - ${
+                                currentPublishedMenu.mealType || "Unknown"
+                              }`
+                            : "No live published menu"}
+                        </div>
 
-                    <div className="delivery-summary-grid">
-                      <div className="card delivery-summary-card">
-                        <strong>Active Orders</strong>
-                        <div>{summary.activeOrders}</div>
-                      </div>
-                      <div className="card delivery-summary-card">
-                        <strong>COD Orders</strong>
-                        <div>{summary.codOrders}</div>
-                      </div>
-                    </div>
-
-                    <div className="card delivery-summary-card">
-                      <strong>Orders by Sub Area</strong>
-                      {summary.bySubArea.length === 0 ? (
-                        <p>No active orders.</p>
-                      ) : (
-                        summary.bySubArea.map((row) => (
-                          <div key={row.subArea} className="row delivery-summary-row">
-                            <div style={{ flex: 1 }}>{row.subArea}</div>
-                            <div>{row.count}</div>
+                        <div className="delivery-summary-grid">
+                          <div className="card delivery-summary-card">
+                            <strong>Active Orders</strong>
+                            <div>{summary.activeOrders}</div>
                           </div>
-                        ))
-                      )}
-                    </div>
+                          <div className="card delivery-summary-card">
+                            <strong>COD Orders</strong>
+                            <div>{summary.codOrders}</div>
+                          </div>
+                        </div>
 
-                    <div className="card delivery-summary-card">
-                      <strong>Total Menu Items to Pack</strong>
-                      <div>{summary.totalItems}</div>
-                    </div>
+                        <div className="card delivery-summary-card">
+                          <strong>Orders by Sub Area</strong>
+                          {summary.bySubArea.length === 0 ? (
+                            <p>No active orders.</p>
+                          ) : (
+                            summary.bySubArea.map((row) => (
+                              <div key={row.subArea} className="row delivery-summary-row">
+                                <div style={{ flex: 1 }}>{row.subArea}</div>
+                                <div>{row.count}</div>
+                              </div>
+                            ))
+                          )}
+                        </div>
 
-                    <div className="card owner-packing-matrix-card">
-                      <div className="row" style={{ justifyContent: "space-between" }}>
-                        <strong>Item Packing Pairs</strong>
-                        <button
-                          className="btn secondary"
-                          onClick={() =>
-                            exportPackingMatrixCsv(
-                              `${selectedAgentName.replace(/\s+/g, "_").toLowerCase()}_packing.csv`,
-                              packingMatrix
-                            )
-                          }
-                        >
-                          Export to Excel
-                        </button>
-                      </div>
-                      <div className="table-scroll">
-                        <table className="payments-table owner-packing-matrix-table">
-                          <thead>
-                            <tr>
-                              <th rowSpan={2}>Name</th>
-                              {packingMatrix.itemNames.map((itemName, itemIndex) => (
-                                <th
-                                  key={itemName}
-                                  colSpan={packingMatrix.itemPackQtyColumns[itemName]?.length || 1}
-                                  className={`packing-group-header packing-group-${itemIndex % 5}`}
-                                >
-                                  {itemName}
-                                </th>
-                              ))}
-                            </tr>
-                            <tr>
-                              {packingMatrix.itemNames.flatMap((itemName, itemIndex) =>
-                                (packingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
-                                  <th
-                                    key={`${itemName}-${packQty}`}
-                                    className={`packing-group-subheader packing-group-${itemIndex % 5}`}
-                                  >
-                                    Pack {packQty}
-                                  </th>
-                                ))
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {packingMatrix.rows.length === 0 && (
-                              <tr>
-                                <td
-                                  colSpan={
-                                    1 +
-                                    packingMatrix.itemNames.reduce(
-                                      (sum, itemName) =>
-                                        sum + (packingMatrix.itemPackQtyColumns[itemName]?.length || 0),
-                                      0
-                                    )
-                                  }
-                                >
-                                  No packing data
-                                </td>
-                              </tr>
-                            )}
-                            {packingMatrix.rows.map((row) => (
-                              <tr key={row.key}>
-                                <td className="packing-agent-cell">{row.agent}</td>
-                                {packingMatrix.itemNames.flatMap((itemName, itemIndex) =>
-                                  (packingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
-                                    <td
-                                      key={`${row.key}-${itemName}-${packQty}`}
-                                      className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                        <div className="card delivery-summary-card">
+                          <strong>Total Menu Items to Pack</strong>
+                          <div>{summary.totalItems}</div>
+                        </div>
+
+                        <div className="card owner-packing-matrix-card">
+                          <div className="row" style={{ justifyContent: "space-between" }}>
+                            <strong>Item Packing Pairs</strong>
+                            <button
+                              className="btn secondary"
+                              onClick={() =>
+                                exportPackingMatrixCsv(
+                                  `${selectedAgentName.replace(/\s+/g, "_").toLowerCase()}_packing.csv`,
+                                  packingMatrix
+                                )
+                              }
+                            >
+                              Export to Excel
+                            </button>
+                          </div>
+                          <div className="table-scroll">
+                            <table className="payments-table owner-packing-matrix-table">
+                              <thead>
+                                <tr>
+                                  <th rowSpan={2}>Name</th>
+                                  {packingMatrix.itemNames.map((itemName, itemIndex) => (
+                                    <th
+                                      key={itemName}
+                                      colSpan={packingMatrix.itemPackQtyColumns[itemName]?.length || 1}
+                                      className={`packing-group-header packing-group-${itemIndex % 5}`}
                                     >
-                                      {row.items[itemName]?.[packQty] || "-"}
+                                      {itemName}
+                                    </th>
+                                  ))}
+                                </tr>
+                                <tr>
+                                  {packingMatrix.itemNames.flatMap((itemName, itemIndex) =>
+                                    (packingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
+                                      <th
+                                        key={`${itemName}-${packQty}`}
+                                        className={`packing-group-subheader packing-group-${itemIndex % 5}`}
+                                      >
+                                        Pack {packQty}
+                                      </th>
+                                    ))
+                                  )}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {packingMatrix.rows.length === 0 && (
+                                  <tr>
+                                    <td
+                                      colSpan={
+                                        1 +
+                                        packingMatrix.itemNames.reduce(
+                                          (sum, itemName) =>
+                                            sum + (packingMatrix.itemPackQtyColumns[itemName]?.length || 0),
+                                          0
+                                        )
+                                      }
+                                    >
+                                      No packing data
                                     </td>
-                                  ))
+                                  </tr>
                                 )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                {packingMatrix.rows.map((row) => (
+                                  <tr key={row.key}>
+                                    <td className="packing-agent-cell">{row.agent}</td>
+                                    {packingMatrix.itemNames.flatMap((itemName, itemIndex) =>
+                                      (packingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
+                                        <td
+                                          key={`${row.key}-${itemName}-${packQty}`}
+                                          className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                                        >
+                                          {row.items[itemName]?.[packQty] || "-"}
+                                        </td>
+                                      ))
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
