@@ -1866,33 +1866,6 @@ a {
   gap: 0.85rem;
 }
 
-.delivery-summary-scroll {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pan-y;
-  scrollbar-width: thin;
-}
-
-.delivery-summary-scroll::-webkit-scrollbar {
-  height: 10px;
-}
-
-.delivery-summary-scroll::-webkit-scrollbar-thumb {
-  background: rgba(15, 118, 110, 0.35);
-  border-radius: 999px;
-}
-
-.delivery-summary-scroll::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.06);
-  border-radius: 999px;
-}
-
-.delivery-summary-canvas {
-  min-width: 100%;
-}
-
 .delivery-agent-bar {
   display: flex;
   align-items: center;
@@ -1998,8 +1971,27 @@ a {
 }
 
 .delivery-packing-scroll {
+  width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.delivery-packing-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.delivery-packing-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 118, 110, 0.35);
+  border-radius: 999px;
+}
+
+.delivery-packing-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 999px;
 }
 
 .delivery-order-card {
@@ -2039,11 +2031,6 @@ a {
 
   .delivery-shell {
     padding: 14px;
-  }
-
-  .delivery-summary-canvas {
-    min-width: 1080px;
-    padding-bottom: 4px;
   }
 
   .delivery-agent-bar {
@@ -2093,10 +2080,10 @@ a {
     min-width: 920px;
   }
 
-  .delivery-summary-scroll,
   .delivery-orders-desktop .table-scroll,
   .delivery-summary-stack .table-scroll,
-  .owner-packing-matrix-card .table-scroll {
+  .owner-packing-matrix-card .table-scroll,
+  .delivery-packing-scroll {
     max-width: calc(100vw - 44px);
   }
 

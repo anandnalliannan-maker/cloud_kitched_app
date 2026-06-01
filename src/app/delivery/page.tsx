@@ -714,9 +714,7 @@ export default function DeliveryPage() {
                 </div>
 
                 {tab === "summary" && (
-                  <div className="delivery-summary-scroll">
-                    <div className="delivery-summary-canvas">
-                      <div className="stack delivery-summary-stack">
+                  <div className="stack delivery-summary-stack">
                         <div className="card delivery-summary-card">
                           Current Menu:{" "}
                           {currentPublishedMenu
@@ -771,7 +769,7 @@ export default function DeliveryPage() {
                               Export to Excel
                             </button>
                           </div>
-                          <div className="table-scroll">
+                          <div className="delivery-packing-scroll">
                             <table className="payments-table owner-packing-matrix-table">
                               <thead>
                                 <tr>
@@ -835,8 +833,6 @@ export default function DeliveryPage() {
                             </table>
                           </div>
                         </div>
-                      </div>
-                    </div>
                   </div>
                 )}
 
