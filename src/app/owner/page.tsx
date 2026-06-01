@@ -614,6 +614,25 @@ function buildAgentPackingMatrix(operationalOrders: Order[]) {
   return { itemNames, itemPackQtyColumns, rows };
 }
 
+function buildPackingMatrixTotals(
+  matrix: ReturnType<typeof buildAgentPackingMatrix>
+) {
+  return Object.fromEntries(
+    matrix.itemNames.map((itemName) => [
+      itemName,
+      Object.fromEntries(
+        (matrix.itemPackQtyColumns[itemName] || []).map((packQty) => [
+          packQty,
+          matrix.rows.reduce(
+            (sum, row) => sum + Number(row.items[itemName]?.[packQty] || 0),
+            0
+          ),
+        ])
+      ),
+    ])
+  ) as Record<string, Record<number, number>>;
+}
+
 function buildDeliveryTypeRows(summary: OrdersSummaryData) {
   return Object.entries(summary.byDelivery)
     .map(([deliveryType, count]) => ({ key: deliveryType, deliveryType, count }))
@@ -4034,6 +4053,10 @@ export default function OwnerPage() {
     () => buildAgentPackingMatrix(currentOperationalOrders),
     [currentOperationalOrders]
   );
+  const activeItemPackingTotals = useMemo(
+    () => buildPackingMatrixTotals(activeItemPackingMatrix),
+    [activeItemPackingMatrix]
+  );
 
   const activeAgentRows = useMemo(
     () =>
@@ -4416,6 +4439,10 @@ export default function OwnerPage() {
   const pastItemPackingMatrix = useMemo(
     () => buildAgentPackingMatrix(pastOperationalOrders),
     [pastOperationalOrders]
+  );
+  const pastItemPackingTotals = useMemo(
+    () => buildPackingMatrixTotals(pastItemPackingMatrix),
+    [pastItemPackingMatrix]
   );
   const pastDeliveryTypeRows = useMemo(
     () => buildDeliveryTypeRows(pastOrdersSummary),
@@ -6209,6 +6236,21 @@ export default function OwnerPage() {
                                   )}
                                 </tr>
                               ))}
+                              {activeItemPackingMatrix.rows.length > 0 && (
+                                <tr className="packing-total-row">
+                                  <td className="packing-agent-cell"><strong>Total</strong></td>
+                                  {activeItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
+                                    (activeItemPackingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
+                                      <td
+                                        key={`active-total-${itemName}-${packQty}`}
+                                        className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                                      >
+                                        <strong>{activeItemPackingTotals[itemName]?.[packQty] || "-"}</strong>
+                                      </td>
+                                    ))
+                                  )}
+                                </tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -7135,6 +7177,21 @@ export default function OwnerPage() {
                                   )}
                                 </tr>
                               ))}
+                              {pastItemPackingMatrix.rows.length > 0 && (
+                                <tr className="packing-total-row">
+                                  <td className="packing-agent-cell"><strong>Total</strong></td>
+                                  {pastItemPackingMatrix.itemNames.map((itemName, itemIndex) =>
+                                    (pastItemPackingMatrix.itemPackQtyColumns[itemName] || []).map((packQty) => (
+                                      <td
+                                        key={`past-total-${itemName}-${packQty}`}
+                                        className={`packing-group-cell packing-group-${itemIndex % 5}`}
+                                      >
+                                        <strong>{pastItemPackingTotals[itemName]?.[packQty] || "-"}</strong>
+                                      </td>
+                                    ))
+                                  )}
+                                </tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
