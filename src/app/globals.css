@@ -1899,6 +1899,42 @@ a {
   gap: 12px;
 }
 
+.delivery-orders-desktop {
+  display: block;
+}
+
+.delivery-orders-table {
+  min-width: 980px;
+  table-layout: auto;
+}
+
+.delivery-orders-table th,
+.delivery-orders-table td {
+  padding: 0.65rem 0.7rem;
+}
+
+.delivery-orders-table th {
+  white-space: nowrap;
+}
+
+.delivery-orders-table td {
+  white-space: normal;
+}
+
+.delivery-orders-table td:nth-child(1),
+.delivery-orders-table td:nth-child(2),
+.delivery-orders-table td:nth-child(4),
+.delivery-orders-table td:nth-child(5),
+.delivery-orders-table td:nth-last-child(2),
+.delivery-orders-table td:nth-last-child(1) {
+  white-space: nowrap;
+}
+
+.delivery-orders-table .btn-compact {
+  min-height: 36px;
+  padding: 0.5rem 0.8rem;
+}
+
 .delivery-packing-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1934,23 +1970,13 @@ a {
   width: min(280px, calc(100vw - 48px));
 }
 
-.delivery-orders-mobile {
-  display: none;
-}
-
-.delivery-mobile-items-table th,
-.delivery-mobile-items-table td {
-  white-space: nowrap;
-  text-align: center;
-}
-
 @media (max-width: 768px) {
   .delivery-portal {
-    padding-inline: 12px;
+    padding-inline: 8px;
   }
 
   .delivery-shell {
-    padding: 16px;
+    padding: 14px;
   }
 
   .delivery-agent-bar {
@@ -1982,28 +2008,24 @@ a {
     gap: 8px;
   }
 
-  .delivery-order-card {
-    padding: 14px;
-  }
-
-  .delivery-order-card > div {
-    min-width: 0;
-    word-break: break-word;
-  }
-
   .delivery-order-menu {
     left: 0;
     right: auto !important;
-    width: calc(100% - 24px);
+    width: min(320px, calc(100vw - 40px));
     min-width: 0 !important;
   }
 
   .delivery-orders-desktop {
-    display: none;
+    display: block;
   }
 
-  .delivery-orders-mobile {
-    display: grid;
-    gap: 12px;
+  .delivery-orders-table {
+    min-width: 920px;
+  }
+
+  .delivery-orders-table th,
+  .delivery-orders-table td {
+    padding: 0.55rem 0.6rem;
+    font-size: 0.8rem;
   }
 }
