@@ -2007,36 +2007,42 @@ a {
 
 @media (max-width: 768px) {
   .delivery-portal {
-    padding-inline: 8px;
+    width: 1120px;
+    min-width: 1120px;
+    max-width: none;
+    padding-inline: 16px;
   }
 
   .delivery-shell {
-    padding: 14px;
+    min-width: 1088px;
+    padding: 20px;
   }
 
   .delivery-agent-bar {
-    gap: 8px;
-    align-items: flex-start;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: nowrap;
   }
 
   .delivery-tab-actions,
   .delivery-order-actions {
     gap: 8px;
-    align-items: stretch;
+    align-items: center;
+    flex-wrap: nowrap;
   }
 
   .delivery-tab-actions .btn,
   .delivery-order-actions .btn,
   .delivery-agent-option {
-    width: 100%;
+    width: auto;
   }
 
   .delivery-summary-card {
-    padding: 14px;
+    padding: 20px;
   }
 
   .delivery-summary-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 
   .delivery-summary-row {
@@ -2061,7 +2067,7 @@ a {
   .delivery-orders-desktop .table-scroll,
   .delivery-summary-stack .table-scroll,
   .owner-packing-matrix-card .table-scroll {
-    max-width: calc(100vw - 44px);
+    max-width: none;
   }
 
   .delivery-orders-table th,
