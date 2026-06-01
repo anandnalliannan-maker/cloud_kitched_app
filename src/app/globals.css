@@ -236,8 +236,8 @@ a {
 }
 
 .owner-shell {
-  width: min(98vw, 1540px);
-  max-width: 1540px;
+  width: min(99vw, 1660px);
+  max-width: 1660px;
   padding-top: 20px;
   padding-bottom: 40px;
 }
@@ -1583,6 +1583,10 @@ a {
   margin-bottom: 0.75rem;
 }
 
+.owner-packing-matrix-card {
+  overflow: hidden;
+}
+
 .owner-packing-matrix-table {
   min-width: max-content;
 }
@@ -1965,10 +1969,13 @@ a {
 .delivery-orders-desktop .table-scroll,
 .delivery-summary-stack .table-scroll,
 .owner-packing-matrix-card .table-scroll {
+  width: 100%;
+  max-width: 100%;
   overflow-x: scroll;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
 

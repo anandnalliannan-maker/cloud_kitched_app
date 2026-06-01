@@ -1,4 +1,4 @@
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, runTransaction, serverTimestamp, updateDoc } from "firebase/firestore";
 
 import { serverDb } from "@/lib/firebase-server";
 import {
@@ -150,13 +150,107 @@ export async function syncIciciOrderStatus(appOrderId: string) {
     updatedAt: serverTimestamp(),
   };
 
+  const restoreFailedOrderInventoryIfNeeded = async () => {
+    if (!orderData.publishedMenuId || orderData.inventoryReleaseState === "released") {
+      return false;
+    }
+
+    await runTransaction(serverDb, async (tx) => {
+      const freshOrderSnap = await tx.get(orderRef);
+      if (!freshOrderSnap.exists()) return;
+      const freshOrder = freshOrderSnap.data() as any;
+      if (!freshOrder.publishedMenuId || freshOrder.inventoryReleaseState === "released") {
+        return;
+      }
+
+      const menuRef = doc(serverDb, "published_menus", freshOrder.publishedMenuId);
+      const menuSnap = await tx.get(menuRef);
+      if (!menuSnap.exists()) {
+        tx.update(orderRef, {
+          inventoryReleaseState: "released",
+          inventoryReleasedAt: serverTimestamp(),
+        });
+        return;
+      }
+
+      const menuData = menuSnap.data() as any;
+      const remaining = (menuData.remaining || menuData.items || []).map((item: any) => ({ ...item }));
+
+      (freshOrder.items || []).forEach((orderedItem: any) => {
+        const remainingItem = remaining.find((item: any) => item.itemId === orderedItem.itemId);
+        if (remainingItem) {
+          remainingItem.qty = (remainingItem.qty || 0) + (orderedItem.qty || 0);
+        }
+      });
+
+      tx.update(menuRef, {
+        remaining,
+        updatedAt: serverTimestamp(),
+      });
+      tx.update(orderRef, {
+        inventoryReleaseState: "released",
+        inventoryReleasedAt: serverTimestamp(),
+      });
+    });
+
+    return true;
+  };
+
+  const reserveInventoryAgainIfPreviouslyReleased = async () => {
+    if (!orderData.publishedMenuId || orderData.inventoryReleaseState !== "released") {
+      return false;
+    }
+
+    await runTransaction(serverDb, async (tx) => {
+      const freshOrderSnap = await tx.get(orderRef);
+      if (!freshOrderSnap.exists()) return;
+      const freshOrder = freshOrderSnap.data() as any;
+      if (!freshOrder.publishedMenuId || freshOrder.inventoryReleaseState !== "released") {
+        return;
+      }
+
+      const menuRef = doc(serverDb, "published_menus", freshOrder.publishedMenuId);
+      const menuSnap = await tx.get(menuRef);
+      if (!menuSnap.exists()) {
+        tx.update(orderRef, {
+          inventoryReleaseState: "reserved",
+          inventoryReservedAt: serverTimestamp(),
+        });
+        return;
+      }
+
+      const menuData = menuSnap.data() as any;
+      const remaining = (menuData.remaining || menuData.items || []).map((item: any) => ({ ...item }));
+
+      (freshOrder.items || []).forEach((orderedItem: any) => {
+        const remainingItem = remaining.find((item: any) => item.itemId === orderedItem.itemId);
+        if (remainingItem) {
+          remainingItem.qty = Math.max(0, (remainingItem.qty || 0) - (orderedItem.qty || 0));
+        }
+      });
+
+      tx.update(menuRef, {
+        remaining,
+        updatedAt: serverTimestamp(),
+      });
+      tx.update(orderRef, {
+        inventoryReleaseState: "reserved",
+        inventoryReservedAt: serverTimestamp(),
+      });
+    });
+
+    return true;
+  };
+
   if (isIciciPaymentSuccess(payload)) {
+    await reserveInventoryAgainIfPreviouslyReleased();
     await updateDoc(orderRef, {
       ...sharedUpdate,
       status: "active",
       paymentStatus: "paid",
       paymentMethod: String(payload.paymentMode || "online").toLowerCase(),
       paidAt: serverTimestamp(),
+      inventoryReleaseState: "reserved",
     });
 
     return {
@@ -180,6 +274,7 @@ export async function syncIciciOrderStatus(appOrderId: string) {
     };
   }
 
+  await restoreFailedOrderInventoryIfNeeded();
   await updateDoc(orderRef, {
     ...sharedUpdate,
     status: "payment_failed",
