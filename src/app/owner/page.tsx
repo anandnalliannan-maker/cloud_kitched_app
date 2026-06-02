@@ -7743,21 +7743,17 @@ export default function OwnerPage() {
               {historyTab === "paymentStatus" && (
                 <div className="stack">
                   <div className="row">
-                    <select
-                      className="select"
+                    <input
+                      className="input"
+                      type="date"
                       value={pickupPaymentDateFilter}
                       onChange={(e) => {
                         setPickupPaymentDateFilter(e.target.value);
                         setPickupPaymentMealTypeFilter("");
                       }}
-                    >
-                      <option value="">Select date</option>
-                      {paymentStatusDateOptions.map((dateKey) => (
-                        <option key={`payment-date-${dateKey}`} value={dateKey}>
-                          {formatDateLabel(dateKey)}
-                        </option>
-                      ))}
-                    </select>
+                      min={paymentStatusDateOptions[paymentStatusDateOptions.length - 1] || undefined}
+                      max={paymentStatusDateOptions[0] || undefined}
+                    />
                     <select
                       className="select"
                       value={pickupPaymentMealTypeFilter}
