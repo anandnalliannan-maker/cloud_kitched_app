@@ -1139,6 +1139,7 @@ export default function OwnerPage() {
   const [pickupPaymentAreaFilter, setPickupPaymentAreaFilter] = useState("All");
   const [pickupPaymentDeliveryFilter, setPickupPaymentDeliveryFilter] = useState("All");
   const [pickupPaymentStatusFilter, setPickupPaymentStatusFilter] = useState("All");
+  const [pickupPaymentOrderTypeFilter, setPickupPaymentOrderTypeFilter] = useState("All");
   const [editingPickupPaymentId, setEditingPickupPaymentId] = useState<
     string | null
   >(null);
@@ -3945,6 +3946,19 @@ export default function OwnerPage() {
     return currentMenuOrders
       .filter((order) => isPaymentStatusOrder(order))
       .filter((order) => {
+        if (pickupPaymentOrderTypeFilter === "cod" && !isCashOnDeliveryOrder(order)) {
+          return false;
+        }
+        if (pickupPaymentOrderTypeFilter === "adhoc" && !isOwnerManualPaymentOrder(order)) {
+          return false;
+        }
+        if (
+          pickupPaymentOrderTypeFilter === "cod_or_adhoc" &&
+          !isCashOnDeliveryOrder(order) &&
+          !isOwnerManualPaymentOrder(order)
+        ) {
+          return false;
+        }
         if (
           pickupPaymentDeliveryFilter !== "All" &&
           (order.deliveryType || "Unknown") !== pickupPaymentDeliveryFilter
@@ -3974,13 +3988,14 @@ export default function OwnerPage() {
           .toLowerCase();
         return haystack.includes(pickupPaymentSearch.toLowerCase());
       })
-      .sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
+      .sort((a, b) => getCreatedAtMs(a.createdAt) - getCreatedAtMs(b.createdAt));
   }, [
     currentMenuOrders,
     pickupPaymentSearch,
     pickupPaymentAreaFilter,
     pickupPaymentDeliveryFilter,
     pickupPaymentStatusFilter,
+    pickupPaymentOrderTypeFilter,
   ]);
 
   const activeAreaRows = useMemo(() => buildAreaRows(currentOrdersSummary), [currentOrdersSummary]);
@@ -7695,6 +7710,16 @@ export default function OwnerPage() {
                       <option value="failed">failed</option>
                       <option value="payment_failed">payment_failed</option>
                       <option value="cancelled">cancelled</option>
+                    </select>
+                    <select
+                      className="select"
+                      value={pickupPaymentOrderTypeFilter}
+                      onChange={(e) => setPickupPaymentOrderTypeFilter(e.target.value)}
+                    >
+                      <option value="All">All order types</option>
+                      <option value="cod">Cash on Delivery only</option>
+                      <option value="adhoc">Adhoc / Manual only</option>
+                      <option value="cod_or_adhoc">COD + Adhoc only</option>
                     </select>
                   </div>
 
