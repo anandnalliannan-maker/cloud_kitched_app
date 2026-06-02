@@ -1136,6 +1136,8 @@ export default function OwnerPage() {
   const [editPublishQty, setEditPublishQty] = useState<Record<string, number>>({});
   const [editPublishPrice, setEditPublishPrice] = useState<Record<string, number>>({});
   const [pickupPaymentSearch, setPickupPaymentSearch] = useState("");
+  const [pickupPaymentDateFilter, setPickupPaymentDateFilter] = useState("");
+  const [pickupPaymentMealTypeFilter, setPickupPaymentMealTypeFilter] = useState("");
   const [pickupPaymentAreaFilter, setPickupPaymentAreaFilter] = useState("All");
   const [pickupPaymentDeliveryFilter, setPickupPaymentDeliveryFilter] = useState("All");
   const [pickupPaymentStatusFilter, setPickupPaymentStatusFilter] = useState("All");
@@ -3942,8 +3944,78 @@ export default function OwnerPage() {
     [currentCancelledOrders]
   );
 
+  const paymentStatusDateOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          publishedMenus
+            .map((menu) => formatDateKey(menu.date))
+            .filter(Boolean)
+        )
+      ).sort((a, b) => b.localeCompare(a)),
+    [publishedMenus]
+  );
+
+  const paymentStatusMealTypeOptions = useMemo(() => {
+    if (!pickupPaymentDateFilter) return [];
+    return Array.from(
+      new Set(
+        publishedMenus
+          .filter((menu) => formatDateKey(menu.date) === pickupPaymentDateFilter)
+          .map((menu) => menu.mealType || "Unknown")
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [publishedMenus, pickupPaymentDateFilter]);
+
+  useEffect(() => {
+    const liveDate = formatDateKey(currentPublishedMenu?.date);
+    const liveMeal = currentPublishedMenu?.mealType || "";
+
+    if (!pickupPaymentDateFilter && liveDate) {
+      setPickupPaymentDateFilter(liveDate);
+    }
+    if (!pickupPaymentMealTypeFilter && liveMeal) {
+      setPickupPaymentMealTypeFilter(liveMeal);
+    }
+  }, [
+    currentPublishedMenu,
+    pickupPaymentDateFilter,
+    pickupPaymentMealTypeFilter,
+  ]);
+
+  useEffect(() => {
+    if (!pickupPaymentDateFilter) {
+      if (pickupPaymentMealTypeFilter) {
+        setPickupPaymentMealTypeFilter("");
+      }
+      return;
+    }
+    if (
+      pickupPaymentMealTypeFilter &&
+      !paymentStatusMealTypeOptions.includes(pickupPaymentMealTypeFilter)
+    ) {
+      setPickupPaymentMealTypeFilter(paymentStatusMealTypeOptions[0] || "");
+    }
+  }, [
+    pickupPaymentDateFilter,
+    pickupPaymentMealTypeFilter,
+    paymentStatusMealTypeOptions,
+  ]);
+
+  const paymentStatusBaseOrders = useMemo(() => {
+    if (!pickupPaymentDateFilter || !pickupPaymentMealTypeFilter) {
+      return [];
+    }
+    return orders.filter(
+      (order) =>
+        formatDateKey(order.publishedDate) === pickupPaymentDateFilter &&
+        (order.mealType || "Unknown") === pickupPaymentMealTypeFilter
+    );
+  }, [orders, pickupPaymentDateFilter, pickupPaymentMealTypeFilter]);
+
   const filteredPaymentOrders = useMemo(() => {
-    return currentMenuOrders
+    return paymentStatusBaseOrders
       .filter((order) => isPaymentStatusOrder(order))
       .filter((order) => {
         if (pickupPaymentOrderTypeFilter === "cod" && !isCashOnDeliveryOrder(order)) {
@@ -3990,8 +4062,10 @@ export default function OwnerPage() {
       })
       .sort((a, b) => getCreatedAtMs(a.createdAt) - getCreatedAtMs(b.createdAt));
   }, [
-    currentMenuOrders,
+    paymentStatusBaseOrders,
     pickupPaymentSearch,
+    pickupPaymentDateFilter,
+    pickupPaymentMealTypeFilter,
     pickupPaymentAreaFilter,
     pickupPaymentDeliveryFilter,
     pickupPaymentStatusFilter,
@@ -7669,6 +7743,36 @@ export default function OwnerPage() {
               {historyTab === "paymentStatus" && (
                 <div className="stack">
                   <div className="row">
+                    <select
+                      className="select"
+                      value={pickupPaymentDateFilter}
+                      onChange={(e) => {
+                        setPickupPaymentDateFilter(e.target.value);
+                        setPickupPaymentMealTypeFilter("");
+                      }}
+                    >
+                      <option value="">Select date</option>
+                      {paymentStatusDateOptions.map((dateKey) => (
+                        <option key={`payment-date-${dateKey}`} value={dateKey}>
+                          {formatDateLabel(dateKey)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="select"
+                      value={pickupPaymentMealTypeFilter}
+                      onChange={(e) => setPickupPaymentMealTypeFilter(e.target.value)}
+                      disabled={!pickupPaymentDateFilter}
+                    >
+                      <option value="">
+                        {pickupPaymentDateFilter ? "Select meal type" : "Select date first"}
+                      </option>
+                      {paymentStatusMealTypeOptions.map((mealType) => (
+                        <option key={`payment-meal-${mealType}`} value={mealType}>
+                          {mealType}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       className="input"
                       placeholder="Search by order ID / customer / phone / item"
@@ -7723,9 +7827,13 @@ export default function OwnerPage() {
                     </select>
                   </div>
 
-                  {filteredPaymentOrders.length === 0 && <p>No payment-status orders found.</p>}
+                  {!pickupPaymentDateFilter || !pickupPaymentMealTypeFilter ? (
+                    <p>Select date and meal type to view payment-status orders.</p>
+                  ) : filteredPaymentOrders.length === 0 ? (
+                    <p>No payment-status orders found.</p>
+                  ) : null}
 
-                  {filteredPaymentOrders.length > 0 && (
+                  {pickupPaymentDateFilter && pickupPaymentMealTypeFilter && filteredPaymentOrders.length > 0 && (
                     <div className="table-scroll">
                       <table className="payments-table">
                         <thead>
