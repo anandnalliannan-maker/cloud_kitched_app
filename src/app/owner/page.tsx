@@ -100,6 +100,7 @@ type Order = {
   phone?: string;
   items?: OrderItem[];
   total?: number;
+  deliveryFee?: number;
   deliveryType?: string;
   address?: string;
   area?: string;
@@ -480,6 +481,9 @@ function getPaymentNotes(order: Order) {
 function getPaymentMethodLabel(order: Order) {
   if (isOwnerManualPaymentOrder(order)) {
     return "Manual";
+  }
+  if (order.paymentMethod === "cash") {
+    return "Cash";
   }
   if (order.deliveryType === "pickup") {
     if (
@@ -1169,6 +1173,7 @@ export default function OwnerPage() {
     subArea: "",
     preferredAgentId: "",
     deliveryFee: "",
+    paymentMode: "manual_pending",
   });
   const [ownerOrderQty, setOwnerOrderQty] = useState<Record<string, number>>({});
   const ownerOrderAutocompleteRef =
@@ -3241,6 +3246,21 @@ export default function OwnerPage() {
     return `Your ${mealLabel} Order has been\nSuccessfully Received as\n${itemLines}\n${amountLine}\n\n${deliveryLine}${followupLine ? `\n${followupLine}` : ""}\n\n-MS Kitchen`;
   }
 
+  function buildPaymentReminderMessage(order: Order) {
+    const balance = getPaymentBalance(order);
+    const itemLines =
+      (order.items || []).length > 0
+        ? (order.items || [])
+            .map((item) => `${item.qty}x ${item.name} = Rs. ${Number(item.qty || 0) * Number(item.price || 0)}`)
+            .join("\n")
+        : "No items";
+    const deliveryFeeLine =
+      Number(order.deliveryFee || 0) > 0 ? `\nDelivery fee = Rs. ${Number(order.deliveryFee || 0)}` : "";
+    return `This is a reminder for pending payment of *Rs. ${balance}* on your order placed with MS Kitchen on ${formatDateLabel(
+      order.publishedDate
+    )} (${order.mealType || "Unknown"}) with the following menu:\n${itemLines}${deliveryFeeLine}`;
+  }
+
   function openPlacedNotification(order: Order) {
     const phone = getWhatsAppPhone(order.phone);
     if (!phone) {
@@ -3252,6 +3272,16 @@ export default function OwnerPage() {
     setPlacedNotificationSentIds((prev) =>
       prev.includes(order.id) ? prev : [...prev, order.id]
     );
+  }
+
+  function openPaymentReminder(order: Order) {
+    const phone = getWhatsAppPhone(order.phone);
+    if (!phone) {
+      window.alert("Customer phone number is missing or invalid.");
+      return;
+    }
+    const text = encodeURIComponent(buildPaymentReminderMessage(order));
+    window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener,noreferrer");
   }
 
   async function saveActiveOrderEdits(order: Order) {
@@ -3437,10 +3467,9 @@ export default function OwnerPage() {
       (!ownerOrderForm.addressLine1.trim() ||
         !ownerOrderForm.street.trim() ||
         !ownerOrderForm.area ||
-        !ownerOrderForm.subArea ||
-        !ownerOrderLocation)
+        !ownerOrderForm.subArea)
     ) {
-      setOwnerOrderError("Enter full delivery address, area, sub area and exact location on map.");
+      setOwnerOrderError("Enter full delivery address, area and sub area.");
       return;
     }
 
@@ -3471,6 +3500,14 @@ export default function OwnerPage() {
           ? Math.max(0, Number(ownerOrderForm.deliveryFee || 0))
           : 0;
       const total = itemsTotal + deliveryFee;
+      const paymentMode = ownerOrderForm.paymentMode;
+      const isPaidAtCreation = paymentMode === "upi" || paymentMode === "cash";
+      const isCodAtCreation = paymentMode === "cash_on_delivery";
+      const paymentMethod = isCodAtCreation ? "cash_on_delivery" : isPaidAtCreation ? paymentMode : "manual_pending";
+      const paymentStatus = isPaidAtCreation ? "paid" : isCodAtCreation ? "cash_on_delivery" : "manual_pending";
+      const manualAmountPaid = isPaidAtCreation ? total : 0;
+      const manualBalance = isPaidAtCreation ? 0 : total;
+      const manualPaymentStatus = paymentMode === "manual_pending" ? "unpaid" : "";
 
       await runTransaction(db, async (tx) => {
         const menuSnap = await tx.get(menuRef);
@@ -3541,8 +3578,8 @@ export default function OwnerPage() {
         tx.set(orderRef, {
           orderId: displayOrderId,
           status: "active",
-          paymentStatus: "manual_pending",
-          paymentMethod: "manual_pending",
+          paymentStatus,
+          paymentMethod,
           createdAt: serverTimestamp(),
           publishedMenuId: selectedOwnerMenu.id,
           publishedDate: menuData.date || "",
@@ -3557,10 +3594,7 @@ export default function OwnerPage() {
           area: ownerOrderForm.deliveryType === "delivery" ? ownerOrderForm.area : "",
           subArea:
             ownerOrderForm.deliveryType === "delivery" ? ownerOrderForm.subArea : "",
-          location:
-            ownerOrderForm.deliveryType === "delivery"
-              ? ownerOrderLocation || null
-              : null,
+          location: null,
           items: selectedItems.map((item) => ({
             itemId: item.itemId,
             name: item.name,
@@ -3572,9 +3606,9 @@ export default function OwnerPage() {
           assignedAgentId,
           assignedAgentName,
           orderSource: "owner",
-          manualAmountPaid: 0,
-          manualBalance: total,
-          manualPaymentStatus: "unpaid",
+          manualAmountPaid,
+          manualBalance,
+          manualPaymentStatus,
           manualPaymentNotes: "",
           pickupAmountPaid: 0,
           pickupBalance: 0,
@@ -3595,10 +3629,8 @@ export default function OwnerPage() {
         subArea: "",
         preferredAgentId: "",
         deliveryFee: "",
+        paymentMode: "manual_pending",
       });
-      setOwnerOrderLocation(null);
-      setOwnerOrderLocLabel("");
-      setOwnerOrderLocError("");
       if (selectedOwnerMenu) {
         const resetQty: Record<string, number> = {};
         (selectedOwnerMenu.remaining || selectedOwnerMenu.items || [])
@@ -5548,6 +5580,26 @@ export default function OwnerPage() {
                         Home Delivery
                       </button>
                     </div>
+                    <div className="field" style={{ marginBottom: 0 }}>
+                      <label>Payment mode</label>
+                      <select
+                        className="select"
+                        value={ownerOrderForm.paymentMode}
+                        onChange={(e) =>
+                          setOwnerOrderForm({
+                            ...ownerOrderForm,
+                            paymentMode: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="manual_pending">Pending / Manual</option>
+                        <option value="upi">UPI</option>
+                        <option value="cash">Cash</option>
+                        {ownerOrderForm.deliveryType === "delivery" ? (
+                          <option value="cash_on_delivery">Cash on Delivery</option>
+                        ) : null}
+                      </select>
+                    </div>
                     {ownerOrderForm.deliveryType === "delivery" && (
                       <>
                         <input
@@ -5649,72 +5701,6 @@ export default function OwnerPage() {
                             }
                           />
                         </div>
-                        {ownerOrderLocLabel && (
-                          <small className="payments-subtext">{ownerOrderLocLabel}</small>
-                        )}
-                        {ownerOrderLocation && (
-                          <small className="payments-subtext">
-                            {ownerOrderLocation.lat.toFixed(5)},{" "}
-                            {ownerOrderLocation.lng.toFixed(5)}
-                          </small>
-                        )}
-                        {ownerOrderLocError && (
-                          <small style={{ color: "crimson" }}>{ownerOrderLocError}</small>
-                        )}
-                        {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && (
-                          <div className="card stack customer-map-card" style={{ marginTop: 12 }}>
-                            <div
-                              className="row"
-                              style={{ justifyContent: "space-between" }}
-                            >
-                              <strong>Select exact location on map</strong>
-                            </div>
-                            <LoadScript
-                              googleMapsApiKey={
-                                process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-                              }
-                              libraries={["places"]}
-                            >
-                              <Autocomplete
-                                onLoad={onOwnerOrderAutocompleteLoad}
-                                onPlaceChanged={onOwnerOrderPlaceChanged}
-                              >
-                                <div className="row" style={{ marginBottom: 12 }}>
-                                  <input
-                                    className="input"
-                                    placeholder="Search apartment / landmark"
-                                    style={{ flex: 1 }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="btn secondary"
-                                    onClick={useOwnerCurrentLocation}
-                                  >
-                                    Use current location
-                                  </button>
-                                </div>
-                              </Autocomplete>
-                              <GoogleMap
-                                mapContainerStyle={mapContainerStyle}
-                                center={ownerOrderLocation ?? defaultCenter}
-                                zoom={ownerOrderLocation ? 16 : 13}
-                                onClick={(e) => {
-                                  if (!e.latLng) return;
-                                  setOwnerOrderLocation({
-                                    lat: e.latLng.lat(),
-                                    lng: e.latLng.lng(),
-                                  });
-                                  setOwnerOrderLocError("");
-                                  setOwnerOrderLocLabel("Location selected on map");
-                                }}
-                              >
-                                {ownerOrderLocation && (
-                                  <Marker position={ownerOrderLocation} />
-                                )}
-                              </GoogleMap>
-                            </LoadScript>
-                          </div>
-                        )}
                       </>
                     )}
 
@@ -5727,6 +5713,16 @@ export default function OwnerPage() {
 
                     <div className="card stack">
                       <strong>Order Summary</strong>
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <span>Payment Mode</span>
+                        <strong>
+                          {ownerOrderForm.paymentMode === "manual_pending"
+                            ? "Pending / Manual"
+                            : ownerOrderForm.paymentMode === "cash_on_delivery"
+                            ? "Cash on Delivery"
+                            : ownerOrderForm.paymentMode.toUpperCase()}
+                        </strong>
+                      </div>
                       <div className="row" style={{ justifyContent: "space-between" }}>
                         <span>Items Total</span>
                         <strong>Rs. {selectedOwnerOrderTotal}</strong>
@@ -7912,6 +7908,14 @@ export default function OwnerPage() {
                                         ? "Paid"
                                         : getPaymentStatusLabel(order)}
                                     </span>
+                                    {getPaymentBalance(order) > 0 && getWhatsAppPhone(order.phone) ? (
+                                      <button
+                                        className="btn secondary btn-compact"
+                                        onClick={() => openPaymentReminder(order)}
+                                      >
+                                        WhatsApp
+                                      </button>
+                                    ) : null}
                                     {canUpdatePaymentStatus(order) ? (
                                       <button
                                         className="btn secondary btn-compact"
