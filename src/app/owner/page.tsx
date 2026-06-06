@@ -5556,6 +5556,10 @@ export default function OwnerPage() {
                               deliveryType: "pickup",
                               subArea: "",
                               preferredAgentId: "",
+                              paymentMode:
+                                ownerOrderForm.paymentMode === "cash_on_delivery"
+                                  ? "manual_pending"
+                                  : ownerOrderForm.paymentMode,
                             });
                             setOwnerOrderLocation(null);
                             setOwnerOrderLocLabel("");
