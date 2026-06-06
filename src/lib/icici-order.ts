@@ -14,6 +14,21 @@ import {
 
 type IciciPayload = Record<string, unknown>;
 
+const PRE_GATEWAY_PENDING_EXPIRY_MS = 5 * 60 * 1000;
+const GATEWAY_PENDING_EXPIRY_MS = 20 * 60 * 1000;
+
+function getOrderCreatedAtMs(value: any) {
+  if (!value) return 0;
+  if (value?.toDate) return value.toDate().getTime();
+  if (typeof value === "object" && "seconds" in value) {
+    return value.seconds * 1000;
+  }
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
+  const parsed = Date.parse(String(value));
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function buildStatusPayloadVariants(
   payload: Record<string, string>,
   secretKey: string
@@ -123,32 +138,12 @@ export async function syncIciciOrderStatus(appOrderId: string) {
   }
 
   const orderData = orderSnap.data() as any;
-  const statusResponse = await requestIciciStatus(
-    appOrderId,
-    Number(orderData.total || 0)
-  );
-  const payload = statusResponse.payload;
-
-  const sharedUpdate = {
-    iciciAggregatorId: getIciciConfig().aggregatorId,
-    iciciMerchantId: getIciciConfig().merchantId,
-    iciciResponseCode: String(payload.responseCode || ""),
-    iciciTxnResponseCode: String(payload.txnResponseCode || ""),
-    iciciTxnStatus: String(payload.txnStatus || ""),
-    iciciTxnId: String(payload.txnID || ""),
-    iciciAuthCode: String(payload.authCode || ""),
-    iciciTxnAuthId: String(payload.txnAuthID || ""),
-    iciciPaymentId: String(payload.paymentID || ""),
-    iciciPaymentMode: String(payload.paymentMode || ""),
-    iciciPaymentSubInstType: String(payload.paymentSubInstType || ""),
-    iciciRespDescription: String(
-      payload.txnRespDescription || payload.respDescription || ""
-    ),
-    iciciTransmissionDateTime: String(payload.TransmissionDateTime || ""),
-    iciciPaymentDateTime: String(payload.paymentDateTime || ""),
-    paymentGateway: "icici",
-    updatedAt: serverTimestamp(),
-  };
+  const createdAtMs = getOrderCreatedAtMs(orderData.createdAt);
+  const now = Date.now();
+  const hasStartedGatewayFlow =
+    Boolean(orderData.iciciTranCtx) ||
+    Boolean(orderData.iciciMerchantTxnNo) ||
+    orderData.paymentGateway === "icici";
 
   const restoreFailedOrderInventoryIfNeeded = async () => {
     if (!orderData.publishedMenuId || orderData.inventoryReleaseState === "released") {
@@ -194,6 +189,66 @@ export async function syncIciciOrderStatus(appOrderId: string) {
     });
 
     return true;
+  };
+
+  const finalizeAsFailedAndRelease = async (reason: string) => {
+    await restoreFailedOrderInventoryIfNeeded();
+    await updateDoc(orderRef, {
+      status: "payment_failed",
+      paymentStatus: "failed",
+      iciciRespDescription: reason,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      state: "failed" as const,
+      displayOrderId: String(orderData.orderId || appOrderId),
+      payload: { txnRespDescription: reason },
+    };
+  };
+
+  if (
+    !hasStartedGatewayFlow &&
+    createdAtMs > 0 &&
+    now - createdAtMs >= PRE_GATEWAY_PENDING_EXPIRY_MS &&
+    (orderData.status === "payment_pending" || orderData.paymentStatus === "pending")
+  ) {
+    return finalizeAsFailedAndRelease("Payment expired before gateway initiation");
+  }
+
+  if (!hasStartedGatewayFlow) {
+    return {
+      state: "pending" as const,
+      displayOrderId: String(orderData.orderId || appOrderId),
+      payload: {},
+    };
+  }
+
+  const statusResponse = await requestIciciStatus(
+    appOrderId,
+    Number(orderData.total || 0)
+  );
+  const payload = statusResponse.payload;
+
+  const sharedUpdate = {
+    iciciAggregatorId: getIciciConfig().aggregatorId,
+    iciciMerchantId: getIciciConfig().merchantId,
+    iciciResponseCode: String(payload.responseCode || ""),
+    iciciTxnResponseCode: String(payload.txnResponseCode || ""),
+    iciciTxnStatus: String(payload.txnStatus || ""),
+    iciciTxnId: String(payload.txnID || ""),
+    iciciAuthCode: String(payload.authCode || ""),
+    iciciTxnAuthId: String(payload.txnAuthID || ""),
+    iciciPaymentId: String(payload.paymentID || ""),
+    iciciPaymentMode: String(payload.paymentMode || ""),
+    iciciPaymentSubInstType: String(payload.paymentSubInstType || ""),
+    iciciRespDescription: String(
+      payload.txnRespDescription || payload.respDescription || ""
+    ),
+    iciciTransmissionDateTime: String(payload.TransmissionDateTime || ""),
+    iciciPaymentDateTime: String(payload.paymentDateTime || ""),
+    paymentGateway: "icici",
+    updatedAt: serverTimestamp(),
   };
 
   const reserveInventoryAgainIfPreviouslyReleased = async () => {
@@ -261,6 +316,10 @@ export async function syncIciciOrderStatus(appOrderId: string) {
   }
 
   if (isIciciPaymentPending(payload)) {
+    if (createdAtMs > 0 && now - createdAtMs >= GATEWAY_PENDING_EXPIRY_MS) {
+      return finalizeAsFailedAndRelease("Pending payment expired");
+    }
+
     await updateDoc(orderRef, {
       ...sharedUpdate,
       status: "payment_pending",

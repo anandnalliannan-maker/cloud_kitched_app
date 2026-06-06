@@ -3884,14 +3884,9 @@ export default function OwnerPage() {
   const currentPendingIciciOrders = useMemo(
     () =>
       currentMenuOrders.filter((order) => {
-        const hasStartedGatewayFlow =
-          Boolean(order.iciciTranCtx) ||
-          Boolean(order.iciciMerchantTxnNo) ||
-          order.paymentGateway === "icici";
         return (
           order.orderSource !== "owner" &&
           order.deliveryType !== "pickup" &&
-          hasStartedGatewayFlow &&
           order.paymentStatus !== "paid" &&
           (order.status === "payment_pending" ||
             order.paymentStatus === "pending" ||
