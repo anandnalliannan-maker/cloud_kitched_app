@@ -3886,7 +3886,6 @@ export default function OwnerPage() {
       currentMenuOrders.filter((order) => {
         return (
           order.orderSource !== "owner" &&
-          order.deliveryType !== "pickup" &&
           order.paymentStatus !== "paid" &&
           (order.status === "payment_pending" ||
             order.paymentStatus === "pending" ||

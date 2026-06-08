@@ -299,6 +299,14 @@ export async function syncIciciOrderStatus(appOrderId: string) {
 
   if (isIciciPaymentSuccess(payload)) {
     await reserveInventoryAgainIfPreviouslyReleased();
+    const pickupPaymentUpdate =
+      orderData.deliveryType === "pickup"
+        ? {
+            pickupAmountPaid: Number(orderData.total || 0),
+            pickupBalance: 0,
+            pickupPaymentUpdatedAt: serverTimestamp(),
+          }
+        : {};
     await updateDoc(orderRef, {
       ...sharedUpdate,
       status: "active",
@@ -306,6 +314,7 @@ export async function syncIciciOrderStatus(appOrderId: string) {
       paymentMethod: String(payload.paymentMode || "online").toLowerCase(),
       paidAt: serverTimestamp(),
       inventoryReleaseState: "reserved",
+      ...pickupPaymentUpdate,
     });
 
     return {
