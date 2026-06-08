@@ -31,6 +31,7 @@ type CartItem = {
   name: string;
   price: number;
   qty: number;
+  minimumOrderQty?: number;
   imageUrl?: string;
   active?: boolean;
 };
@@ -129,6 +130,12 @@ function getApplicableDeliveryFee(params: {
     return 0;
   }
   return typeof subAreaFee === "number" ? subAreaFee : areaFee;
+}
+
+function normalizeMinimumOrderQty(value: unknown) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
 }
 
 function normalizePhoneForOtp(raw: string) {
@@ -488,6 +495,7 @@ export default function CustomerPage() {
           name: item.name,
           price: item.price,
           qty: 0,
+          minimumOrderQty: normalizeMinimumOrderQty(item.minimumOrderQty),
           description: item.description || "",
           imageUrl: item.imageUrl || "",
           remaining: remainingMap.get(item.itemId) ?? 0,
@@ -981,7 +989,26 @@ export default function CustomerPage() {
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, qty: Math.max(0, item.qty + delta) }
+          ? (() => {
+              const minimumOrderQty = normalizeMinimumOrderQty(item.minimumOrderQty);
+              const effectiveMinimum = minimumOrderQty > 0 ? minimumOrderQty : 1;
+              let nextQty = item.qty;
+              if (delta > 0) {
+                nextQty =
+                  item.qty === 0
+                    ? item.remaining < effectiveMinimum
+                      ? 0
+                      : effectiveMinimum
+                    : item.qty + delta;
+                nextQty = Math.min(nextQty, item.remaining);
+              } else if (delta < 0) {
+                nextQty =
+                  minimumOrderQty > 0 && item.qty <= minimumOrderQty
+                    ? 0
+                    : Math.max(0, item.qty + delta);
+              }
+              return { ...item, qty: nextQty };
+            })()
           : item
       )
     );
@@ -1236,6 +1263,19 @@ export default function CustomerPage() {
     const selectedItems = items.filter((item) => item.qty > 0);
     if (!selectedItems.length) {
       setPayError("Please select at least one item.");
+      return;
+    }
+    const invalidMinimumItem = selectedItems.find(
+      (item) =>
+        normalizeMinimumOrderQty(item.minimumOrderQty) > 0 &&
+        item.qty < normalizeMinimumOrderQty(item.minimumOrderQty)
+    );
+    if (invalidMinimumItem) {
+      const message = `${invalidMinimumItem.name} requires minimum quantity ${normalizeMinimumOrderQty(
+        invalidMinimumItem.minimumOrderQty
+      )}.`;
+      setPayError(message);
+      window.alert(message);
       return;
     }
     if (deliveryType === "delivery" && itemsTotal < MIN_HOME_DELIVERY_ORDER) {
@@ -1982,6 +2022,11 @@ export default function CustomerPage() {
                           </>
                         )}
                         <div className="product-price">Rs. {item.price}</div>
+                        {normalizeMinimumOrderQty(item.minimumOrderQty) > 0 && (
+                          <div className="payments-subtext">
+                            Min qty: {normalizeMinimumOrderQty(item.minimumOrderQty)}
+                          </div>
+                        )}
                       </div>
 
                       <div className="product-qty-row">
@@ -1996,7 +2041,14 @@ export default function CustomerPage() {
                         <button
                           className="btn qty-btn customer-primary-btn"
                           onClick={() => updateQty(item.id, 1)}
-                          disabled={item.remaining === 0}
+                          disabled={
+                            item.remaining === 0 ||
+                            (item.qty === 0 &&
+                              item.remaining <
+                                (normalizeMinimumOrderQty(item.minimumOrderQty) > 0
+                                  ? normalizeMinimumOrderQty(item.minimumOrderQty)
+                                  : 1))
+                          }
                         >
                           +
                         </button>

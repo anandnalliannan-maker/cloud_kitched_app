@@ -54,6 +54,7 @@ type MenuItem = {
   name: string;
   price: number;
   mealType: string;
+  minimumOrderQty?: number;
   description?: string;
   imageUrl?: string;
   active?: boolean;
@@ -68,6 +69,7 @@ type PublishedMenu = {
     name: string;
     qty: number;
     price: number;
+    minimumOrderQty?: number;
     description?: string;
     imageUrl?: string;
     active?: boolean;
@@ -78,6 +80,7 @@ type PublishedMenu = {
     name: string;
     qty: number;
     price: number;
+    minimumOrderQty?: number;
     description?: string;
     imageUrl?: string;
     active?: boolean;
@@ -269,6 +272,12 @@ function formatDateLabel(value: any) {
   const monthIndex = Number(month) - 1;
   const monthLabel = monthNames[monthIndex] || month;
   return `${day}-${monthLabel}-${year}`;
+}
+
+function normalizeMinimumOrderQty(value: unknown) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
 }
 
 function formatDateTimeLabel(value: any) {
@@ -909,6 +918,7 @@ export default function OwnerPage() {
     name: "",
     price: "",
     mealType: "Lunch",
+    minimumOrderQty: "",
     description: "",
     imageUrl: "",
   });
@@ -925,6 +935,7 @@ export default function OwnerPage() {
     name: "",
     price: "",
     mealType: "Lunch",
+    minimumOrderQty: "",
     description: "",
     imageUrl: "",
   });
@@ -1686,6 +1697,7 @@ export default function OwnerPage() {
       name: menuForm.name.trim(),
       price: Number(menuForm.price),
       mealType: menuForm.mealType,
+      minimumOrderQty: normalizeMinimumOrderQty(menuForm.minimumOrderQty),
       description: menuForm.description.trim(),
       imageUrl,
       active: true,
@@ -1695,6 +1707,7 @@ export default function OwnerPage() {
       name: "",
       price: "",
       mealType: "Lunch",
+      minimumOrderQty: "",
       description: "",
       imageUrl: "",
     });
@@ -1703,6 +1716,46 @@ export default function OwnerPage() {
 
   async function updateMenuItem(id: string, data: Partial<MenuItem>) {
     await updateDoc(doc(db, "menu_items", id), data as any);
+  }
+
+  async function syncPublishedMenuMinimumOrderQty(itemId: string, minimumOrderQty: number) {
+    const publishedSnap = await getDocs(collection(db, "published_menus"));
+    const batch = writeBatch(db);
+    let hasUpdates = false;
+
+    publishedSnap.docs.forEach((docSnap) => {
+      const menuData = docSnap.data() as any;
+      const updateItemsMinimum = (items: any[] | undefined) =>
+        (items || []).map((item) =>
+          item.itemId === itemId
+            ? {
+                ...item,
+                minimumOrderQty,
+              }
+            : item
+        );
+
+      const nextItems = updateItemsMinimum(menuData.items);
+      const nextRemaining = updateItemsMinimum(menuData.remaining || menuData.items);
+
+      const changed =
+        JSON.stringify(nextItems) !== JSON.stringify(menuData.items || []) ||
+        JSON.stringify(nextRemaining) !==
+          JSON.stringify(menuData.remaining || menuData.items || []);
+
+      if (changed) {
+        batch.update(doc(db, "published_menus", docSnap.id), {
+          items: nextItems,
+          remaining: nextRemaining,
+          updatedAt: serverTimestamp(),
+        });
+        hasUpdates = true;
+      }
+    });
+
+    if (hasUpdates) {
+      await batch.commit();
+    }
   }
 
   async function deleteMenuItem(id: string) {
@@ -1723,6 +1776,10 @@ export default function OwnerPage() {
       name: item.name,
       price: String(item.price),
       mealType: item.mealType || "Lunch",
+      minimumOrderQty:
+        normalizeMinimumOrderQty(item.minimumOrderQty) > 0
+          ? String(normalizeMinimumOrderQty(item.minimumOrderQty))
+          : "",
       description: item.description || "",
       imageUrl: item.imageUrl || "",
     });
@@ -1747,9 +1804,14 @@ export default function OwnerPage() {
       name: editMenuForm.name.trim(),
       price: Number(editMenuForm.price),
       mealType: editMenuForm.mealType,
+      minimumOrderQty: normalizeMinimumOrderQty(editMenuForm.minimumOrderQty),
       description: editMenuForm.description.trim(),
       imageUrl,
     });
+    await syncPublishedMenuMinimumOrderQty(
+      editingMenuId,
+      normalizeMinimumOrderQty(editMenuForm.minimumOrderQty)
+    );
     setEditMenuImageFile(null);
     setEditingMenuId(null);
   }
@@ -1782,6 +1844,7 @@ export default function OwnerPage() {
         itemId: item.id,
         name: item.name,
         price: item.price,
+        minimumOrderQty: normalizeMinimumOrderQty(item.minimumOrderQty),
         description: item.description || "",
         imageUrl: item.imageUrl || "",
         qty: publishQty[item.id] || 0,
@@ -2205,6 +2268,7 @@ export default function OwnerPage() {
         name: sourceItem.name,
         qty,
         price: sourceItem.price,
+        minimumOrderQty: normalizeMinimumOrderQty(sourceItem.minimumOrderQty),
         description: sourceItem.description || "",
         imageUrl: sourceItem.imageUrl || "",
         active: true,
@@ -3346,6 +3410,29 @@ export default function OwnerPage() {
           throw new Error("Select quantity for at least one item.");
         }
 
+        const invalidMinimumItem = nextItems.find((item: OrderItem) => {
+          const matchingMenuItem = effectiveMenuItems.find(
+            (menuItem: any) =>
+              menuItem.itemId === item.itemId || menuItem.name === item.name
+          );
+          const minimumOrderQty = normalizeMinimumOrderQty(
+            matchingMenuItem?.minimumOrderQty
+          );
+          return minimumOrderQty > 0 && item.qty < minimumOrderQty;
+        });
+        if (invalidMinimumItem) {
+          const matchingMenuItem = effectiveMenuItems.find(
+            (menuItem: any) =>
+              menuItem.itemId === invalidMinimumItem.itemId ||
+              menuItem.name === invalidMinimumItem.name
+          );
+          throw new Error(
+            `${invalidMinimumItem.name} requires minimum quantity ${normalizeMinimumOrderQty(
+              matchingMenuItem?.minimumOrderQty
+            )}.`
+          );
+        }
+
         nextItems.forEach((item: OrderItem) => {
           const previousQty = previousQtyByKey.get(String(item.itemId || item.name)) || 0;
           const additionalRequired = item.qty - previousQty;
@@ -3483,6 +3570,20 @@ export default function OwnerPage() {
 
     if (!selectedItems.length) {
       setOwnerOrderError("Select quantity for at least one item.");
+      return;
+    }
+
+    const invalidMinimumItem = selectedItems.find(
+      (item) =>
+        normalizeMinimumOrderQty(item.minimumOrderQty) > 0 &&
+        item.qty < normalizeMinimumOrderQty(item.minimumOrderQty)
+    );
+    if (invalidMinimumItem) {
+      setOwnerOrderError(
+        `${invalidMinimumItem.name} requires minimum quantity ${normalizeMinimumOrderQty(
+          invalidMinimumItem.minimumOrderQty
+        )}.`
+      );
       return;
     }
 
@@ -4814,6 +4915,19 @@ export default function OwnerPage() {
                         </option>
                       ))}
                     </select>
+                    <input
+                      className="input"
+                      placeholder="Min qty (optional)"
+                      type="number"
+                      min={0}
+                      value={menuForm.minimumOrderQty}
+                      onChange={(e) =>
+                        setMenuForm({
+                          ...menuForm,
+                          minimumOrderQty: e.target.value,
+                        })
+                      }
+                    />
                   </div>
                   <input
                     className="input"
@@ -4934,6 +5048,11 @@ export default function OwnerPage() {
                       <div key={item.id} className="row">
                         <div style={{ flex: 1 }}>
                           {item.name} - Rs. {item.price}
+                          {normalizeMinimumOrderQty(item.minimumOrderQty) > 0 && (
+                            <small className="payments-subtext" style={{ display: "block" }}>
+                              Min qty: {normalizeMinimumOrderQty(item.minimumOrderQty)}
+                            </small>
+                          )}
                         </div>
                         <input
                           className="input"
@@ -5102,6 +5221,19 @@ export default function OwnerPage() {
                         </option>
                       ))}
                     </select>
+                    <input
+                      className="input"
+                      placeholder="Min qty (optional)"
+                      type="number"
+                      min={0}
+                      value={editMenuForm.minimumOrderQty}
+                      onChange={(e) =>
+                        setEditMenuForm({
+                          ...editMenuForm,
+                          minimumOrderQty: e.target.value,
+                        })
+                      }
+                    />
                   </div>
                   <input
                     className="input"
@@ -5458,6 +5590,11 @@ export default function OwnerPage() {
                             <small style={{ display: "block" }}>
                               Available: {item.qty}
                             </small>
+                            {normalizeMinimumOrderQty(item.minimumOrderQty) > 0 && (
+                              <small className="payments-subtext" style={{ display: "block" }}>
+                                Min qty: {normalizeMinimumOrderQty(item.minimumOrderQty)}
+                              </small>
+                            )}
                           </div>
                           <input
                             className="input"
@@ -6923,6 +7060,14 @@ export default function OwnerPage() {
                                                   <small className="payments-subtext" style={{ display: "block" }}>
                                                     Rs. {item.price} | Available: {item.qty}
                                                   </small>
+                                                  {normalizeMinimumOrderQty(item.minimumOrderQty) > 0 && (
+                                                    <small
+                                                      className="payments-subtext"
+                                                      style={{ display: "block" }}
+                                                    >
+                                                      Min qty: {normalizeMinimumOrderQty(item.minimumOrderQty)}
+                                                    </small>
+                                                  )}
                                                 </div>
                                                 <input
                                                   className="input"
@@ -7683,6 +7828,14 @@ export default function OwnerPage() {
                                                   <small className="payments-subtext" style={{ display: "block" }}>
                                                     Rs. {item.price} | Available: {item.qty}
                                                   </small>
+                                                  {normalizeMinimumOrderQty(item.minimumOrderQty) > 0 && (
+                                                    <small
+                                                      className="payments-subtext"
+                                                      style={{ display: "block" }}
+                                                    >
+                                                      Min qty: {normalizeMinimumOrderQty(item.minimumOrderQty)}
+                                                    </small>
+                                                  )}
                                                 </div>
                                                 <input
                                                   className="input"
