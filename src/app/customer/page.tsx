@@ -312,6 +312,7 @@ export default function CustomerPage() {
   const [menuAvailability, setMenuAvailability] = useState<
     "available" | "archived" | "sold_out" | "empty"
   >("empty");
+  const [isMenuLoading, setIsMenuLoading] = useState(true);
   const [step, setStep] = useState<"menu" | "details" | "payment">("menu");
   const [deliveryType, setDeliveryType] = useState<
     "delivery" | "pickup" | ""
@@ -405,6 +406,7 @@ export default function CustomerPage() {
         setMenuMealLabel("");
         setPublishedMenuId(null);
         setMenuAvailability("empty");
+        setIsMenuLoading(false);
         return;
       }
 
@@ -452,12 +454,14 @@ export default function CustomerPage() {
       if (data.isArchived) {
         setItems([]);
         setMenuAvailability("archived");
+        setIsMenuLoading(false);
         return;
       }
 
       if (data.ordersStopped) {
         setItems([]);
         setMenuAvailability("sold_out");
+        setIsMenuLoading(false);
         return;
       }
 
@@ -504,6 +508,7 @@ export default function CustomerPage() {
       if (menuItems.length === 0) {
         setItems([]);
         setMenuAvailability("empty");
+        setIsMenuLoading(false);
         return;
       }
       setItems((prev) => {
@@ -519,6 +524,14 @@ export default function CustomerPage() {
         });
       });
       setMenuAvailability("available");
+      setIsMenuLoading(false);
+    }, () => {
+      setItems([]);
+      setMenuDateLabel("");
+      setMenuMealLabel("");
+      setPublishedMenuId(null);
+      setMenuAvailability("empty");
+      setIsMenuLoading(false);
     });
     return () => unsub();
   }, []);
@@ -1977,7 +1990,9 @@ export default function CustomerPage() {
             <div className="row" style={{ justifyContent: "space-between" }}>
               <h2>Menu</h2>
               <span className="customer-section-meta">
-                {menuAvailability === "available" && menuDateLabel
+                {isMenuLoading
+                  ? "Menu loading..."
+                  : menuAvailability === "available" && menuDateLabel
                   ? `${formatDateLabel(menuDateLabel)} ${
                       menuMealLabel ? `- ${menuMealLabel}` : ""
                     }`
@@ -1988,7 +2003,14 @@ export default function CustomerPage() {
                   : "No menu published"}
               </span>
             </div>
-            {menuAvailability === "available" ? (
+            {isMenuLoading ? (
+              <div className="payment-action-box">
+                <div className="payment-action-copy">
+                  <strong>Menu loading...</strong>
+                  <p>Please wait while we fetch the latest published menu.</p>
+                </div>
+              </div>
+            ) : menuAvailability === "available" ? (
               <>
                 <div className="product-grid">
                   {items.map((item) => (
