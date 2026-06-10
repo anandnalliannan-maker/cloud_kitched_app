@@ -4417,6 +4417,16 @@ export default function OwnerPage() {
       return `"${text}"`;
     };
 
+    const itemColumnOrder = Array.from(
+      new Set(
+        filteredActiveOrders.flatMap((order) =>
+          (order.items || [])
+            .map((item) => item.name?.trim())
+            .filter((itemName): itemName is string => Boolean(itemName))
+        )
+      )
+    );
+
     const rows = filteredActiveOrders.map((order) => ({
       orderId: `#${order.orderId || order.id}`,
       customer: order.customerName || "Customer",
@@ -4432,7 +4442,9 @@ export default function OwnerPage() {
       subArea: order.subArea || "",
       address: order.address || "",
       location: formatLocationInput(order.location),
-      items: (order.items || []).map((item) => `${item.name} x${item.qty}`).join(", "),
+      itemQtyByName: Object.fromEntries(
+        (order.items || []).map((item) => [item.name, item.qty || 0])
+      ) as Record<string, number>,
       deliveryAgent:
         order.deliveryType === "delivery" ? order.assignedAgentName || "Unassigned" : "Pickup",
       payment: getPaymentMethodLabel(order),
@@ -4450,7 +4462,7 @@ export default function OwnerPage() {
       "Sub Area",
       "Address",
       "Location",
-      "Items",
+      ...itemColumnOrder,
       "Delivery Agent",
       "Payment",
       "Status",
@@ -4470,7 +4482,7 @@ export default function OwnerPage() {
           row.subArea,
           row.address,
           row.location,
-          row.items,
+          ...itemColumnOrder.map((itemName) => row.itemQtyByName[itemName] || ""),
           row.deliveryAgent,
           row.payment,
           row.status,
@@ -6648,7 +6660,7 @@ export default function OwnerPage() {
                             <th>Phone</th>
                             <th>Delivery Type</th>
                             <th>Area</th>
-                            <th>Address</th>
+                            <th className="owner-orders-address-col">Address</th>
                             <th className="owner-orders-items-col">Items</th>
                               <th>Delivery Agent</th>
                               <th>Payment</th>
@@ -6735,7 +6747,7 @@ export default function OwnerPage() {
                                       </div>
                                     )}
                                 </td>
-                                <td>
+                                <td className="owner-orders-address-cell">
                                   {order.address || "-"}
                                 </td>
                                 <td className="owner-orders-items-cell">
@@ -7527,8 +7539,8 @@ export default function OwnerPage() {
                             <th>Meal</th>
                             <th>Delivery Type</th>
                             <th>Area</th>
-                            <th>Address</th>
-                            <th>Items</th>
+                            <th className="owner-orders-address-col">Address</th>
+                            <th className="owner-orders-items-col">Items</th>
                             <th>Delivery Agent</th>
                             <th>Payment</th>
                             <th>Status</th>
@@ -7558,7 +7570,7 @@ export default function OwnerPage() {
                                     {getOrderDisplaySubArea(order) || "No sub area mapped"}
                                   </small>
                                 </td>
-                                <td>
+                                <td className="owner-orders-address-cell">
                                   {order.address || "-"}
                                 </td>
                                 <td className="owner-orders-items-cell">
@@ -7986,7 +7998,7 @@ export default function OwnerPage() {
                             <th>Customer</th>
                             <th>Phone</th>
                             <th>Area</th>
-                            <th>Address</th>
+                            <th className="owner-orders-address-col">Address</th>
                             <th>Type</th>
                             <th className="owner-orders-items-col">Items</th>
                             <th>Delivery Agent</th>
@@ -8020,7 +8032,7 @@ export default function OwnerPage() {
                                     </small>
                                   ) : null}
                                 </td>
-                                <td>
+                                <td className="owner-orders-address-cell">
                                   {order.deliveryType === "delivery" ? order.address || "-" : "Store Pickup"}
                                 </td>
                                 <td>

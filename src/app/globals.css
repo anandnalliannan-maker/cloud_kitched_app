@@ -364,6 +364,17 @@ a {
   min-width: 120px;
 }
 
+.owner-orders-address-col,
+.owner-orders-address-cell {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+.owner-orders-address-cell {
+  word-break: break-word;
+}
+
 .owner-inline-mapper {
   max-width: 120px;
   min-width: 0;
@@ -1914,6 +1925,13 @@ a {
   .owner-orders-items-col,
   .owner-orders-items-cell {
     min-width: 110px;
+  }
+
+  .owner-orders-address-col,
+  .owner-orders-address-cell {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
   }
 }
 
