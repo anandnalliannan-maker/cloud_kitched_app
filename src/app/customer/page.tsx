@@ -506,7 +506,18 @@ export default function CustomerPage() {
         setMenuAvailability("empty");
         return;
       }
-      setItems(menuItems);
+      setItems((prev) => {
+        const previousQtyById = new Map(prev.map((item) => [item.id, Number(item.qty || 0)]));
+        return menuItems.map((item) => {
+          const previousQty = previousQtyById.get(item.id) || 0;
+          return {
+            ...item,
+            // Preserve the customer's in-progress cart across live menu refreshes,
+            // but never beyond the latest available stock.
+            qty: Math.min(previousQty, item.remaining),
+          };
+        });
+      });
       setMenuAvailability("available");
     });
     return () => unsub();
